@@ -30,6 +30,7 @@ class CC_EXPORT LayerTreeSettings {
   bool partial_swap_enabled;
   bool accelerated_animation_enabled;
   bool can_use_lcd_text;
+  bool use_distance_field_text;
   bool should_clear_root_render_pass;
   bool gpu_rasterization_enabled;
   bool gpu_rasterization_forced;
@@ -66,7 +67,7 @@ class CC_EXPORT LayerTreeSettings {
   bool use_pinch_zoom_scrollbars;
   bool use_pinch_virtual_viewport;
   size_t max_tiles_for_interest_area;
-  float skewport_target_time_in_seconds;
+  float skewport_target_time_multiplier;
   int skewport_extrapolation_limit_in_content_pixels;
   size_t max_unused_resource_memory_percentage;
   size_t max_memory_for_prepaint_percentage;

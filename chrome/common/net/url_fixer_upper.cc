@@ -52,7 +52,7 @@ url::Component UTF8ComponentToUTF16Component(
 void UTF8PartsToUTF16Parts(const std::string& text_utf8,
                            const url::Parsed& parts_utf8,
                            url::Parsed* parts) {
-  if (IsStringASCII(text_utf8)) {
+  if (base::IsStringASCII(text_utf8)) {
     *parts = parts_utf8;
     return;
   }
@@ -81,7 +81,7 @@ base::TrimPositions TrimWhitespaceUTF8(const std::string& input,
   // This implementation is not so fast since it converts the text encoding
   // twice. Please feel free to file a bug if this function hurts the
   // performance of Chrome.
-  DCHECK(IsStringUTF8(input));
+  DCHECK(base::IsStringUTF8(input));
   base::string16 input16 = base::UTF8ToUTF16(input);
   base::string16 output16;
   base::TrimPositions result =
@@ -424,7 +424,7 @@ std::string SegmentURLInternal(std::string* text, url::Parsed* parts) {
       // Couldn't determine the scheme, so just pick one.
       parts->scheme.reset();
       scheme = StartsWithASCII(*text, "ftp.", false) ?
-          content::kFtpScheme : content::kHttpScheme;
+          content::kFtpScheme : url::kHttpScheme;
     }
   }
 

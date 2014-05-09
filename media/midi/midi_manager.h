@@ -55,12 +55,14 @@ class MEDIA_EXPORT MidiManagerClient {
 // Manages access to all MIDI hardware.
 class MEDIA_EXPORT MidiManager {
  public:
-  // The constructor and the destructor will be called on the CrBrowserMain
-  // thread.
-  static MidiManager* Create();
+  static const size_t kMaxPendingClientCount = 128;
 
   MidiManager();
   virtual ~MidiManager();
+
+  // The constructor and the destructor will be called on the CrBrowserMain
+  // thread.
+  static MidiManager* Create();
 
   // A client calls StartSession() to receive and send MIDI data.
   // If the session is ready to start, the MIDI system is lazily initialized
@@ -91,12 +93,12 @@ class MEDIA_EXPORT MidiManager {
   // input_ports() is a list of MIDI ports for receiving MIDI data.
   // Each individual port in this list can be identified by its
   // integer index into this list.
-  const MidiPortInfoList& input_ports() { return input_ports_; }
+  const MidiPortInfoList& input_ports() const { return input_ports_; }
 
   // output_ports() is a list of MIDI ports for sending MIDI data.
   // Each individual port in this list can be identified by its
   // integer index into this list.
-  const MidiPortInfoList& output_ports() { return output_ports_; }
+  const MidiPortInfoList& output_ports() const { return output_ports_; }
 
  protected:
   friend class MidiManagerUsb;
@@ -137,14 +139,10 @@ class MEDIA_EXPORT MidiManager {
                     (time - base::TimeTicks()).InSecondsF());
   }
 
-  size_t get_clients_size_for_testing() const { return clients_.size(); }
-  size_t get_pending_clients_size_for_testing() const {
+  size_t clients_size_for_testing() const { return clients_.size(); }
+  size_t pending_clients_size_for_testing() const {
     return pending_clients_.size();
   }
-
-  // TODO(toyoshim): Make |input_ports_| and |output_ports_| private members.
-  MidiPortInfoList input_ports_;
-  MidiPortInfoList output_ports_;
 
  private:
   void CompleteInitializationInternal(MidiResult result);
@@ -171,6 +169,9 @@ class MEDIA_EXPORT MidiManager {
   // Protects access to |clients_|, |pending_clients_|, |initialized_|, and
   // |result_|.
   base::Lock lock_;
+
+  MidiPortInfoList input_ports_;
+  MidiPortInfoList output_ports_;
 
   DISALLOW_COPY_AND_ASSIGN(MidiManager);
 };

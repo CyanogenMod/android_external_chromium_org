@@ -64,6 +64,7 @@
             'autofill/core/common/password_form_fill_data_unittest.cc',
             'autofill/core/common/save_password_progress_logger_unittest.cc',
             'bookmarks/core/browser/bookmark_codec_unittest.cc',
+            'bookmarks/core/test/bookmark_index_unittest.cc',
             'captive_portal/captive_portal_detector_unittest.cc',
             'cloud_devices/common/cloud_devices_urls_unittest.cc',
             'cloud_devices/common/printer_description_unittest.cc',
@@ -91,6 +92,7 @@
             'domain_reliability/test_util.h',
             'domain_reliability/uploader_unittest.cc',
             'domain_reliability/util_unittest.cc',
+            'feedback/feedback_uploader_unittest.cc',
             'json_schema/json_schema_validator_unittest.cc',
             'json_schema/json_schema_validator_unittest_base.cc',
             'json_schema/json_schema_validator_unittest_base.h',
@@ -222,6 +224,9 @@
 
             # Dependencies of domain_reliability
             'components.gyp:domain_reliability',
+
+            # Dependencies of feedback
+            'components.gyp:feedback_component',
 
             # Dependencies of json_schema
             'components.gyp:json_schema',
@@ -445,8 +450,7 @@
                 '../base/allocator/allocator.gyp:allocator',
               ],
             }],
-            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-            ['OS=="linux" and component=="shared_library" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
+            ['OS=="linux" and component=="shared_library" and use_allocator!="none"', {
             'dependencies': [
                 '<(DEPTH)/base/allocator/allocator.gyp:allocator',
             ],
@@ -616,7 +620,6 @@
             '../skia/skia.gyp:skia',
             '../testing/gmock.gyp:gmock',
             '../testing/gtest.gyp:gtest',
-            '../testing/gmock.gyp:gmock',
           ],
           'include_dirs': [
             '..',

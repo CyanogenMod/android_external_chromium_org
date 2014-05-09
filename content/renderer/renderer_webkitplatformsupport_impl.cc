@@ -413,7 +413,7 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaMIMEType(
     // Check whether the key system is supported with the mime_type and codecs.
 
     // Chromium only supports ASCII parameters.
-    if (!IsStringASCII(key_system))
+    if (!base::IsStringASCII(key_system))
       return IsNotSupported;
 
     std::string key_system_ascii =
@@ -474,8 +474,8 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::supportsEncryptedMediaMIMEType(
     const WebString& mime_type,
     const WebString& codecs) {
   // Chromium only supports ASCII parameters.
-  if (!IsStringASCII(key_system) || !IsStringASCII(mime_type) ||
-      !IsStringASCII(codecs)) {
+  if (!base::IsStringASCII(key_system) || !base::IsStringASCII(mime_type) ||
+      !base::IsStringASCII(codecs)) {
     return false;
   }
 
@@ -884,7 +884,8 @@ WebBlobRegistry* RendererWebKitPlatformSupportImpl::blobRegistry() {
 
 void RendererWebKitPlatformSupportImpl::sampleGamepads(WebGamepads& gamepads) {
   if (g_test_gamepads == 0) {
-    RenderThreadImpl::current()->SampleGamepads(&gamepads);
+    RenderThreadImpl::current()->gamepad_shared_memory_reader()->
+        SampleGamepads(gamepads);
   } else {
     gamepads = g_test_gamepads.Get();
   }
@@ -893,6 +894,8 @@ void RendererWebKitPlatformSupportImpl::sampleGamepads(WebGamepads& gamepads) {
 void RendererWebKitPlatformSupportImpl::setGamepadListener(
       blink::WebGamepadListener* listener) {
   web_gamepad_listener = listener;
+  RenderThreadImpl::current()->gamepad_shared_memory_reader()->
+      SetGamepadListener(listener);
 }
 
 //------------------------------------------------------------------------------

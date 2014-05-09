@@ -23,9 +23,6 @@ from telemetry.page import page_test
 from telemetry.page.actions.all_page_actions import *
 
 class _MapsValidator(cloud_storage_test_base.ValidatorBase):
-  def __init__(self):
-    super(_MapsValidator, self).__init__('ValidatePage')
-
   def CustomizeBrowserOptions(self, options):
     options.AppendExtraBrowserArgs('--enable-gpu-benchmarking')
 
@@ -81,10 +78,9 @@ class MapsPage(page.Page):
     super(MapsPage, self).__init__(
       url='http://localhost:10020/tracker.html',
       page_set=page_set,
-      base_dir=base_dir)
-    self.name = 'Maps.maps_001'
-    self.script_to_evaluate_on_commit = 'window.screen = null;'
-    self.pixel_expectations = 'data/maps_001_expectations.json'
+      base_dir=base_dir,
+      name='Maps.maps_002')
+    self.pixel_expectations = 'data/maps_002_expectations.json'
 
   def RunNavigateSteps(self, action_runner):
     action_runner.RunAction(NavigateAction())

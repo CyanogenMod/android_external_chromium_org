@@ -72,7 +72,7 @@ std::string GetFileNameFromURL(const GURL& url,
 
   // The URL's path should be escaped UTF-8, but may not be.
   std::string decoded_filename = unescaped_url_filename;
-  if (!IsStringUTF8(decoded_filename)) {
+  if (!base::IsStringUTF8(decoded_filename)) {
     // TODO(jshin): this is probably not robust enough. To be sure, we need
     // encoding detection.
     base::string16 utf16_output;
@@ -180,12 +180,6 @@ void EnsureSafeExtension(const std::string& mime_type,
   if ((ignore_extension || extension.empty()) && !mime_type.empty()) {
     base::FilePath::StringType preferred_mime_extension;
     std::vector<base::FilePath::StringType> all_mime_extensions;
-    // The GetPreferredExtensionForMimeType call will end up going to disk.  Do
-    // this on another thread to avoid slowing the IO thread.
-    // http://crbug.com/61827
-    // TODO(asanka): Remove this ScopedAllowIO once all callers have switched
-    // over to IO safe threads.
-    base::ThreadRestrictions::ScopedAllowIO allow_io;
     net::GetPreferredExtensionForMimeType(mime_type, &preferred_mime_extension);
     net::GetExtensionsForMimeType(mime_type, &all_mime_extensions);
     // If the existing extension is in the list of valid extensions for the
@@ -311,7 +305,7 @@ bool FileURLToFilePath(const GURL& url, base::FilePath* file_path) {
       UnescapeRule::SPACES | UnescapeRule::URL_SPECIAL_CHARS);
 
 #if defined(OS_WIN)
-  if (IsStringUTF8(path)) {
+  if (base::IsStringUTF8(path)) {
     file_path_str.assign(base::UTF8ToWide(path));
     // We used to try too hard and see if |path| made up entirely of
     // the 1st 256 characters in the Unicode was a zero-extended UTF-16.

@@ -143,17 +143,6 @@ class SyncBackendHost : public BackendDataTypeConfigurer {
   // Turns on encryption of all present and future sync data.
   virtual void EnableEncryptEverything() = 0;
 
-  // Activates change processing for the given data type.  This must
-  // be called synchronously with the data type's model association so
-  // no changes are dropped between model association and change
-  // processor activation.
-  virtual void ActivateDataType(
-      syncer::ModelType type, syncer::ModelSafeGroup group,
-      ChangeProcessor* change_processor) = 0;
-
-  // Deactivates change processing for the given data type.
-  virtual void DeactivateDataType(syncer::ModelType type) = 0;
-
   // Called on |frontend_loop_| to obtain a handle to the UserShare needed for
   // creating transactions.  Should not be called before we signal
   // initialization is complete with OnBackendInitialized().
@@ -214,6 +203,14 @@ class SyncBackendHost : public BackendDataTypeConfigurer {
       syncer::ModelTypeSet types,
       base::Callback<void(const std::vector<syncer::ModelType>&,
                           ScopedVector<base::ListValue>)> type) = 0;
+
+  // Enables the sending of directory type debug counters.  Also, for every
+  // time it is called, it makes an explicit request that updates to an update
+  // for all counters be emitted.
+  virtual void EnableDirectoryTypeDebugInfoForwarding() = 0;
+
+  // Disables the sending of directory type debug counters.
+  virtual void DisableDirectoryTypeDebugInfoForwarding() = 0;
 
   virtual base::MessageLoop* GetSyncLoopForTesting() = 0;
 

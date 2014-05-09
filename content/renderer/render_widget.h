@@ -306,8 +306,6 @@ class CONTENT_EXPORT RenderWidget
   void AnimationCallback();
   void InvalidationCallback();
   void FlushPendingInputEventAck();
-  void DoDeferredUpdateAndSendInputAck();
-  void DoDeferredUpdate();
   void DoDeferredClose();
   void DoDeferredSetWindowRect(const blink::WebRect& pos);
 
@@ -389,6 +387,8 @@ class CONTENT_EXPORT RenderWidget
   void AutoResizeCompositor();
 
   virtual void SetDeviceScaleFactor(float device_scale_factor);
+
+  virtual void OnOrientationChange();
 
   // Override points to notify derived classes that a paint has happened.
   // DidInitiatePaint happens when that has completed, and subsequent rendering
@@ -658,11 +658,6 @@ class CONTENT_EXPORT RenderWidget
   // Set to true if painting to the window is handled by the accelerated
   // compositor.
   bool is_accelerated_compositing_active_;
-
-  // Set to true if compositing has ever been active for this widget. Once a
-  // widget has used compositing, it will act as though force compositing mode
-  // is on for the remainder of the widget's lifetime.
-  bool was_accelerated_compositing_ever_active_;
 
   base::OneShotTimer<RenderWidget> animation_timer_;
   bool animation_update_pending_;

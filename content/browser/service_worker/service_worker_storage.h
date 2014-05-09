@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_STORAGE_H_
 
 #include <map>
+#include <set>
 #include <vector>
 
 #include "base/bind.h"
@@ -51,6 +52,16 @@ class CONTENT_EXPORT ServiceWorkerStorage {
       void(ServiceWorkerStatusCode status, int result)>
           CompareCallback;
 
+  struct InitialData {
+    int64 next_registration_id;
+    int64 next_version_id;
+    int64 next_resource_id;
+    std::set<GURL> origins;
+
+    InitialData();
+    ~InitialData();
+  };
+
   ServiceWorkerStorage(const base::FilePath& path,
                        base::WeakPtr<ServiceWorkerContextCore> context,
                        base::SequencedTaskRunner* database_task_runner,
@@ -71,6 +82,7 @@ class CONTENT_EXPORT ServiceWorkerStorage {
   void FindRegistrationForPattern(const GURL& scope,
                                   const FindRegistrationCallback& callback);
   void FindRegistrationForId(int64 registration_id,
+                             const GURL& origin,
                              const FindRegistrationCallback& callback);
 
   // Returns info about all stored and initially installing registrations.
@@ -95,6 +107,7 @@ class CONTENT_EXPORT ServiceWorkerStorage {
   // will remain available until either a browser restart or
   // DeleteVersionResources is called.
   void DeleteRegistration(int64 registration_id,
+                          const GURL& origin,
                           const StatusCallback& callback);
 
   scoped_ptr<ServiceWorkerResponseReader> CreateResponseReader(
@@ -116,27 +129,51 @@ class CONTENT_EXPORT ServiceWorkerStorage {
  private:
   friend class ServiceWorkerStorageTest;
 
+  typedef std::vector<ServiceWorkerDatabase::RegistrationData> RegistrationList;
+  typedef std::vector<ServiceWorkerDatabase::ResourceRecord> ResourceList;
+
+  bool LazyInitialize(
+      const base::Closure& callback);
+  void DidReadInitialData(
+      InitialData* data,
+      bool success);
+  void DidGetRegistrationsForPattern(
+      const GURL& scope,
+      const FindRegistrationCallback& callback,
+      RegistrationList* registrations,
+      bool succcess);
+  void DidGetRegistrationsForDocument(
+      const GURL& scope,
+      const FindRegistrationCallback& callback,
+      RegistrationList* registrations,
+      bool succcess);
+  void DidReadRegistrationForId(
+      const FindRegistrationCallback& callback,
+      const ServiceWorkerDatabase::RegistrationData& registration,
+      const ResourceList& resources,
+      ServiceWorkerStatusCode status);
+  void DidGetAllRegistrations(
+      const GetAllRegistrationInfosCallback& callback,
+      RegistrationList* registrations,
+      bool success);
+  void DidStoreRegistration(
+      const GURL& origin,
+      const StatusCallback& callback,
+      bool success);
+  void DidDeleteRegistration(
+      const GURL& origin,
+      const StatusCallback& callback,
+      bool origin_is_deletable,
+      ServiceWorkerStatusCode status);
+
   scoped_refptr<ServiceWorkerRegistration> CreateRegistration(
-      const ServiceWorkerDatabase::RegistrationData* data);
+      const ServiceWorkerDatabase::RegistrationData& data);
   ServiceWorkerRegistration* FindInstallingRegistrationForDocument(
       const GURL& document_url);
   ServiceWorkerRegistration* FindInstallingRegistrationForPattern(
       const GURL& scope);
   ServiceWorkerRegistration* FindInstallingRegistrationForId(
       int64 registration_id);
-
-  // TODO(michaeln): Store these structs in a database.
-  typedef std::map<int64, ServiceWorkerDatabase::RegistrationData>
-      RegistrationsMap;
-  typedef std::map<GURL, RegistrationsMap>
-      OriginRegistrationsMap;
-  OriginRegistrationsMap stored_registrations_;
-
-  // For iterating and lookup based on id only, this map holds
-  // pointers to the values stored in the OriginRegistrationsMap.
-  typedef std::map<int64, ServiceWorkerDatabase::RegistrationData*>
-      RegistrationPtrMap;
-  RegistrationPtrMap registrations_by_id_;
 
   // For finding registrations being installed.
   typedef std::map<int64, scoped_refptr<ServiceWorkerRegistration> >
@@ -146,16 +183,35 @@ class CONTENT_EXPORT ServiceWorkerStorage {
   // Lazy disk_cache getter.
   ServiceWorkerDiskCache* disk_cache();
 
-  int64 last_registration_id_;
-  int64 last_version_id_;
-  int64 last_resource_id_;
-  bool simulated_lazy_initted_;
+  // Origins having registations.
+  std::set<GURL> registered_origins_;
+
+  // Pending database tasks waiting for initialization.
+  std::vector<base::Closure> pending_tasks_;
+
+  int64 next_registration_id_;
+  int64 next_version_id_;
+  int64 next_resource_id_;
+
+  enum State {
+    UNINITIALIZED,
+    INITIALIZING,
+    INITIALIZED,
+    DISABLED,
+  };
+  State state_;
 
   base::FilePath path_;
   base::WeakPtr<ServiceWorkerContextCore> context_;
+
+  // Only accessed on |database_task_runner_|.
+  scoped_ptr<ServiceWorkerDatabase> database_;
+
   scoped_refptr<base::SequencedTaskRunner> database_task_runner_;
   scoped_refptr<quota::QuotaManagerProxy> quota_manager_proxy_;
   scoped_ptr<ServiceWorkerDiskCache> disk_cache_;
+
+  base::WeakPtrFactory<ServiceWorkerStorage> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerStorage);
 };

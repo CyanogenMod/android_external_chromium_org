@@ -14,6 +14,9 @@ const char kDisableCoreAnimation[] = "disable-core-animation";
 // Disables use of DWM composition for top level windows.
 const char kDisableDwmComposition[] = "disable-dwm-composition";
 
+// Disables an experimental focus manager to track text input clients.
+const char kDisableTextInputFocusManager[] = "disable-text-input-focus-manager";
+
 // Disables touch adjustment.
 const char kDisableTouchAdjustment[] = "disable-touch-adjustment";
 
@@ -23,19 +26,14 @@ const char kDisableTouchDragDrop[] = "disable-touch-drag-drop";
 // Disables controls that support touch base text editing.
 const char kDisableTouchEditing[] = "disable-touch-editing";
 
+// Enables an experimental focus manager to track text input clients.
+const char kEnableTextInputFocusManager[] = "enable-text-input-focus-manager";
+
 // Enables touch event based drag and drop.
 const char kEnableTouchDragDrop[] = "enable-touch-drag-drop";
 
 // Enables controls that support touch base text editing.
 const char kEnableTouchEditing[] = "enable-touch-editing";
-
-// If a resource is requested at a scale factor at which it is not available
-// or the resource is the incorrect size (based on the size of the 1x resource),
-// generates the missing resource and applies a red mask to the generated
-// resource. Resources for which hidpi is not supported because of software
-// reasons will show up pixelated.
-const char kHighlightMissingScaledResources[] =
-    "highlight-missing-scaled-resources";
 
 // The language file that we want to try to open. Of the form
 // language[-country] where language is the 2 letter code from ISO-639.

@@ -881,6 +881,8 @@
             'formats/mp4/es_descriptor.h',
             'formats/mp4/mp4_stream_parser.cc',
             'formats/mp4/mp4_stream_parser.h',
+            'formats/mp4/sample_to_group_iterator.cc',
+            'formats/mp4/sample_to_group_iterator.h',
             'formats/mp4/track_run_iterator.cc',
             'formats/mp4/track_run_iterator.h',
             'formats/mpeg/adts_constants.cc',
@@ -1105,8 +1107,7 @@
         }],
         ['os_posix==1 and OS!="mac"', {
           'conditions': [
-            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-            ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
+            ['use_allocator!="none"', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
@@ -1176,6 +1177,7 @@
             'formats/mp4/box_reader_unittest.cc',
             'formats/mp4/es_descriptor_unittest.cc',
             'formats/mp4/mp4_stream_parser_unittest.cc',
+            'formats/mp4/sample_to_group_iterator_unittest.cc',
             'formats/mp4/track_run_iterator_unittest.cc',
             'formats/mpeg/adts_stream_parser_unittest.cc',
             'formats/mpeg/mp3_stream_parser_unittest.cc',
@@ -1699,8 +1701,7 @@
           'conditions': [
             ['os_posix==1 and OS!="mac"', {
               'conditions': [
-                # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-                ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
+                ['use_allocator!="none"', {
                   'dependencies': [
                     '../base/allocator/allocator.gyp:allocator',
                   ],

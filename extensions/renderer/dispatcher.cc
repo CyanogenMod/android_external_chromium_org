@@ -794,8 +794,11 @@ void Dispatcher::UpdateOriginPermissions(
   for (URLPatternSet::const_iterator i = origins.begin(); i != origins.end();
        ++i) {
     const char* schemes[] = {
-        content::kHttpScheme,     content::kHttpsScheme, content::kFileScheme,
-        content::kChromeUIScheme, content::kFtpScheme,
+        url::kHttpScheme,
+        url::kHttpsScheme,
+        content::kFileScheme,
+        content::kChromeUIScheme,
+        content::kFtpScheme,
     };
     for (size_t j = 0; j < arraysize(schemes); ++j) {
       if (i->MatchesScheme(schemes[j])) {
@@ -1046,6 +1049,8 @@ void Dispatcher::PopulateSourceMap() {
   source_map_.RegisterSource("sendRequest", IDR_SEND_REQUEST_JS);
   source_map_.RegisterSource("setIcon", IDR_SET_ICON_JS);
   source_map_.RegisterSource("test", IDR_TEST_CUSTOM_BINDINGS_JS);
+  source_map_.RegisterSource("uncaught_exception_handler",
+                             IDR_UNCAUGHT_EXCEPTION_HANDLER_JS);
   source_map_.RegisterSource("unload_event", IDR_UNLOAD_EVENT_JS);
   source_map_.RegisterSource("utils", IDR_UTILS_JS);
 

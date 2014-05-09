@@ -396,6 +396,9 @@ void RenderThreadImpl::Init() {
 
   AddFilter((new EmbeddedWorkerContextMessageFilter())->GetFilter());
 
+  gamepad_shared_memory_reader_.reset(new GamepadSharedMemoryReader());
+  AddObserver(gamepad_shared_memory_reader_.get());
+
   GetContentClient()->renderer()->RenderThreadStarted();
 
   InitSkiaEventTracer();
@@ -430,6 +433,14 @@ void RenderThreadImpl::Init() {
       command_line.HasSwitch(switches::kEnableGpuRasterization);
   is_gpu_rasterization_forced_ =
       command_line.HasSwitch(switches::kForceGpuRasterization);
+
+  if (command_line.HasSwitch(switches::kDisableDistanceFieldText)) {
+    is_distance_field_text_enabled_ = false;
+  } else if (command_line.HasSwitch(switches::kEnableDistanceFieldText)) {
+    is_distance_field_text_enabled_ = true;
+  } else {
+    is_distance_field_text_enabled_ = false;
+  }
 
   is_low_res_tiling_enabled_ = true;
   if (command_line.HasSwitch(switches::kDisableLowResTiling) &&
@@ -1156,7 +1167,7 @@ scoped_ptr<gfx::GpuMemoryBuffer> RenderThreadImpl::AllocateGpuMemoryBuffer(
   if (!success)
     return scoped_ptr<gfx::GpuMemoryBuffer>();
 
-  return GpuMemoryBufferImpl::Create(
+  return GpuMemoryBufferImpl::CreateFromHandle(
              handle, gfx::Size(width, height), internalformat)
       .PassAs<gfx::GpuMemoryBuffer>();
 }
@@ -1455,9 +1466,11 @@ void RenderThreadImpl::SetFlingCurveParameters(
 }
 
 void RenderThreadImpl::SampleGamepads(blink::WebGamepads* data) {
-  if (!gamepad_shared_memory_reader_)
-    gamepad_shared_memory_reader_.reset(new GamepadSharedMemoryReader);
   gamepad_shared_memory_reader_->SampleGamepads(*data);
+}
+
+void RenderThreadImpl::SetGamepadListener(blink::WebGamepadListener* listener) {
+  gamepad_shared_memory_reader_->SetGamepadListener(listener);
 }
 
 void RenderThreadImpl::WidgetCreated() {

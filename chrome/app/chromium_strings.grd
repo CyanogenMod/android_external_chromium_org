@@ -404,12 +404,11 @@ name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presente
         </message>
       </if>
       <!-- Strings used to warn that an OS is not supported -->
-      <message name="IDS_UNSUPPORTED_OS_PRE_WIN_XP" desc="The text used to warn the user that Windows pre-XP is not supported">
-        Chromium requires Windows XP or later. Some features may not work.
-      </message>
-      <message name="IDS_UNSUPPORTED_OS" desc="The text used to warn the user that current OS is not supported">
-        Chromium does not support <ph name="OS_NAME">$1<ex>Windows 2000</ex></ph>.
-      </message>
+      <if expr="is_win">
+        <message name="IDS_UNSUPPORTED_OS_PRE_WIN_XP" desc="The text used to warn the user that Windows pre-XP is not supported">
+          Chromium requires Windows XP or later. Some features may not work.
+        </message>
+      </if>
       <if expr="not chromeos">
         <message name="IDS_OPTIONS_RELAUNCH_REQUIRED" desc="The message displayed for an option that requires a relaunch to take effect. This appears in a message box if an option is changed that requires a relaunch.">
           Please close all Chromium windows and relaunch Chromium for this change to take effect.
@@ -776,7 +775,7 @@ For Chromium, processes used to display diagnostics information (such as this "a
       </message>
 
       <if expr="enable_extensions">
-        <message name="IDS_EXTENSIONS_SUSPICIOUS_DISABLED_BODY" desc="Body of the dialog shown when suspicious extensions have been disabled">
+        <message name="IDS_EXTENSIONS_UNSUPPORTED_DISABLED_BODY" desc="Body of the dialog shown when unsupported extensions have been disabled">
           To make Chromium safer, we disabled some extensions that aren't listed in the <ph name="IDS_EXTENSION_WEB_STORE_TITLE">$1<ex>Chrome Web Store</ex></ph> and may have been added without your knowledge.
         </message>
       </if>
@@ -844,7 +843,7 @@ For Chromium, processes used to display diagnostics information (such as this "a
 
       <!-- Account removal view in the avatar menu bubble -->
       <message name="IDS_PROFILES_ACCOUNT_REMOVAL_TEXT" desc="Main text of the account removal view when removing a secondary account.">
-        To remove your account, Chromium needs to restart. Make sure you've saved any open work before continuing.
+        After removing your account from Chromium, you may need to reload your open tabs to take effect.
       </message>
       <message name="IDS_PROFILES_PRIMARY_ACCOUNT_REMOVAL_TEXT" desc="Main text of the account removal view when removing a primary account.">
         You're using <ph name="PROFILE_EMAIL">$1<ex>jessica@gmail.com</ex></ph> to sync your Chromium stuff. To update your sync preference or to use Chromium without a Google account, visit <ph name="SETTINGS_LINK">$2<ex>settings</ex></ph>.
@@ -945,13 +944,14 @@ Signing in anyway will merge Chromium information like bookmarks, history, and o
         </message>
       </if>
 
-      <message name="IDS_OPTIONS_PASSWORDS_MAC_WARNING" desc="The warning for OS X that passwords are shared across profiles in the keychain.">
-        On Mac, passwords are saved to your Keychain and may be accessed or synced by other Chromium users sharing this OS X account.
-      </message>
-
-      <message name="IDS_AUTOFILL_ADDRESS_BOOK_PROMPT_DESCRIPTION" desc="Text to show in dialog requesting permission to access the user's Address Book contents.">
-        Details from your contacts can help you fill out forms more quickly in Chromium.
-      </message>
+      <if expr="is_macosx">
+        <message name="IDS_OPTIONS_PASSWORDS_MAC_WARNING" desc="The warning for OS X that passwords are shared across profiles in the keychain.">
+          On Mac, passwords are saved to your Keychain and may be accessed or synced by other Chromium users sharing this OS X account.
+        </message>
+        <message name="IDS_AUTOFILL_ADDRESS_BOOK_PROMPT_DESCRIPTION" desc="Text to show in dialog requesting permission to access the user's Address Book contents.">
+          Details from your contacts can help you fill out forms more quickly in Chromium.
+        </message>
+      </if>
       <message name="IDS_AUTOFILL_CC_INFOBAR_TEXT" desc="Text to show in the Autofill credit card request infobar.">
         Do you want Chromium to save this credit card information for completing web forms?
       </message>
@@ -1205,16 +1205,6 @@ Signing in anyway will merge Chromium information like bookmarks, history, and o
       <message name="IDS_UPGRADE_BUBBLE_REENABLE_TEXT" desc="Text for the upgrade bubble view full description.">
         Chromium could not update itself to the latest version, so you are missing out on awesome new features and security fixes. You need to update Chromium.
       </message>
-
-      <!-- chrome://ntp -->
-      <if expr="not is_android">
-        <message name="IDS_NEW_TAB_OTR_EXTENSIONS_MESSAGE"
-                 desc="Explanation in a new OTR window that extensions have been disabled while in OTR.">
-          Because Chromium does not control how extensions handle your personal data, all extensions have been disabled for incognito windows. You can reenable them individually in the
-          <ph name="BEGIN_LINK">&lt;a href="$1"&gt;</ph>extensions manager<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
-        </message>
-      </if>
-
     </messages>
   </release>
 </grit>

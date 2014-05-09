@@ -15,9 +15,6 @@
         # api resources compiled into the chrome resource bundle.
         # http://crbug.com/162530
         '../chrome/chrome_resources.gyp:chrome_resources',
-        # TODO(tfarina): This dep here is for extensions/common/constants.*
-        # We should find a way to compile this module within extensions_common.
-        '../chrome/common_constants.gyp:common_constants',
         '../components/components.gyp:url_matcher',
         '../content/content.gyp:content_common',
         '../crypto/crypto.gyp:crypto',
@@ -46,6 +43,8 @@
         'common/api/sockets/sockets_manifest_permission.h',
         'common/common_manifest_handlers.cc',
         'common/common_manifest_handlers.h',
+        'common/constants.cc',
+        'common/constants.h',
         'common/crx_file.cc',
         'common/crx_file.h',
         'common/csp_validator.cc',
@@ -153,6 +152,8 @@
         'common/permissions/api_permission_set.cc',
         'common/permissions/api_permission_set.h',
         'common/permissions/base_set_operators.h',
+        'common/permissions/extensions_api_permissions.cc',
+        'common/permissions/extensions_api_permissions.h',
         'common/permissions/manifest_permission.cc',
         'common/permissions/manifest_permission.h',
         'common/permissions/manifest_permission_set.cc',
@@ -206,6 +207,9 @@
       'msvs_disabled_warnings': [ 4267, ],
       'conditions': [
         ['enable_extensions==1', {
+          'dependencies': [
+            '../device/usb/usb.gyp:device_usb',
+          ],
           'sources!': [
             'common/extension_api_stub.cc',
           ],
@@ -222,6 +226,7 @@
       'dependencies': [
         '../components/components.gyp:keyed_service_content',
         '../components/components.gyp:usb_service',
+        '../components/components.gyp:user_prefs',
         '../content/content.gyp:content_browser',
         '../skia/skia.gyp:skia',
         '../third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
@@ -253,6 +258,10 @@
         'browser/api/dns/host_resolver_wrapper.h',
         'browser/api/extensions_api_client.cc',
         'browser/api/extensions_api_client.h',
+        'browser/api/runtime/runtime_api.cc',
+        'browser/api/runtime/runtime_api.h',
+        'browser/api/runtime/runtime_api_delegate.cc',
+        'browser/api/runtime/runtime_api_delegate.h',
         'browser/api/socket/socket.cc',
         'browser/api/socket/socket.h',
         'browser/api/socket/socket_api.cc',
@@ -303,6 +312,11 @@
         'browser/browser_context_keyed_api_factory.h',
         'browser/browser_context_keyed_service_factories.cc',
         'browser/browser_context_keyed_service_factories.h',
+        'browser/content_verifier.cc',
+        'browser/content_verifier.h',
+        'browser/content_verifier_filter.h',
+        'browser/content_verify_job.cc',
+        'browser/content_verify_job.h',
         'browser/error_map.cc',
         'browser/error_map.h',
         'browser/event_listener_map.cc',
@@ -393,6 +407,8 @@
         'browser/value_store/value_store_frontend.h',
         'browser/value_store/value_store_util.cc',
         'browser/value_store/value_store_util.h',
+        'browser/verified_contents.cc',
+        'browser/verified_contents.h',
         'browser/view_type_utils.cc',
         'browser/view_type_utils.h',
       ],
@@ -405,6 +421,8 @@
           # when enable_extensions==0.
           'sources/': [
             ['exclude', '^browser/api/'],
+            ['include', '^browser/api/runtime/runtime_api.cc'],
+            ['include', '^browser/api/runtime/runtime_api_delegate.cc'],
           ],
           'sources!': [
             'browser/browser_context_keyed_service_factories.cc',
@@ -547,17 +565,21 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../testing/gtest.gyp:gtest',
+        'common/api/api.gyp:extensions_api',
         'extensions_browser',
         'extensions_common',
       ],
       'include_dirs': [
         '..',
+        '<(SHARED_INTERMEDIATE_DIR)',
       ],
       'sources': [
         'browser/test_extensions_browser_client.cc',
         'browser/test_extensions_browser_client.h',
         'browser/test_management_policy.cc',
         'browser/test_management_policy.h',
+        'browser/test_runtime_api_delegate.cc',
+        'browser/test_runtime_api_delegate.h',
         'common/extension_builder.cc',
         'common/extension_builder.h',
         'common/test_util.cc',

@@ -109,7 +109,7 @@ class ClientSideDetectionHost::ShouldClassifyUrlRequest
     }
 
     // For phishing we only classify HTTP pages.
-    if (!params_.url.SchemeIs(content::kHttpScheme)) {
+    if (!params_.url.SchemeIs(url::kHttpScheme)) {
       VLOG(1) << "Skipping phishing classification for URL: " << params_.url
               << " because it is not HTTP: "
               << params_.socket_address.host();
@@ -479,8 +479,7 @@ bool ClientSideDetectionHost::DidPageReceiveSafeBrowsingMatch() const {
   return entry->GetExtraData(kSafeBrowsingMatchKey, &value);
 }
 
-void ClientSideDetectionHost::WebContentsDestroyed(WebContents* tab) {
-  DCHECK(tab);
+void ClientSideDetectionHost::WebContentsDestroyed() {
   // Tell any pending classification request that it is being canceled.
   if (classification_request_.get()) {
     classification_request_->Cancel();

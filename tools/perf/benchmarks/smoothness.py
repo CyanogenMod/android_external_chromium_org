@@ -7,6 +7,7 @@ from measurements import smoothness
 from telemetry import test
 
 
+@test.Disabled  # crbug.com/368767
 class SmoothnessTop25(test.Test):
   """Measures rendering statistics while scrolling down the top 25 web pages.
 
@@ -15,7 +16,7 @@ class SmoothnessTop25(test.Test):
   page_set = 'page_sets/top_25.py'
 
 
-@test.Disabled('mac')
+@test.Disabled('linux', 'mac', 'win')  # crbug.com/368767
 class SmoothnessToughCanvasCases(test.Test):
   test = smoothness.Smoothness
   page_set = 'page_sets/tough_canvas_cases.py'
@@ -39,7 +40,7 @@ class SmoothnessKeyMobileSites(test.Test):
   page_set = 'page_sets/key_mobile_sites.py'
 
 
-@test.Disabled('android')  # crbug.com/350692
+@test.Disabled('android', 'mac')  # crbug.com/350692, crbug.com/368767
 class SmoothnessToughAnimationCases(test.Test):
   test = smoothness.Smoothness
   page_set = 'page_sets/tough_animation_cases.py'

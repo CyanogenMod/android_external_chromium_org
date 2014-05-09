@@ -432,6 +432,10 @@ void WebKitTestRunner::setDeviceScaleFactor(float factor) {
   SetDeviceScaleFactor(render_view(), factor);
 }
 
+void WebKitTestRunner::setDeviceColorProfile(const std::string& name) {
+  SetDeviceColorProfile(render_view(), name);
+}
+
 void WebKitTestRunner::setFocus(WebTestProxyBase* proxy, bool focus) {
   ProxyToRenderViewVisitor visitor(proxy);
   RenderView::ForEach(&visitor);
@@ -648,8 +652,15 @@ void WebKitTestRunner::CaptureDump() {
 
     if (test_config_.enable_pixel_dumping &&
         interfaces->testRunner()->shouldGeneratePixelResults()) {
-      proxy()->CapturePixelsAsync(base::Bind(
-          &WebKitTestRunner::CaptureDumpPixels, base::Unretained(this)));
+      // TODO(danakj): Remove when kForceCompositingMode is everywhere.
+      if (!render_view()->GetWebView()->isAcceleratedCompositingActive()) {
+        SkBitmap snapshot;
+        CopyCanvasToBitmap(proxy()->capturePixels(), &snapshot);
+        CaptureDumpPixels(snapshot);
+      } else {
+        proxy()->CapturePixelsAsync(base::Bind(
+            &WebKitTestRunner::CaptureDumpPixels, base::Unretained(this)));
+      }
       return;
     }
   }
@@ -657,19 +668,7 @@ void WebKitTestRunner::CaptureDump() {
   CaptureDumpComplete();
 }
 
-void WebKitTestRunner::CaptureDumpPixels(const SkBitmap& compositor_snapshot) {
-  SkBitmap snapshot = compositor_snapshot;
-
-  CommandLine* cmd = CommandLine::ForCurrentProcess();
-  if (!cmd->HasSwitch(switches::kForceCompositingMode) &&
-      !cmd->HasSwitch(switches::kEnableThreadedCompositing)) {
-    // If the readback fails because we're not in compositing mode, do a
-    // synchronous software readback here. This can go away when we have FCM
-    // always.
-    if (!snapshot.info().fWidth || !snapshot.info().fHeight)
-      CopyCanvasToBitmap(proxy()->capturePixels(), &snapshot);
-  }
-
+void WebKitTestRunner::CaptureDumpPixels(const SkBitmap& snapshot) {
   DCHECK_NE(0, snapshot.info().fWidth);
   DCHECK_NE(0, snapshot.info().fHeight);
 

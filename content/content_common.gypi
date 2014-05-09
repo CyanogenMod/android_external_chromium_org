@@ -175,7 +175,6 @@
     'common/cursors/webcursor_aurax11.cc',
     'common/cursors/webcursor_mac.mm',
     'common/cursors/webcursor_ozone.cc',
-    'common/cursors/webcursor_win.cc',
     'common/database_messages.h',
     'common/date_time_suggestion.h',
     'common/desktop_notification_messages.h',
@@ -212,6 +211,8 @@
     'common/frame_param_macros.h',
     'common/gamepad_hardware_buffer.h',
     'common/gamepad_messages.h',
+    'common/gamepad_param_traits.cc',
+    'common/gamepad_param_traits.h',
     'common/gamepad_user_gesture.cc',
     'common/gamepad_user_gesture.h',
     'common/geolocation_messages.h',
@@ -467,7 +468,6 @@
     ['use_aura==1', {
       'sources!': [
         'common/cursors/webcursor_mac.mm',
-        'common/cursors/webcursor_win.cc',
       ],
     }],
     ['OS=="ios"', {

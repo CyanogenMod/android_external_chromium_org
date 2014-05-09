@@ -61,6 +61,7 @@ class MESSAGE_CENTER_EXPORT MessageCenterView : public views::View,
   void SetSettingsVisible(bool visible);
   void OnSettingsChanged();
   bool settings_visible() const { return settings_visible_; }
+  MessageCenterTray* tray() { return tray_; }
 
   void SetIsClosing(bool is_closing);
 
@@ -104,7 +105,7 @@ class MESSAGE_CENTER_EXPORT MessageCenterView : public views::View,
   MessageCenter* message_center_;  // Weak reference.
   MessageCenterTray* tray_;  // Weak reference.
 
-  // Map notification_id->NotificationView*. It contains all NotificaitonViews
+  // Map notification_id->NotificationView*. It contains all NotificationViews
   // currently displayed in MessageCenter.
   typedef std::map<std::string, NotificationView*> NotificationViewsMap;
   NotificationViewsMap notification_views_;  // Weak.

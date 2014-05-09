@@ -140,14 +140,6 @@
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
 
-#if defined(USE_ASH)
-#include "ash/ash_switches.h"
-#include "ash/shelf/shelf.h"
-#include "ash/shelf/shelf_model.h"
-#include "ash/shell.h"
-#include "chrome/browser/ui/ash/ash_util.h"
-#endif
-
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
 #include "chrome/browser/jumplist_win.h"
@@ -254,10 +246,6 @@ class BrowserViewLayoutDelegateImpl : public BrowserViewLayoutDelegate {
   // BrowserViewLayoutDelegate overrides:
   virtual views::View* GetContentsWebView() const OVERRIDE {
     return browser_view_->contents_web_view_;
-  }
-
-  virtual views::View* GetWindowSwitcherButton() const OVERRIDE {
-    return browser_view_->window_switcher_button();
   }
 
   virtual bool DownloadShelfNeedsLayout() const OVERRIDE {
@@ -402,7 +390,6 @@ BrowserView::BrowserView()
       top_container_(NULL),
       tabstrip_(NULL),
       toolbar_(NULL),
-      window_switcher_button_(NULL),
       find_bar_host_view_(NULL),
       infobar_container_(NULL),
       contents_web_view_(NULL),
@@ -844,15 +831,17 @@ void BrowserView::ZoomChangedForActiveTab(bool can_show_bubble) {
 }
 
 gfx::Rect BrowserView::GetRestoredBounds() const {
-  return frame_->GetRestoredBounds();
+  gfx::Rect bounds;
+  ui::WindowShowState state;
+  frame_->GetWindowPlacement(&bounds, &state);
+  return bounds;
 }
 
 ui::WindowShowState BrowserView::GetRestoredState() const {
-  if (IsMaximized())
-    return ui::SHOW_STATE_MAXIMIZED;
-  if (IsMinimized())
-    return ui::SHOW_STATE_MINIMIZED;
-  return ui::SHOW_STATE_NORMAL;
+  gfx::Rect bounds;
+  ui::WindowShowState state;
+  frame_->GetWindowPlacement(&bounds, &state);
+  return state;
 }
 
 gfx::Rect BrowserView::GetBounds() const {
@@ -942,12 +931,6 @@ void BrowserView::RestoreFocus() {
   WebContents* selected_web_contents = GetActiveWebContents();
   if (selected_web_contents)
     selected_web_contents->RestoreFocus();
-}
-
-void BrowserView::SetWindowSwitcherButton(views::Button* button) {
-  if (window_switcher_button_)
-    RemoveChildView(window_switcher_button_);
-  window_switcher_button_ = button;
 }
 
 void BrowserView::FullscreenStateChanged() {
@@ -1608,7 +1591,8 @@ void BrowserView::SaveWindowPlacement(const gfx::Rect& bounds,
   // If IsFullscreen() is true, we've just changed into fullscreen mode, and
   // we're catching the going-into-fullscreen sizing and positioning calls,
   // which we want to ignore.
-  if (!IsFullscreen() && chrome::ShouldSaveWindowPlacement(browser_.get())) {
+  if (!IsFullscreen() && frame_->ShouldSaveWindowPlacement() &&
+      chrome::ShouldSaveWindowPlacement(browser_.get())) {
     WidgetDelegate::SaveWindowPlacement(bounds, show_state);
     chrome::SaveWindowPlacement(browser_.get(), bounds, show_state);
   }
@@ -1966,9 +1950,6 @@ void BrowserView::InitViews() {
   // bar widget.
   find_bar_host_view_ = new View();
   AddChildView(find_bar_host_view_);
-
-  if (window_switcher_button_)
-    AddChildView(window_switcher_button_);
 
   immersive_mode_controller_->Init(this);
 

@@ -155,8 +155,10 @@ class CONTENT_EXPORT RenderViewHostImpl
   virtual RenderFrameHost* GetMainFrame() OVERRIDE;
   virtual void AllowBindings(int binding_flags) OVERRIDE;
   virtual void ClearFocusedElement() OVERRIDE;
+  virtual bool IsFocusedElementEditable() OVERRIDE;
   virtual void ClosePage() OVERRIDE;
   virtual void CopyImageAt(int x, int y) OVERRIDE;
+  virtual void SaveImageAt(int x, int y) OVERRIDE;
   virtual void DirectoryEnumerationFinished(
       int request_id,
       const std::vector<base::FilePath>& files) OVERRIDE;
@@ -394,9 +396,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   void DidSelectPopupMenuItems(const std::vector<int>& selected_indices);
   void DidCancelPopupMenu();
 #endif
-
-  // User rotated the screen. Calls the "onorientationchange" Javascript hook.
-  void SendOrientationChangeEvent(int orientation);
 
   int main_frame_routing_id() const {
     return main_frame_routing_id_;
@@ -644,6 +643,9 @@ class CONTENT_EXPORT RenderViewHostImpl
   base::Closure pending_shutdown_on_swap_out_;
 
   base::WeakPtrFactory<RenderViewHostImpl> weak_factory_;
+
+  // True if the current focused element is editable.
+  bool is_focused_element_editable_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewHostImpl);
 };

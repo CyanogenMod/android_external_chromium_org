@@ -73,8 +73,6 @@
         'base/webui/web_ui_util_unittest.cc',
         'gfx/canvas_unittest.cc',
         'gfx/canvas_unittest_mac.mm',
-        'gfx/codec/jpeg_codec_unittest.cc',
-        'gfx/color_analysis_unittest.cc',
         'gfx/font_list_unittest.cc',
         'gfx/platform_font_mac_unittest.mm',
         'gfx/render_text_unittest.cc',
@@ -156,8 +154,7 @@
             'gfx/platform_font_pango_unittest.cc',
           ],
           'conditions': [
-            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-            ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
+            ['use_allocator!="none"', {
                'dependencies': [
                  '../base/allocator/allocator.gyp:allocator',
                ],

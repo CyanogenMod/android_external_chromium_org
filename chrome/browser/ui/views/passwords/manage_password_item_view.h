@@ -48,7 +48,6 @@ class ManagePasswordItemView : public views::View {
                                const ui::Event& event) OVERRIDE;
 
     views::ImageButton* delete_button_;
-
     ManagePasswordItemView* parent_;
   };
 
@@ -65,7 +64,6 @@ class ManagePasswordItemView : public views::View {
     virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
 
     views::Link* undo_link_;
-
     ManagePasswordItemView* parent_;
   };
 
@@ -77,15 +75,7 @@ class ManagePasswordItemView : public views::View {
       Position position);
 
  private:
-  enum ColumnSets { TWO_COLUMN_SET = 0, THREE_COLUMN_SET };
-
   virtual ~ManagePasswordItemView();
-
-  views::Label* GenerateUsernameLabel() const;
-  views::Label* GeneratePasswordLabel() const;
-
-  // Build a two-label column set.
-  void BuildColumnSet(views::GridLayout*, int column_set_id);
 
   void NotifyClickedDelete();
   void NotifyClickedUndo();
@@ -93,7 +83,7 @@ class ManagePasswordItemView : public views::View {
   // Changes the views according to the state of |delete_password_|.
   void Refresh();
 
-  ManagePasswordsBubbleModel* manage_passwords_bubble_model_;
+  ManagePasswordsBubbleModel* model_;
   autofill::PasswordForm password_form_;
   bool delete_password_;
 

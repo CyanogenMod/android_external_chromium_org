@@ -7336,6 +7336,16 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>Events in Google Now component extension.</summary>
 </histogram>
 
+<histogram name="GoogleNow.MessageCenter.Displayed.NotificationsVisible"
+    units="count">
+  <owner>robliao@chromium.org</owner>
+  <owner>skare@chromium.org</owner>
+  <summary>
+    Count of the number of Google Now notifications visible when the message
+    center/notification center is shown.
+  </summary>
+</histogram>
+
 <histogram name="GoogleUpdate.EffectivePolicy" enum="UpdatePolicy">
   <owner>gab@chromium.org</owner>
   <summary>
@@ -10686,6 +10696,18 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>The scheme of the URL for each main-frame navigation.</summary>
 </histogram>
 
+<histogram name="NCN.NetworkOperatorMCCMNC_ConnectionChange">
+  <owner>bolian@chromium.org</owner>
+  <owner>bengr@google.com</owner>
+  <owner>marq@google.com</owner>
+  <summary>
+    The MCC (mobile country code) and MNC (mobile network code) of the network
+    operator when the network connection is changed to a mobile network. Value
+    zero means the connection is changed to a non-mobile network or the operator
+    code is unknown.
+  </summary>
+</histogram>
+
 <histogram name="Net.AlternateProtocolBrokenLocation"
     enum="BrokenAlternateProtocolLocation">
   <owner>rch@chromium.org</owner>
@@ -12995,6 +13017,18 @@ Therefore, the affected-histogram name has to have at least one dot in it.
     The QUIC error code which resulted in the connection being closed by the
     server.
   </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.ConnectionTypeFromPeer" enum="AddressFamily">
+  <owner>rch@chromium.org</owner>
+  <summary>
+    The IP Address family of this connection, as reported by the server.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.ConnectionTypeFromSelf" enum="AddressFamily">
+  <owner>rch@chromium.org</owner>
+  <summary>The IP Address family of this connection, as seen locally.</summary>
 </histogram>
 
 <histogram name="Net.QuicSession.CreationError" enum="QuicSessionErrorCodes">
@@ -20915,14 +20949,19 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Rappor.DiscardReason" enum="RapporDiscardReason">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>holte@chromium.org</owner>
   <summary>
     For each Rappor log that is discarded, the reason that it was discarded.
   </summary>
 </histogram>
 
+<histogram name="Rappor.FailedUploadErrorCode" enum="NetErrorCodes">
+  <owner>holte@chromium.org</owner>
+  <summary>Net error codes for failed Rappor uploads.</summary>
+</histogram>
+
 <histogram name="Rappor.UploadResponseCode" enum="HttpResponseCode">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>holte@chromium.org</owner>
   <summary>
     For each upload to the Rappor server, log the response received from the
     server.
@@ -22424,6 +22463,18 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 <histogram name="SB2.UpdateUrls">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>The number of chunk URLs in an update response.</summary>
+</histogram>
+
+<histogram name="SB2.VolunteerPrefixesRemoved">
+  <owner>shess@chromium.org</owner>
+  <summary>
+    Older versions of the safe-browsing code incorrectly added additional
+    SBPrefix items when receiving full hashes.  This caused errors when
+    calculating when to send gethash requests to the server.  An additional pass
+    over the data has been added to remove the excess prefixes.  This histogram
+    tracks progress of that code for purposes of informing a decision on when to
+    remove the additional pass.  See http://crbug.com/361248 .
+  </summary>
 </histogram>
 
 <histogram name="SBClientDownload.CheckDownloadStats"
@@ -30413,6 +30464,24 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="WebRTC.DataChannelMaxRetransmits">
+  <owner>perkj@chromium.org</owner>
+  <summary>
+    The maximum number of retransmissions that are attempted in unreliable mode.
+    It is set to the value used in the configuration when a RTCDataChannel is
+    created.
+  </summary>
+</histogram>
+
+<histogram name="WebRTC.DataChannelMaxRetransmitTime" units="milliseconds">
+  <owner>perkj@chromium.org</owner>
+  <summary>
+    The length of the time window during which transmissions and retransmissions
+    may occur in unreliable mode. It is set to the value used in the
+    configuration when a RTCDataChannel is created.
+  </summary>
+</histogram>
+
 <histogram name="WebRTC.DesktopCaptureCounters" enum="DesktopCaptureCounters">
   <owner>jiayl@chromium.org</owner>
   <summary>
@@ -30655,6 +30724,12 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="2" label="Maximized"/>
   <int value="3" label="Fullscreen"/>
   <int value="4" label="Snapped"/>
+</enum>
+
+<enum name="AddressFamily" type="int">
+  <int value="0" label="Unspecified"/>
+  <int value="1" label="IPv4"/>
+  <int value="2" label="IPv6"/>
 </enum>
 
 <enum name="AlternateProtocolUsage" type="int">
@@ -32945,6 +33020,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
       label="Enable the use of relay servers by the remote access host"/>
   <int value="264"
       label="Restrict the UDP port range used by the remote access host"/>
+  <int value="265" label="Enables the old web-based signin flows"/>
 </enum>
 
 <enum name="EnterprisePolicyInvalidations" type="int">
@@ -33937,6 +34013,16 @@ Therefore, the affected-histogram name has to have at least one dot in it.
       label="FILESYSTEMPROVIDERINTERNAL_GETMETADATAREQUESTEDERROR"/>
   <int value="752" label="BROWSER_OPENTAB"/>
   <int value="753" label="MANAGEMENT_CREATEAPPSHORTCUT"/>
+  <int value="754" label="WEBVIEW_SHOWCONTEXTMENU"/>
+  <int value="755" label="WEBRTCLOGGINGPRIVATE_STARTRTPDUMP"/>
+  <int value="756" label="WEBRTCLOGGINGPRIVATE_STOPRTPDUMP"/>
+  <int value="757" label="AUTOMATIONINTERNAL_ENABLEDESKTOP"/>
+  <int value="758" label="HOTWORDPRIVATE_SETHOTWORDSESSIONSTATE"/>
+  <int value="759" label="HOTWORDPRIVATE_NOTIFYHOTWORDRECOGNITION"/>
+  <int value="760"
+      label="FILESYSTEMPROVIDERINTERNAL_READDIRECTORYREQUESTEDSUCCESS"/>
+  <int value="761"
+      label="FILESYSTEMPROVIDERINTERNAL_READDIRECTORYREQUESTEDERROR"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -34231,7 +34317,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </enum>
 
 <enum name="FeatureObserver" type="int">
-<!-- Generated from ../../../third_party/WebKit/Source/core/frame/UseCounter.h -->
+<!-- Generated from ..\..\..\third_party\WebKit\Source\core\frame\UseCounter.h -->
 
   <int value="0" label="PageDestruction"/>
   <int value="1" label="LegacyNotifications"/>
@@ -34574,6 +34660,82 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="338" label="CanvasRenderingContext2DSetFillColor"/>
   <int value="339" label="CanvasRenderingContext2DDrawImageFromRect"/>
   <int value="340" label="CanvasRenderingContext2DSetShadow"/>
+  <int value="341" label="PrefixedPerformanceClearResourceTimings"/>
+  <int value="342" label="PrefixedPerformanceSetResourceTimingBufferSize"/>
+  <int value="343" label="EventSrcElement"/>
+  <int value="344" label="EventCancelBubble"/>
+  <int value="345" label="EventPath"/>
+  <int value="346" label="EventClipboardData"/>
+  <int value="347" label="NodeIteratorDetach"/>
+  <int value="348" label="AttrNodeValue"/>
+  <int value="349" label="AttrTextContent"/>
+  <int value="350" label="EventGetReturnValueTrue"/>
+  <int value="351" label="EventGetReturnValueFalse"/>
+  <int value="352" label="EventSetReturnValueTrue"/>
+  <int value="353" label="EventSetReturnValueFalse"/>
+  <int value="354" label="NodeIteratorExpandEntityReferences"/>
+  <int value="355" label="TreeWalkerExpandEntityReferences"/>
+  <int value="356" label="WindowOffscreenBuffering"/>
+  <int value="357" label="WindowDefaultStatus"/>
+  <int value="358" label="WindowDefaultstatus"/>
+  <int value="359" label="PrefixedConvertPointFromPageToNode"/>
+  <int value="360" label="PrefixedConvertPointFromNodeToPage"/>
+  <int value="361" label="PrefixedTransitionEventConstructor"/>
+  <int value="362" label="PrefixedMutationObserverConstructor"/>
+  <int value="363" label="PrefixedIDBCursorConstructor"/>
+  <int value="364" label="PrefixedIDBDatabaseConstructor"/>
+  <int value="365" label="PrefixedIDBFactoryConstructor"/>
+  <int value="366" label="PrefixedIDBIndexConstructor"/>
+  <int value="367" label="PrefixedIDBKeyRangeConstructor"/>
+  <int value="368" label="PrefixedIDBObjectStoreConstructor"/>
+  <int value="369" label="PrefixedIDBRequestConstructor"/>
+  <int value="370" label="PrefixedIDBTransactionConstructor"/>
+  <int value="371" label="NotificationPermission"/>
+  <int value="372" label="RangeDetach"/>
+  <int value="373" label="DocumentImportNodeOptionalArgument"/>
+  <int value="374" label="HTMLTableElementVspace"/>
+  <int value="375" label="HTMLTableElementHspace"/>
+  <int value="376" label="PrefixedDocumentExitPointerLock"/>
+  <int value="377" label="PrefixedDocumentPointerLockElement"/>
+  <int value="378" label="PrefixedTouchRadiusX"/>
+  <int value="379" label="PrefixedTouchRadiusY"/>
+  <int value="380" label="PrefixedTouchRotationAngle"/>
+  <int value="381" label="PrefixedTouchForce"/>
+  <int value="382" label="PrefixedMouseEventMovementX"/>
+  <int value="383" label="PrefixedMouseEventMovementY"/>
+  <int value="384" label="PrefixedWheelEventDirectionInvertedFromDevice"/>
+  <int value="385" label="PrefixedWheelEventInit"/>
+  <int value="386" label="PrefixedFileRelativePath"/>
+  <int value="387" label="DocumentCaretRangeFromPoint"/>
+  <int value="388" label="DocumentGetCSSCanvasContext"/>
+  <int value="389" label="ElementScrollIntoViewIfNeeded"/>
+  <int value="390" label="ElementScrollByLines"/>
+  <int value="391" label="ElementScrollByPages"/>
+  <int value="392" label="RangeCompareNode"/>
+  <int value="393" label="RangeExpand"/>
+  <int value="394" label="HTMLFrameElementWidth"/>
+  <int value="395" label="HTMLFrameElementHeight"/>
+  <int value="396" label="HTMLImageElementX"/>
+  <int value="397" label="HTMLImageElementY"/>
+  <int value="398" label="HTMLOptionsCollectionRemoveElement"/>
+  <int value="399" label="HTMLPreElementWrap"/>
+  <int value="400" label="SelectionBaseNode"/>
+  <int value="401" label="SelectionBaseOffset"/>
+  <int value="402" label="SelectionExtentNode"/>
+  <int value="403" label="SelectionExtentOffset"/>
+  <int value="404" label="SelectionType"/>
+  <int value="405" label="SelectionModify"/>
+  <int value="406" label="SelectionSetBaseAndExtent"/>
+  <int value="407" label="SelectionEmpty"/>
+  <int value="408" label="SVGFEMorphologyElementSetRadius"/>
+  <int value="409" label="VTTCue"/>
+  <int value="410" label="VTTCueRender"/>
+  <int value="411" label="VTTCueRenderVertical"/>
+  <int value="412" label="VTTCueRenderSnapToLinesFalse"/>
+  <int value="413" label="VTTCueRenderLineNotAuto"/>
+  <int value="414" label="VTTCueRenderPositionNot50"/>
+  <int value="415" label="VTTCueRenderSizeNot100"/>
+  <int value="416" label="VTTCueRenderAlignNotMiddle"/>
 </enum>
 
 <enum name="FFmpegCodecs" type="int">
@@ -38008,7 +38170,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 <enum name="NotificationActionType" type="int">
   <int value="0" label="Unknown"/>
   <int value="1" label="Notification added"/>
-  <int value="2" label="Notificaiton updated"/>
+  <int value="2" label="Notification updated"/>
   <int value="3" label="Notification clicked"/>
   <int value="4" label="Notification button clicked"/>
   <int value="5" label="Notification displayed"/>

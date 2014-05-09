@@ -137,9 +137,6 @@ gfx::Rect OpaqueBrowserFrameViewLayout::GetBoundsForTabStrip(
   available_width -= trailing_button_start_;
   available_width -= leading_button_start_;
 
-  if (delegate_->GetAdditionalReservedSpaceInTabStrip())
-    available_width -= delegate_->GetAdditionalReservedSpaceInTabStrip();
-
   const int caption_spacing = NewTabCaptionSpacing();
   const int tabstrip_width = available_width - caption_spacing;
   gfx::Rect bounds(leading_button_start_, GetTabStripInsetsTop(false),
@@ -391,6 +388,9 @@ void OpaqueBrowserFrameViewLayout::LayoutNewStyleAvatar(views::View* host) {
   int button_x = host->width() - trailing_button_start_ -
       button_size_with_offset;
   int button_y = CaptionButtonY(false);
+  // If the window is maximized, the button is 1 pixel too short. Determined
+  // via visual inspection.
+  int extra_height = IsTitleBarCondensed() ? 1 : 0;
 
   trailing_button_start_ += button_size_with_offset;
   minimum_size_for_buttons_ += button_size_with_offset;
@@ -399,7 +399,7 @@ void OpaqueBrowserFrameViewLayout::LayoutNewStyleAvatar(views::View* host) {
       button_x,
       button_y,
       label_size.width(),
-      button_y + kCaptionButtonHeightWithPadding);
+      button_y + kCaptionButtonHeightWithPadding + extra_height);
 }
 
 void OpaqueBrowserFrameViewLayout::LayoutAvatar(views::View* host) {

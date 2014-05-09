@@ -113,6 +113,14 @@ class SYNC_EXPORT_PRIVATE SyncRollbackManagerBase :
       const syncable::ImmutableWriteTransactionInfo& write_transaction_info,
       ModelTypeSet models_with_changes) OVERRIDE;
 
+  virtual void RegisterDirectoryTypeDebugInfoObserver(
+      syncer::TypeDebugInfoObserver* observer) OVERRIDE;
+  virtual void UnregisterDirectoryTypeDebugInfoObserver(
+      syncer::TypeDebugInfoObserver* observer) OVERRIDE;
+  virtual bool HasDirectoryTypeDebugInfoObserver(
+      syncer::TypeDebugInfoObserver* observer) OVERRIDE;
+  virtual void RequestEmitDebugInfo() OVERRIDE;
+
  private:
   void NotifyInitializationSuccess();
   void NotifyInitializationFailure();
@@ -131,6 +139,8 @@ class SYNC_EXPORT_PRIVATE SyncRollbackManagerBase :
   ReportUnrecoverableErrorFunction report_unrecoverable_error_function_;
 
   base::WeakPtrFactory<SyncRollbackManagerBase> weak_ptr_factory_;
+
+  scoped_ptr<SyncEncryptionHandler> dummy_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncRollbackManagerBase);
 };

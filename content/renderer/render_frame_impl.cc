@@ -25,6 +25,7 @@
 #include "content/child/service_worker/service_worker_network_provider.h"
 #include "content/child/service_worker/web_service_worker_provider_impl.h"
 #include "content/child/web_socket_stream_handle_impl.h"
+#include "content/child/webmessageportchannel_impl.h"
 #include "content/common/clipboard_messages.h"
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
@@ -222,6 +223,25 @@ NOINLINE static void CrashIntentionally() {
   *zero = 0;
 }
 
+#if defined(SYZYASAN)
+NOINLINE static void CorruptMemoryBlock() {
+  // NOTE(sebmarchand): We intentionally corrupt a memory block here in order to
+  //     trigger an Address Sanitizer (ASAN) error report.
+  static const int kArraySize = 5;
+  int* array = new int[kArraySize];
+  // Encapsulate the invalid memory access into a try-catch statement to prevent
+  // this function from being instrumented. This way the underflow won't be
+  // detected but the corruption will (as the allocator will still be hooked).
+  __try {
+    int dummy = array[-1]--;
+    // Make sure the assignments to the dummy value aren't optimized away.
+    base::debug::Alias(&array);
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+  }
+  delete[] array;
+}
+#endif
+
 #if defined(ADDRESS_SANITIZER) || defined(SYZYASAN)
 NOINLINE static void MaybeTriggerAsanError(const GURL& url) {
   // NOTE(rogerm): We intentionally perform an invalid heap access here in
@@ -230,6 +250,9 @@ NOINLINE static void MaybeTriggerAsanError(const GURL& url) {
   static const char kHeapOverflow[] = "/heap-overflow";
   static const char kHeapUnderflow[] = "/heap-underflow";
   static const char kUseAfterFree[] = "/use-after-free";
+#if defined(SYZYASAN)
+  static const char kCorruptHeapBlock[] = "/corrupt-heap-block";
+#endif
   static const int kArraySize = 5;
 
   if (!url.DomainIs(kCrashDomain, sizeof(kCrashDomain) - 1))
@@ -249,6 +272,10 @@ NOINLINE static void MaybeTriggerAsanError(const GURL& url) {
     int* dangling = array.get();
     array.reset();
     dummy = dangling[kArraySize / 2];
+#if defined(SYZYASAN)
+  } else if (crash_type == kCorruptHeapBlock) {
+    CorruptMemoryBlock();
+#endif
   }
 
   // Make sure the assignments to the dummy value aren't optimized away.
@@ -295,7 +322,7 @@ static bool IsNonLocalTopLevelNavigation(const GURL& url,
   // 2. The origin of the url and the opener is the same in which case the
   //    opener relationship is maintained.
   // 3. Reloads/form submits/back forward navigations
-  if (!url.SchemeIs(kHttpScheme) && !url.SchemeIs(kHttpsScheme))
+  if (!url.SchemeIs(url::kHttpScheme) && !url.SchemeIs(url::kHttpsScheme))
     return false;
 
   if (type != blink::WebNavigationTypeReload &&
@@ -1377,14 +1404,14 @@ blink::WebServiceWorkerProvider* RenderFrameImpl::createServiceWorkerProvider(
   DCHECK(!frame_ || frame_ == frame);
   // At this point we should have non-null data source.
   DCHECK(frame->dataSource());
+  if (!ChildThread::current())
+    return NULL;  // May be null in some tests.
   ServiceWorkerNetworkProvider* provider =
       ServiceWorkerNetworkProvider::FromDocumentState(
           DocumentState::FromDataSource(frame->dataSource()));
-  int provider_id = provider ?
-      provider->provider_id() :
-      kInvalidServiceWorkerProviderId;
   return new WebServiceWorkerProviderImpl(
-      ChildThread::current()->thread_safe_sender(), provider_id);
+      ChildThread::current()->thread_safe_sender(),
+      provider ? provider->context() : NULL);
 }
 
 void RenderFrameImpl::didAccessInitialDocument(blink::WebLocalFrame* frame) {
@@ -1592,7 +1619,11 @@ void RenderFrameImpl::loadURLExternally(
   if (policy == blink::WebNavigationPolicyDownload) {
     render_view_->Send(new ViewHostMsg_DownloadUrl(render_view_->GetRoutingID(),
                                                    request.url(), referrer,
-                                                   suggested_name));
+                                                   suggested_name, false));
+  } else if (policy == blink::WebNavigationPolicyDownloadTo) {
+    render_view_->Send(new ViewHostMsg_DownloadUrl(render_view_->GetRoutingID(),
+                                                   request.url(), referrer,
+                                                   suggested_name, true));
   } else {
     OpenURL(frame, request.url(), referrer, policy);
   }
@@ -2680,15 +2711,48 @@ blink::WebMIDIClient* RenderFrameImpl::webMIDIClient() {
 }
 
 bool RenderFrameImpl::willCheckAndDispatchMessageEvent(
-    blink::WebLocalFrame* sourceFrame,
-    blink::WebFrame* targetFrame,
-    blink::WebSecurityOrigin targetOrigin,
+    blink::WebLocalFrame* source_frame,
+    blink::WebFrame* target_frame,
+    blink::WebSecurityOrigin target_origin,
     blink::WebDOMMessageEvent event) {
-  DCHECK(!frame_ || frame_ == targetFrame);
-  // TODO(nasko): Move implementation here. Needed state:
-  // * is_swapped_out_
-  return render_view_->willCheckAndDispatchMessageEvent(
-      sourceFrame, targetFrame, targetOrigin, event);
+  DCHECK(!frame_ || frame_ == target_frame);
+
+  if (!render_view_->is_swapped_out_)
+    return false;
+
+  ViewMsg_PostMessage_Params params;
+  params.data = event.data().toString();
+  params.source_origin = event.origin();
+  if (!target_origin.isNull())
+    params.target_origin = target_origin.toString();
+
+  blink::WebMessagePortChannelArray channels = event.releaseChannels();
+  if (!channels.isEmpty()) {
+    std::vector<int> message_port_ids(channels.size());
+     // Extract the port IDs from the channel array.
+     for (size_t i = 0; i < channels.size(); ++i) {
+       WebMessagePortChannelImpl* webchannel =
+           static_cast<WebMessagePortChannelImpl*>(channels[i]);
+       message_port_ids[i] = webchannel->message_port_id();
+       webchannel->QueueMessages();
+       DCHECK_NE(message_port_ids[i], MSG_ROUTING_NONE);
+     }
+     params.message_port_ids = message_port_ids;
+  }
+
+  // Include the routing ID for the source frame (if one exists), which the
+  // browser process will translate into the routing ID for the equivalent
+  // frame in the target process.
+  params.source_routing_id = MSG_ROUTING_NONE;
+  if (source_frame) {
+    RenderViewImpl* source_view =
+        RenderViewImpl::FromWebView(source_frame->view());
+    if (source_view)
+      params.source_routing_id = source_view->routing_id();
+  }
+
+  Send(new ViewHostMsg_RouteMessageEvent(render_view_->routing_id_, params));
+  return true;
 }
 
 blink::WebString RenderFrameImpl::userAgentOverride(blink::WebLocalFrame* frame,

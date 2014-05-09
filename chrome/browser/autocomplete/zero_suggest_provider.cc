@@ -32,6 +32,7 @@
 #include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/user_metrics.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
@@ -80,6 +81,15 @@ ZeroSuggestProvider* ZeroSuggestProvider::Create(
   return new ZeroSuggestProvider(listener, profile);
 }
 
+// static
+void ZeroSuggestProvider::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterStringPref(
+      prefs::kZeroSuggestCachedResults,
+      std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+}
+
 void ZeroSuggestProvider::Start(const AutocompleteInput& input,
                                 bool minimal_changes) {
   matches_.clear();
@@ -89,6 +99,7 @@ void ZeroSuggestProvider::Start(const AutocompleteInput& input,
   Stop(true);
   field_trial_triggered_ = false;
   field_trial_triggered_in_session_ = false;
+  results_from_cache_ = false;
   permanent_text_ = input.text();
   current_query_ = input.current_url().spec();
   current_page_classification_ = input.current_page_classification();
@@ -123,7 +134,18 @@ void ZeroSuggestProvider::Start(const AutocompleteInput& input,
   // TODO(jered): Consider adding locally-sourced zero-suggestions here too.
   // These may be useful on the NTP or more relevant to the user than server
   // suggestions, if based on local browsing history.
+  MaybeUseCachedSuggestions();
   Run(suggest_url);
+}
+
+void ZeroSuggestProvider::DeleteMatch(const AutocompleteMatch& match) {
+  if (OmniboxFieldTrial::InZeroSuggestPersonalizedFieldTrial()) {
+    // Remove the deleted match from the cache, so it is not shown to the user
+    // again. Since we cannot remove just one result, blow away the cache.
+    profile_->GetPrefs()->SetString(prefs::kZeroSuggestCachedResults,
+                                    std::string());
+  }
+  BaseSearchProvider::DeleteMatch(match);
 }
 
 void ZeroSuggestProvider::ResetSession() {
@@ -133,16 +155,47 @@ void ZeroSuggestProvider::ResetSession() {
   field_trial_triggered_ = false;
 }
 
+void ZeroSuggestProvider::ModifyProviderInfo(
+    metrics::OmniboxEventProto_ProviderInfo* provider_info) const {
+  if (!results_.suggest_results.empty() || !results_.navigation_results.empty())
+    provider_info->set_times_returned_results_in_session(1);
+}
+
 ZeroSuggestProvider::ZeroSuggestProvider(
   AutocompleteProviderListener* listener,
   Profile* profile)
     : BaseSearchProvider(listener, profile,
                          AutocompleteProvider::TYPE_ZERO_SUGGEST),
       template_url_service_(TemplateURLServiceFactory::GetForProfile(profile)),
+      results_from_cache_(false),
       weak_ptr_factory_(this) {
 }
 
 ZeroSuggestProvider::~ZeroSuggestProvider() {
+}
+
+bool ZeroSuggestProvider::StoreSuggestionResponse(
+    const std::string& json_data,
+    const base::Value& parsed_data) {
+  if (!OmniboxFieldTrial::InZeroSuggestPersonalizedFieldTrial() ||
+      json_data.empty())
+    return false;
+  profile_->GetPrefs()->SetString(prefs::kZeroSuggestCachedResults, json_data);
+
+  // If we received an empty result list, we should update the display, as it
+  // may be showing cached results that should not be shown.
+  const base::ListValue* root_list = NULL;
+  const base::ListValue* results_list = NULL;
+  if (parsed_data.GetAsList(&root_list) &&
+      root_list->GetList(1, &results_list) &&
+      results_list->empty())
+    return false;
+
+  // We are finished with the request and want to bail early.
+  if (results_from_cache_)
+    done_ = true;
+
+  return results_from_cache_;
 }
 
 const TemplateURL* ZeroSuggestProvider::GetTemplateURL(bool is_keyword) const {
@@ -227,7 +280,7 @@ void ZeroSuggestProvider::AddSuggestResultsToMap(
 AutocompleteMatch ZeroSuggestProvider::NavigationToMatch(
     const NavigationResult& navigation) {
   AutocompleteMatch match(this, navigation.relevance(), false,
-                          AutocompleteMatchType::NAVSUGGEST);
+                          navigation.type());
   match.destination_url = navigation.url();
 
   // Zero suggest results should always omit protocols and never appear bold.
@@ -265,7 +318,6 @@ void ZeroSuggestProvider::Run(const GURL& suggest_url) {
   chrome_variations::VariationsHttpHeaderProvider::GetInstance()->AppendHeaders(
       fetcher_->GetOriginalURL(), profile_->IsOffTheRecord(), false, &headers);
   fetcher_->SetExtraRequestHeaders(headers.ToString());
-
   fetcher_->Start();
 
   if (OmniboxFieldTrial::InZeroSuggestMostVisitedFieldTrial()) {
@@ -302,7 +354,7 @@ void ZeroSuggestProvider::ConvertResultsToAutocompleteMatches() {
   const int num_nav_results = results_.navigation_results.size();
   const int num_results = num_query_results + num_nav_results;
   UMA_HISTOGRAM_COUNTS("ZeroSuggest.QueryResults", num_query_results);
-  UMA_HISTOGRAM_COUNTS("ZeroSuggest.URLResults",  num_nav_results);
+  UMA_HISTOGRAM_COUNTS("ZeroSuggest.URLResults", num_nav_results);
   UMA_HISTOGRAM_COUNTS("ZeroSuggest.AllResults", num_results);
 
   // Show Most Visited results after ZeroSuggest response is received.
@@ -322,7 +374,8 @@ void ZeroSuggestProvider::ConvertResultsToAutocompleteMatches() {
         profile_->GetPrefs()->GetString(prefs::kAcceptLanguages));
     for (size_t i = 0; i < most_visited_urls_.size(); i++) {
       const history::MostVisitedURL& url = most_visited_urls_[i];
-      NavigationResult nav(*this, url.url, url.title, false, relevance, true,
+      NavigationResult nav(*this, url.url, AutocompleteMatchType::NAVSUGGEST,
+          url.title, std::string(), false, relevance, true,
           current_query_string16, languages);
       matches_.push_back(NavigationToMatch(nav));
       --relevance;
@@ -385,9 +438,24 @@ bool ZeroSuggestProvider::CanShowZeroSuggestWithoutSendingURL(
   // with other schemes (e.g. chrome://). That may require improvements to
   // the formatting of the verbatim result returned by MatchForCurrentURL().
   if (!current_page_url.is_valid() ||
-      ((current_page_url.scheme() != content::kHttpScheme) &&
-      (current_page_url.scheme() != content::kHttpsScheme)))
+      ((current_page_url.scheme() != url::kHttpScheme) &&
+      (current_page_url.scheme() != url::kHttpsScheme)))
     return false;
 
   return true;
+}
+
+void ZeroSuggestProvider::MaybeUseCachedSuggestions() {
+  if (!OmniboxFieldTrial::InZeroSuggestPersonalizedFieldTrial())
+    return;
+
+  std::string json_data = profile_->GetPrefs()->GetString(
+      prefs::kZeroSuggestCachedResults);
+  if (!json_data.empty()) {
+    scoped_ptr<base::Value> data(DeserializeJsonData(json_data));
+    if (data && ParseSuggestResults(*data.get(), false, &results_)) {
+      ConvertResultsToAutocompleteMatches();
+      results_from_cache_ = !matches_.empty();
+    }
+  }
 }

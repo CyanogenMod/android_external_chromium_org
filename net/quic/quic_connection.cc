@@ -23,6 +23,7 @@
 #include "net/quic/quic_bandwidth.h"
 #include "net/quic/quic_config.h"
 #include "net/quic/quic_flags.h"
+#include "net/quic/quic_flow_controller.h"
 #include "net/quic/quic_utils.h"
 
 using base::hash_map;
@@ -243,6 +244,12 @@ QuicConnection::QuicConnection(QuicConnectionId connection_id,
                 << kDefaultFlowControlSendWindow << ").";
     max_flow_control_receive_window_bytes_ = kDefaultFlowControlSendWindow;
   }
+
+  flow_controller_.reset(new QuicFlowController(
+      supported_versions.front(), 0, is_server_,
+      kDefaultFlowControlSendWindow, max_flow_control_receive_window_bytes_,
+      max_flow_control_receive_window_bytes_));
+
   if (!is_server_) {
     // Pacing will be enabled if the client negotiates it.
     sent_packet_manager_.MaybeEnablePacing();
@@ -364,6 +371,10 @@ bool QuicConnection::OnProtocolVersionMismatch(QuicVersion received_version) {
   // Store the new version.
   framer_.set_version(received_version);
 
+  if (received_version < QUIC_VERSION_19) {
+    flow_controller_->Disable();
+  }
+
   // TODO(satyamshekhar): Store the sequence number of this packet and close the
   // connection if we ever received a packet with incorrect version and whose
   // sequence number is greater.
@@ -479,6 +490,9 @@ bool QuicConnection::OnPacketHeader(const QuicPacketHeader& header) {
         DCHECK_EQ(header.public_header.versions[0], version());
         version_negotiation_state_ = NEGOTIATED_VERSION;
         visitor_->OnSuccessfulVersionNegotiation(version());
+        if (version() < QUIC_VERSION_19) {
+          flow_controller_->Disable();
+        }
       }
     } else {
       DCHECK(!header.public_header.version_flag);
@@ -487,6 +501,9 @@ bool QuicConnection::OnPacketHeader(const QuicPacketHeader& header) {
       packet_creator_.StopSendingVersion();
       version_negotiation_state_ = NEGOTIATED_VERSION;
       visitor_->OnSuccessfulVersionNegotiation(version());
+      if (version() < QUIC_VERSION_19) {
+        flow_controller_->Disable();
+      }
     }
   }
 
@@ -504,7 +521,7 @@ void QuicConnection::OnFecProtectedPayload(StringPiece payload) {
   DCHECK_NE(0u, last_header_.fec_group);
   QuicFecGroup* group = GetFecGroup();
   if (group != NULL) {
-    group->Update(last_header_, payload);
+    group->Update(last_decrypted_packet_level_, last_header_, payload);
   }
 }
 
@@ -714,7 +731,8 @@ void QuicConnection::OnFecData(const QuicFecData& fec) {
   DCHECK_NE(0u, last_header_.fec_group);
   QuicFecGroup* group = GetFecGroup();
   if (group != NULL) {
-    group->UpdateFec(last_header_.packet_sequence_number, fec);
+    group->UpdateFec(last_decrypted_packet_level_,
+                     last_header_.packet_sequence_number, fec);
   }
 }
 
@@ -1251,8 +1269,8 @@ void QuicConnection::RetransmitUnackedPackets(
   WriteIfNotBlocked();
 }
 
-void QuicConnection::NeuterUnencryptedPackets() {
-  sent_packet_manager_.NeuterUnencryptedPackets();
+void QuicConnection::DiscardUnencryptedPackets() {
+  sent_packet_manager_.DiscardUnencryptedPackets();
   // This may have changed the retransmission timer, so re-arm it.
   retransmission_alarm_->Cancel();
   QuicTime retransmission_time = sent_packet_manager_.GetRetransmissionTime();
@@ -1625,6 +1643,7 @@ const QuicEncrypter* QuicConnection::encrypter(EncryptionLevel level) const {
 
 void QuicConnection::SetDefaultEncryptionLevel(EncryptionLevel level) {
   encryption_level_ = level;
+  packet_creator_.set_encryption_level(level);
 }
 
 void QuicConnection::SetDecrypter(QuicDecrypter* decrypter,
@@ -1698,6 +1717,8 @@ void QuicConnection::MaybeProcessRevivedPacket() {
   revived_header.is_in_fec_group = NOT_IN_FEC_GROUP;
   revived_header.fec_group = 0;
   group_map_.erase(last_header_.fec_group);
+  last_decrypted_packet_level_ = group->effective_encryption_level();
+  DCHECK_LT(last_decrypted_packet_level_, NUM_ENCRYPTION_LEVELS);
   delete group;
 
   last_packet_revived_ = true;

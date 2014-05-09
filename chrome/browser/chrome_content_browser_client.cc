@@ -98,6 +98,7 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "chromeos/chromeos_constants.h"
+#include "components/cdm/browser/cdm_message_filter_android.h"
 #include "components/cloud_devices/common/cloud_devices_switches.h"
 #include "components/nacl/browser/nacl_browser.h"
 #include "components/nacl/browser/nacl_host_message_filter.h"
@@ -177,7 +178,6 @@
 #include "chrome/browser/android/new_tab_page_url_handler.h"
 #include "chrome/browser/android/webapps/single_tab_mode_tab_helper.h"
 #include "chrome/browser/chrome_browser_main_android.h"
-#include "chrome/browser/media/encrypted_media_message_filter_android.h"
 #include "chrome/common/descriptors_android.h"
 #include "components/breakpad/browser/crash_dump_manager_android.h"
 #elif defined(OS_POSIX)
@@ -930,7 +930,7 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
       context));
 #endif
 #if defined(OS_ANDROID)
-  host->AddFilter(new EncryptedMediaMessageFilterAndroid());
+  host->AddFilter(new cdm::CdmMessageFilterAndroid());
 #endif
   if (switches::IsNewProfileManagement())
     host->AddFilter(new PrincipalsMessageFilter(id));
@@ -1555,22 +1555,57 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
     {
       // Enable auto-reload if this session is in the field trial or the user
       // explicitly enabled it.
-      std::string group =
-          base::FieldTrialList::FindFullName("AutoReloadExperiment");
-      if (group == "Enabled" ||
-          browser_command_line.HasSwitch(switches::kEnableOfflineAutoReload)) {
+      bool hard_enabled =
+          browser_command_line.HasSwitch(switches::kEnableOfflineAutoReload);
+      bool hard_disabled =
+          browser_command_line.HasSwitch(switches::kDisableOfflineAutoReload);
+      if (hard_enabled) {
         command_line->AppendSwitch(switches::kEnableOfflineAutoReload);
+      } else if (!hard_disabled) {
+        chrome::VersionInfo::Channel channel =
+          chrome::VersionInfo::GetChannel();
+#if defined(OS_ANDROID) || defined(OS_IOS)
+        chrome::VersionInfo::Channel kForceChannel =
+            chrome::VersionInfo::CHANNEL_DEV;
+#else
+        chrome::VersionInfo::Channel kForceChannel =
+            chrome::VersionInfo::CHANNEL_CANARY;
+#endif
+        std::string group =
+            base::FieldTrialList::FindFullName("AutoReloadExperiment");
+        if (channel <= kForceChannel || group == "Enabled")
+          command_line->AppendSwitch(switches::kEnableOfflineAutoReload);
       }
     }
 
     {
-      // Enable load stale cache if this session is in the field trial or
-      // the user explicitly enabled it.
-      std::string group =
-          base::FieldTrialList::FindFullName("LoadStaleCacheExperiment");
-      if (group == "Enabled" || browser_command_line.HasSwitch(
+      // Enable load stale cache if this session is in the field trial, one
+      // of the forced on channels, or the user explicitly enabled it.
+      // Note that as far as the renderer  is concerned, the feature is
+      // enabled if-and-only-if the kEnableOfflineLoadStaleCache flag
+      // is on the command line; the yes/no/default behavior is only
+      // at the browser command line level.
+
+      // Command line switches override
+      if (browser_command_line.HasSwitch(
               switches::kEnableOfflineLoadStaleCache)) {
         command_line->AppendSwitch(switches::kEnableOfflineLoadStaleCache);
+      } else if (!browser_command_line.HasSwitch(
+          switches::kDisableOfflineLoadStaleCache)) {
+        std::string group =
+            base::FieldTrialList::FindFullName("LoadStaleCacheExperiment");
+        chrome::VersionInfo::Channel channel =
+            chrome::VersionInfo::GetChannel();
+#if defined(OS_ANDROID) || defined(OS_IOS)
+        chrome::VersionInfo::Channel forceChannel =
+            chrome::VersionInfo::CHANNEL_DEV;
+#else
+        chrome::VersionInfo::Channel forceChannel =
+            chrome::VersionInfo::CHANNEL_CANARY;
+#endif
+
+        if (channel <= forceChannel || group == "Enabled")
+          command_line->AppendSwitch(switches::kEnableOfflineLoadStaleCache);
       }
     }
 
@@ -1605,6 +1640,7 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kEnableNetBenchmarking,
       switches::kEnableStreamlinedHostedApps,
       switches::kEnableWatchdog,
+      switches::kEnableWebBasedSignin,
       switches::kMemoryProfiling,
       switches::kMessageLoopHistogrammer,
       switches::kNoJsRandomness,

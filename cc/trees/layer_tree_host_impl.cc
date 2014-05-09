@@ -255,6 +255,7 @@ LayerTreeHostImpl::LayerTreeHostImpl(
       overhang_ui_resource_id_(0),
       overdraw_bottom_height_(0.f),
       device_viewport_valid_for_tile_management_(true),
+      begin_impl_frame_interval_(BeginFrameArgs::DefaultInterval()),
       animation_registrar_(AnimationRegistrar::Create()),
       rendering_stats_instrumentation_(rendering_stats_instrumentation),
       micro_benchmark_controller_(this),
@@ -589,10 +590,7 @@ static void AppendQuadsForLayer(
     LayerImpl* layer,
     const OcclusionTracker<LayerImpl>& occlusion_tracker,
     AppendQuadsData* append_quads_data) {
-  QuadCuller quad_culler(&target_render_pass->quad_list,
-                         &target_render_pass->shared_quad_state_list,
-                         layer,
-                         occlusion_tracker);
+  QuadCuller quad_culler(target_render_pass, layer, occlusion_tracker);
   layer->AppendQuads(&quad_culler, append_quads_data);
 }
 
@@ -602,10 +600,7 @@ static void AppendQuadsForRenderSurfaceLayer(
     const RenderPass* contributing_render_pass,
     const OcclusionTracker<LayerImpl>& occlusion_tracker,
     AppendQuadsData* append_quads_data) {
-  QuadCuller quad_culler(&target_render_pass->quad_list,
-                         &target_render_pass->shared_quad_state_list,
-                         layer,
-                         occlusion_tracker);
+  QuadCuller quad_culler(target_render_pass, layer, occlusion_tracker);
 
   bool is_replica = false;
   layer->render_surface()->AppendQuads(&quad_culler,
@@ -648,10 +643,7 @@ static void AppendQuadsToFillScreen(
     screen_background_color_region.Intersect(root_scroll_layer_rect);
   }
 
-  QuadCuller quad_culler(&target_render_pass->quad_list,
-                         &target_render_pass->shared_quad_state_list,
-                         root_layer,
-                         occlusion_tracker);
+  QuadCuller quad_culler(target_render_pass, root_layer, occlusion_tracker);
 
   // Manually create the quad state for the gutter quads, as the root layer
   // doesn't have any bounds and so can't generate this itself.
@@ -660,8 +652,7 @@ static void AppendQuadsToFillScreen(
 
   gfx::Rect root_target_rect = root_layer->render_surface()->content_rect();
   float opacity = 1.f;
-  SharedQuadState* shared_quad_state =
-      quad_culler.UseSharedQuadState(SharedQuadState::Create());
+  SharedQuadState* shared_quad_state = quad_culler.CreateSharedQuadState();
   shared_quad_state->SetAll(gfx::Transform(),
                             root_target_rect.size(),
                             root_target_rect,
@@ -1565,6 +1556,8 @@ void LayerTreeHostImpl::WillBeginImplFrame(const BeginFrameArgs& args) {
   // Sample the frame time now. This time will be used for updating animations
   // when we draw.
   UpdateCurrentFrameTime();
+  // Cache the begin impl frame interval
+  begin_impl_frame_interval_ = args.interval;
 }
 
 gfx::SizeF LayerTreeHostImpl::ComputeInnerViewportContainerSize() const {
@@ -1785,14 +1778,15 @@ void LayerTreeHostImpl::SetNeedsRedraw() {
 
 ManagedMemoryPolicy LayerTreeHostImpl::ActualManagedMemoryPolicy() const {
   ManagedMemoryPolicy actual = cached_managed_memory_policy_;
-  // TODO(ernstm): The second condition disables pre-painting for all layers
-  // when GPU rasterization is enabled. Once we selectively enable GPU
-  // rasterization per layer, we also need to disable pre-painting selectively:
-  // crbug.com/335387
-  if (debug_state_.rasterize_only_visible_content ||
-      settings_.gpu_rasterization_forced) {
+  // TODO(ernstm): NICE_TO_HAVE is currently triggered for forced GPU
+  // rasterization only. Change the trigger to LTHI::UseGpuRasterization, once
+  // that is implemented.
+  if (debug_state_.rasterize_only_visible_content) {
     actual.priority_cutoff_when_visible =
         gpu::MemoryAllocation::CUTOFF_ALLOW_REQUIRED_ONLY;
+  } else if (settings_.gpu_rasterization_forced) {
+    actual.priority_cutoff_when_visible =
+        gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE;
   }
 
   if (zero_budget_) {
@@ -1952,7 +1946,8 @@ bool LayerTreeHostImpl::InitializeRenderer(
                                shared_bitmap_manager_,
                                settings_.highp_threshold_min,
                                settings_.use_rgba_4444_textures,
-                               settings_.texture_id_allocation_chunk_size);
+                               settings_.texture_id_allocation_chunk_size,
+                               settings_.use_distance_field_text);
 
   if (output_surface->capabilities().deferred_gl_initialization)
     EnforceZeroBudget(true);

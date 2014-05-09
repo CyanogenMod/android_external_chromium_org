@@ -154,6 +154,8 @@ bool ToAudioSenderConfig(const CastRtpParams& params,
   config->incoming_feedback_ssrc = params.payload.feedback_ssrc;
   config->rtp_config.payload_type = params.payload.payload_type;
   config->rtp_config.max_delay_ms = params.payload.max_latency_ms;
+  config->rtp_config.aes_key = params.payload.aes_key;
+  config->rtp_config.aes_iv_mask = params.payload.aes_iv_mask;
   config->use_external_encoder = false;
   config->frequency = params.payload.clock_rate;
   config->channels = params.payload.channels;
@@ -172,6 +174,8 @@ bool ToVideoSenderConfig(const CastRtpParams& params,
   config->incoming_feedback_ssrc = params.payload.feedback_ssrc;
   config->rtp_config.payload_type = params.payload.payload_type;
   config->rtp_config.max_delay_ms = params.payload.max_latency_ms;
+  config->rtp_config.aes_key = params.payload.aes_key;
+  config->rtp_config.aes_iv_mask = params.payload.aes_iv_mask;
   config->use_external_encoder = false;
   config->width = params.payload.width;
   config->height = params.payload.height;
@@ -226,24 +230,15 @@ class CastVideoSink : public base::SupportsWeakPtr<CastVideoSink>,
       return;
     }
 
-    // Capture time is calculated using the time when the first frame
-    // is delivered. Doing so has less jitter because each frame has
-    // a TimeDelta from the first frame. However there is a delay between
-    // capture and delivery here for the first frame. We do not account
-    // for this delay.
-    if (first_frame_timestamp_.is_null())
-      first_frame_timestamp_ = base::TimeTicks::Now() - frame->timestamp();
+    const base::TimeTicks now = base::TimeTicks::Now();
 
     // Used by chrome/browser/extension/api/cast_streaming/performance_test.cc
     TRACE_EVENT_INSTANT2(
         "mirroring", "MediaStreamVideoSink::OnVideoFrame",
         TRACE_EVENT_SCOPE_THREAD,
-        "timestamp",
-        (first_frame_timestamp_ + frame->timestamp()).ToInternalValue(),
+        "timestamp",  now.ToInternalValue(),
         "time_delta", frame->timestamp().ToInternalValue());
-
-    frame_input_->InsertRawVideoFrame(
-        frame, first_frame_timestamp_ + frame->timestamp());
+    frame_input_->InsertRawVideoFrame(frame, now);
   }
 
   // Attach this sink to a video track represented by |track_|.
@@ -263,7 +258,6 @@ class CastVideoSink : public base::SupportsWeakPtr<CastVideoSink>,
   bool sink_added_;
   gfx::Size expected_coded_size_;
   CastRtpStream::ErrorCallback error_callback_;
-  base::TimeTicks first_frame_timestamp_;
 
   DISALLOW_COPY_AND_ASSIGN(CastVideoSink);
 };

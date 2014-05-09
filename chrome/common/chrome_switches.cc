@@ -307,6 +307,9 @@ const char kDisableMinimizeOnSecondLauncherItemClick[] =
 // Disables the menu on the NTP for accessing sessions from other devices.
 const char kDisableNTPOtherSessionsMenu[]   = "disable-ntp-other-sessions-menu";
 
+// Disable auto-reload of error pages if offline.
+const char kDisableOfflineAutoReload[]       = "disable-offline-auto-reload";
+
 // Disable the origin chip.
 const char kDisableOriginChip[]             = "disable-origin-chip";
 
@@ -543,8 +546,10 @@ const char kEnableNpnHttpOnly[]             = "enable-npn-http";
 // Enable auto-reload of error pages if offline.
 const char kEnableOfflineAutoReload[]       = "enable-offline-auto-reload";
 
-// Enable offering a "Load stale copy" option to the user if offline.
+// Enable/Disable offering a "Load stale copy" option to the user if offline.
 const char kEnableOfflineLoadStaleCache[]   = "enable-offline-load-stale-cache";
+const char kDisableOfflineLoadStaleCache[]  =
+    "disable-offline-load-stale-cache";
 
 // Controls which branch of the origin chip experiment is enabled. The first
 // flag (enable-origin-chip) is equivalent to the third
@@ -729,9 +734,6 @@ const char kFastStart[]            = "fast-start";
 // on about:version. They don't have any effect.
 const char kFlagSwitchesBegin[]             = "flag-switches-begin";
 const char kFlagSwitchesEnd[]               = "flag-switches-end";
-
-// Alternative feedback server to use when submitting user feedback
-const char kFeedbackServer[]                = "feedback-server";
 
 // The file descriptor limit is set to the value of this switch, subject to the
 // OS hard limits. Useful for testing that file descriptor exhaustion is

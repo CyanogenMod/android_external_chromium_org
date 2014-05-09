@@ -25,6 +25,11 @@
     "channel": "dev",
     "extension_types": ["extension", "platform_app"]
   },
+  "accessibilityPrivate": {
+    "channel": "stable",
+    "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
+    "whitelist": [ "2FCBCE08B34CCA1728A85F1EFBD9A34DD2558B2E" ]
+  },
   "activeTab": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"],
@@ -375,7 +380,9 @@
     "whitelist": [
       "2FC374607C2DF285634B67C64A2E356C607091C3",  // Quickoffice
       "3727DD3E564B6055387425027AD74C58784ACC15",  // Quickoffice internal
-      "12E618C3C6E97495AAECF2AC12DEB082353241C6"   // QO component extension
+      "12E618C3C6E97495AAECF2AC12DEB082353241C6",  // QO component extension
+      "D5736E4B5CF695CB93A2FB57E4FDC6E5AFAB6FE2",  // http://crbug.com/312900
+      "D57DE394F36DC1C3220E7604C575D29C51A6C495"   // http://crbug.com/319444
     ]
   }],
   "fileSystem.directory": [{
@@ -395,7 +402,9 @@
     "whitelist": [
       "2FC374607C2DF285634B67C64A2E356C607091C3",  // Quickoffice
       "3727DD3E564B6055387425027AD74C58784ACC15",  // Quickoffice internal
-      "12E618C3C6E97495AAECF2AC12DEB082353241C6"   // QO component extension
+      "12E618C3C6E97495AAECF2AC12DEB082353241C6",  // QO component extension
+      "D5736E4B5CF695CB93A2FB57E4FDC6E5AFAB6FE2",  // http://crbug.com/312900
+      "D57DE394F36DC1C3220E7604C575D29C51A6C495"   // http://crbug.com/319444
     ]
   }],
   "fileSystemProvider": {
@@ -601,7 +610,10 @@
       "C7DA3A55C2355F994D3FDDAD120B426A0DF63843",  // CCD Testing
       "75E3CFFFC530582C583E4690EF97C70B9C8423B7",  // CCD Release
       "D5736E4B5CF695CB93A2FB57E4FDC6E5AFAB6FE2",  // http://crbug.com/312900.
-      "D57DE394F36DC1C3220E7604C575D29C51A6C495"   // http://crbug.com/319444.
+      "D57DE394F36DC1C3220E7604C575D29C51A6C495",  // http://crbug.com/319444.
+      "06BE211D5F014BAB34BC22D9DDA09C63A81D828E",  // Official XKB virtual kbd
+      "CFBF7EE448FA48960FFDA7CEB30F7A21B26AA981",  // Official m17n virtual kbd
+      "B9EF10DDFEA11EF77873CC5009809E5037FC4C7A"   // Google input tools
     ]
   },
   "mdns": {
@@ -711,11 +723,20 @@
     "channel": "dev",
     "extension_types": ["extension"]
   }, {
+    "channel": "beta",
+    "extension_types": ["extension"],
+    "whitelist": [
+      "7D7A4B147FE39908A5AF13F85E38989C54BBE41C",  // http://crbug.com/370700
+      "0EEDFC0EED87871237213F34EBC7B4982A195C95"   // http://crbug.com/370700
+    ]
+  }, {
     "channel": "stable",
     "extension_types": ["extension"],
     "whitelist": [
       "DF84F03F9B960409CCDE0D895B9650EBE81C0A8E",  // Hangout Services
-      "80B9DC58E5210749F052F5B4DB239C50CF72AEB6"   // Hangouts test extension
+      "80B9DC58E5210749F052F5B4DB239C50CF72AEB6",  // Hangouts test extension
+      "7D7A4B147FE39908A5AF13F85E38989C54BBE41C",  // http://crbug.com/370700
+      "0EEDFC0EED87871237213F34EBC7B4982A195C95"   // http://crbug.com/370700
     ]
   }],
   "proxy": {
@@ -751,12 +772,6 @@
       "E7E2461CE072DF036CF9592740196159E2D7C089",  // Google Talk alpha
       "312745D9BF916161191143F6490085EEA0434997"   // Google Talk debug
     ]
-  },
-  // Note: runtime is not actually a permission, but some systems check these
-  // values to verify restrictions.
-  "runtime": {
-    "channel": "stable",
-    "extension_types": ["extension", "legacy_packaged_app", "platform_app"]
   },
   "screenlockPrivate": {
     "channel": "stable",

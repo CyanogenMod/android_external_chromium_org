@@ -79,7 +79,6 @@ class ServiceWorkerStorageTest : public testing::Test {
         NULL,
         scoped_ptr<ServiceWorkerProcessManager>()));
     context_ptr_ = context_->AsWeakPtr();
-    storage()->simulated_lazy_initted_ = true;
   }
 
   virtual void TearDown() OVERRIDE {
@@ -98,8 +97,8 @@ TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
   const GURL kScope("http://www.test.com/scope/*");
   const GURL kScript("http://www.test.com/script.js");
   const GURL kDocumentUrl("http://www.test.com/scope/document.html");
-  const int64 kRegistrationId = storage()->NewRegistrationId();
-  const int64 kVersionId = storage()->NewVersionId();
+  const int64 kRegistrationId = 0;
+  const int64 kVersionId = 0;
 
   bool was_called = false;
   ServiceWorkerStatusCode result = SERVICE_WORKER_OK;
@@ -124,6 +123,7 @@ TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
   was_called = false;
   storage()->FindRegistrationForId(
       kRegistrationId,
+      kScope.GetOrigin(),
       MakeFindCallback(&was_called, &result, &found_registration));
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(was_called);
@@ -152,6 +152,7 @@ TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
   storage()->FindRegistrationForDocument(
       kDocumentUrl,
       MakeFindCallback(&was_called, &result, &found_registration));
+  base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(was_called);
   EXPECT_EQ(SERVICE_WORKER_OK, result);
   EXPECT_EQ(live_registration, found_registration);
@@ -173,6 +174,7 @@ TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
   // Can be found by id too.
   storage()->FindRegistrationForId(
       kRegistrationId,
+      kScope.GetOrigin(),
       MakeFindCallback(&was_called, &result, &found_registration));
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(was_called);
@@ -274,6 +276,7 @@ TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
   EXPECT_TRUE(context_->GetLiveVersion(kRegistrationId));
   storage()->DeleteRegistration(
       kRegistrationId,
+      kScope.GetOrigin(),
       MakeStatusCallback(&was_called, &result));
   EXPECT_FALSE(was_called);
   base::RunLoop().RunUntilIdle();
@@ -285,6 +288,7 @@ TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
   // Should no longer be found.
   storage()->FindRegistrationForId(
       kRegistrationId,
+      kScope.GetOrigin(),
       MakeFindCallback(&was_called, &result, &found_registration));
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(was_called);
@@ -292,14 +296,15 @@ TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
   EXPECT_FALSE(found_registration);
   was_called = false;
 
-  // Deleting an unstored registration should fail.
+  // Deleting an unstored registration should succeed.
   storage()->DeleteRegistration(
       kRegistrationId + 1,
+      kScope.GetOrigin(),
       MakeStatusCallback(&was_called, &result));
   EXPECT_FALSE(was_called);
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(was_called);
-  EXPECT_EQ(SERVICE_WORKER_ERROR_NOT_FOUND, result);
+  EXPECT_EQ(SERVICE_WORKER_OK, result);
   was_called = false;
 }
 
@@ -307,8 +312,8 @@ TEST_F(ServiceWorkerStorageTest, InstallingRegistrationsAreFindable) {
   const GURL kScope("http://www.test.com/scope/*");
   const GURL kScript("http://www.test.com/script.js");
   const GURL kDocumentUrl("http://www.test.com/scope/document.html");
-  const int64 kRegistrationId = storage()->NewRegistrationId();
-  const int64 kVersionId = storage()->NewVersionId();
+  const int64 kRegistrationId = 0;
+  const int64 kVersionId = 0;
 
   bool was_called = false;
   ServiceWorkerStatusCode result = SERVICE_WORKER_OK;
@@ -327,6 +332,7 @@ TEST_F(ServiceWorkerStorageTest, InstallingRegistrationsAreFindable) {
   // Should not be findable, including by GetAllRegistrations.
   storage()->FindRegistrationForId(
       kRegistrationId,
+      kScope.GetOrigin(),
       MakeFindCallback(&was_called, &result, &found_registration));
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(was_called);
@@ -363,6 +369,7 @@ TEST_F(ServiceWorkerStorageTest, InstallingRegistrationsAreFindable) {
   // Now should be findable.
   storage()->FindRegistrationForId(
       kRegistrationId,
+      kScope.GetOrigin(),
       MakeFindCallback(&was_called, &result, &found_registration));
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(was_called);
@@ -402,6 +409,7 @@ TEST_F(ServiceWorkerStorageTest, InstallingRegistrationsAreFindable) {
   // Once again, should not be findable.
   storage()->FindRegistrationForId(
       kRegistrationId,
+      kScope.GetOrigin(),
       MakeFindCallback(&was_called, &result, &found_registration));
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(was_called);

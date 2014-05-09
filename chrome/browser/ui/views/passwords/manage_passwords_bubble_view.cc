@@ -9,7 +9,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/passwords/manage_passwords_bubble_model.h"
-#include "chrome/browser/ui/passwords/manage_passwords_bubble_ui_controller.h"
+#include "chrome/browser/ui/passwords/manage_passwords_ui_controller.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/passwords/manage_password_item_view.h"
@@ -32,6 +32,9 @@
 // Helpers --------------------------------------------------------------------
 
 namespace {
+
+const int kDesiredBubbleWidth = 370;
+
 enum ColumnSetType {
   // | | (FILL, FILL) | |
   // Used for the bubble's header, the credentials list, and for simple
@@ -122,8 +125,8 @@ void AddTitleRow(views::GridLayout* layout, ManagePasswordsBubbleModel* model) {
 namespace chrome {
 
 void ShowManagePasswordsBubble(content::WebContents* web_contents) {
-  ManagePasswordsBubbleUIController* controller =
-      ManagePasswordsBubbleUIController::FromWebContents(web_contents);
+  ManagePasswordsUIController* controller =
+      ManagePasswordsUIController::FromWebContents(web_contents);
   ManagePasswordsBubbleView::ShowBubble(
       web_contents,
       controller->state() ==
@@ -141,6 +144,7 @@ ManagePasswordsBubbleView::PendingView::PendingView(
     ManagePasswordsBubbleView* parent)
     : parent_(parent) {
   views::GridLayout* layout = new views::GridLayout(this);
+  layout->set_minimum_size(gfx::Size(kDesiredBubbleWidth, 0));
   SetLayoutManager(layout);
 
   // Create the pending credential item, save button and refusal combobox.
@@ -150,11 +154,14 @@ ManagePasswordsBubbleView::PendingView::PendingView(
                                  ManagePasswordItemView::FIRST_ITEM);
   save_button_ = new views::BlueButton(
       this, l10n_util::GetStringUTF16(IDS_PASSWORD_MANAGER_SAVE_BUTTON));
+  save_button_->SetFontList(ui::ResourceBundle::GetSharedInstance().GetFontList(
+      ui::ResourceBundle::SmallFont));
 
   combobox_model_.reset(new SavePasswordRefusalComboboxModel());
   refuse_combobox_.reset(new views::Combobox(combobox_model_.get()));
   refuse_combobox_->set_listener(this);
   refuse_combobox_->SetStyle(views::Combobox::STYLE_ACTION);
+  // TODO(mkwst): Need a mechanism to pipe a font list down into a combobox.
 
   // Title row.
   BuildColumnSet(layout, SINGLE_VIEW_COLUMN_SET);
@@ -206,6 +213,7 @@ ManagePasswordsBubbleView::ManageView::ManageView(
     ManagePasswordsBubbleView* parent)
     : parent_(parent) {
   views::GridLayout* layout = new views::GridLayout(this);
+  layout->set_minimum_size(gfx::Size(kDesiredBubbleWidth, 0));
   SetLayoutManager(layout);
 
   // Add the title.
@@ -234,20 +242,29 @@ ManagePasswordsBubbleView::ManageView::ManageView(
     views::Label* empty_label = new views::Label(
         l10n_util::GetStringUTF16(IDS_MANAGE_PASSWORDS_NO_PASSWORDS));
     empty_label->SetMultiLine(true);
+    empty_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+    empty_label->SetFontList(
+        ui::ResourceBundle::GetSharedInstance().GetFontList(
+            ui::ResourceBundle::SmallFont));
 
     layout->StartRow(0, SINGLE_VIEW_COLUMN_SET);
     layout->AddView(empty_label);
+    layout->AddPaddingRow(0, views::kRelatedControlSmallVerticalSpacing);
   }
 
   // Then add the "manage passwords" link and "Done" button.
   manage_link_ = new views::Link(parent_->model()->manage_link());
   manage_link_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+  manage_link_->SetFontList(ui::ResourceBundle::GetSharedInstance().GetFontList(
+      ui::ResourceBundle::SmallFont));
   manage_link_->SetUnderline(false);
   manage_link_->set_listener(this);
 
   done_button_ =
       new views::LabelButton(this, l10n_util::GetStringUTF16(IDS_DONE));
   done_button_->SetStyle(views::Button::STYLE_BUTTON);
+  done_button_->SetFontList(ui::ResourceBundle::GetSharedInstance().GetFontList(
+      ui::ResourceBundle::SmallFont));
 
   BuildColumnSet(layout, LINK_BUTTON_COLUMN_SET);
   layout->StartRowWithPadding(
@@ -283,6 +300,7 @@ ManagePasswordsBubbleView::BlacklistedView::BlacklistedView(
     ManagePasswordsBubbleView* parent)
     : parent_(parent) {
   views::GridLayout* layout = new views::GridLayout(this);
+  layout->set_minimum_size(gfx::Size(kDesiredBubbleWidth, 0));
   SetLayoutManager(layout);
 
   // Add the title.
@@ -290,18 +308,26 @@ ManagePasswordsBubbleView::BlacklistedView::BlacklistedView(
   AddTitleRow(layout, parent_->model());
 
   // Add the "Hey! You blacklisted this site!" text.
-  layout->StartRow(0, SINGLE_VIEW_COLUMN_SET);
   views::Label* blacklisted = new views::Label(
       l10n_util::GetStringUTF16(IDS_MANAGE_PASSWORDS_BLACKLISTED));
   blacklisted->SetMultiLine(true);
+  blacklisted->SetFontList(ui::ResourceBundle::GetSharedInstance().GetFontList(
+      ui::ResourceBundle::SmallFont));
+  layout->StartRow(0, SINGLE_VIEW_COLUMN_SET);
   layout->AddView(blacklisted);
+  layout->AddPaddingRow(0, views::kRelatedControlSmallVerticalSpacing);
 
   // Then add the "enable password manager" and "Done" buttons.
   unblacklist_button_ = new views::BlueButton(
       this, l10n_util::GetStringUTF16(IDS_PASSWORD_MANAGER_UNBLACKLIST_BUTTON));
+  unblacklist_button_->SetFontList(
+      ui::ResourceBundle::GetSharedInstance().GetFontList(
+          ui::ResourceBundle::SmallFont));
   done_button_ =
       new views::LabelButton(this, l10n_util::GetStringUTF16(IDS_DONE));
   done_button_->SetStyle(views::Button::STYLE_BUTTON);
+  done_button_->SetFontList(ui::ResourceBundle::GetSharedInstance().GetFontList(
+      ui::ResourceBundle::SmallFont));
 
   BuildColumnSet(layout, DOUBLE_BUTTON_COLUMN_SET);
   layout->StartRowWithPadding(
@@ -419,9 +445,9 @@ void ManagePasswordsBubbleView::Init() {
   SetLayoutManager(layout);
   SetFocusable(true);
 
-  if (model()->WaitingToSavePassword())
+  if (password_manager::ui::IsPendingState(model()->state()))
     AddChildView(new PendingView(this));
-  else if (model()->NeverSavingPasswords())
+  else if (model()->state() == password_manager::ui::BLACKLIST_STATE)
     AddChildView(new BlacklistedView(this));
   else
     AddChildView(new ManageView(this));

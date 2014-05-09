@@ -5,6 +5,7 @@
 #include "content/browser/service_worker/service_worker_provider_host.h"
 
 #include "base/stl_util.h"
+#include "content/browser/message_port_message_filter.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_request_handler.h"
 #include "content/browser/service_worker/service_worker_controllee_request_handler.h"
@@ -15,6 +16,8 @@
 #include "content/common/service_worker/service_worker_messages.h"
 
 namespace content {
+
+static const int kDocumentMainThreadId = 0;
 
 ServiceWorkerProviderHost::ServiceWorkerProviderHost(
     int process_id, int provider_id,
@@ -33,16 +36,6 @@ ServiceWorkerProviderHost::~ServiceWorkerProviderHost() {
     pending_version_->RemovePendingControllee(this);
 }
 
-void ServiceWorkerProviderHost::AddScriptClient(int thread_id) {
-  DCHECK(!ContainsKey(script_client_thread_ids_, thread_id));
-  script_client_thread_ids_.insert(thread_id);
-}
-
-void ServiceWorkerProviderHost::RemoveScriptClient(int thread_id) {
-  DCHECK(ContainsKey(script_client_thread_ids_, thread_id));
-  script_client_thread_ids_.erase(thread_id);
-}
-
 void ServiceWorkerProviderHost::SetActiveVersion(
     ServiceWorkerVersion* version) {
   if (version == active_version_)
@@ -57,19 +50,17 @@ void ServiceWorkerProviderHost::SetActiveVersion(
   if (!dispatcher_host_)
     return;  // Could be NULL in some tests.
 
-  for (std::set<int>::iterator it = script_client_thread_ids_.begin();
-       it != script_client_thread_ids_.end();
-       ++it) {
-    ServiceWorkerObjectInfo info;
-    if (context_ && version) {
-      scoped_ptr<ServiceWorkerHandle> handle =
-          ServiceWorkerHandle::Create(context_, dispatcher_host_, *it, version);
-      info = handle->GetObjectInfo();
-      dispatcher_host_->RegisterServiceWorkerHandle(handle.Pass());
-    }
-    dispatcher_host_->Send(
-        new ServiceWorkerMsg_SetCurrentServiceWorker(*it, provider_id(), info));
+  ServiceWorkerObjectInfo info;
+  if (context_ && version) {
+    scoped_ptr<ServiceWorkerHandle> handle =
+        ServiceWorkerHandle::Create(context_, dispatcher_host_,
+                                    kDocumentMainThreadId, version);
+    info = handle->GetObjectInfo();
+    dispatcher_host_->RegisterServiceWorkerHandle(handle.Pass());
   }
+  dispatcher_host_->Send(
+      new ServiceWorkerMsg_SetCurrentServiceWorker(
+          kDocumentMainThreadId, provider_id(), info));
 }
 
 void ServiceWorkerProviderHost::SetPendingVersion(
@@ -86,11 +77,7 @@ void ServiceWorkerProviderHost::SetPendingVersion(
   if (!dispatcher_host_)
     return;  // Could be NULL in some tests.
 
-  for (std::set<int>::iterator it = script_client_thread_ids_.begin();
-       it != script_client_thread_ids_.end();
-       ++it) {
-    // TODO(kinuko): dispatch pendingchange event to the script clients.
-  }
+  // TODO(kinuko): dispatch pendingchange event to the document.
 }
 
 bool ServiceWorkerProviderHost::SetHostedVersionId(int64 version_id) {
@@ -130,6 +117,25 @@ ServiceWorkerProviderHost::CreateRequestHandler(
             context_, AsWeakPtr(), resource_type));
   }
   return scoped_ptr<ServiceWorkerRequestHandler>();
+}
+
+void ServiceWorkerProviderHost::PostMessage(
+    const base::string16& message,
+    const std::vector<int>& sent_message_port_ids) {
+  if (!dispatcher_host_)
+    return;  // Could be NULL in some tests.
+
+  std::vector<int> new_routing_ids;
+  dispatcher_host_->message_port_message_filter()->
+      UpdateMessagePortsWithNewRoutes(sent_message_port_ids,
+                                      &new_routing_ids);
+
+  dispatcher_host_->Send(
+      new ServiceWorkerMsg_MessageToDocument(
+          kDocumentMainThreadId, provider_id(),
+          message,
+          sent_message_port_ids,
+          new_routing_ids));
 }
 
 }  // namespace content

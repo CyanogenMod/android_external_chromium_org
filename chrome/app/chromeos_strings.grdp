@@ -1238,6 +1238,9 @@ Press any key to continue exploring.
   <message name="IDS_LANGUAGES_MEDIUM_LEN_NAME_KOREAN" desc="Medium length name for the input method for Korean which is show following the text: Your input method has changed to...">
     Korean
   </message>
+  <message name="IDS_LANGUAGES_MEDIUM_LEN_NAME_BRAILLE" desc="Medium length name for the input method for the hardware keyboard on a braille display. Shown after the text: Your input method has changed to...">
+    Braille
+  </message>
   <message name="IDS_KEYBOARD_SELECTION_SELECT" desc="Label for keyboard selection dropdown">
     Select your keyboard:
   </message>
@@ -1419,8 +1422,14 @@ Press any key to continue exploring.
   <message name="IDS_LOGIN_CONFIRM_PASSWORD_ERROR_TEXT" desc="Error text to show when the password typed by the user could not be verified.">
     Sorry, your password could not be verified. Please try again.
   </message>
-  <message name="IDS_LOGIN_FATAL_ERROR_MESSAGE" desc="Message to show when the authentication could not be completed.">
-    Something went wrong with signing in.<ph name="LINE_BREAK">&lt;br&gt;</ph>Please contact your administrator or try again.
+  <message name="IDS_LOGIN_FATAL_ERROR_TEXT_GENERIC" desc="Message to show when the authentication could not be completed due to an unspecified error.">
+    Something went wrong with signing in.
+  </message>
+  <message name="IDS_LOGIN_FATAL_ERROR_TEXT_INSECURE_URL" desc="Message to show when the authentication could not be completed because a redirect to an insecure URL was detected and blocked.">
+    Oops, couldn't sign you in. Sign-in failed because it was configured to use a non-secure URL (<ph name="BLOCKED_URL">$1<ex>http://www.example.com/login.html</ex></ph>).
+  </message>
+  <message name="IDS_LOGIN_FATAL_ERROR_INSTRUCTIONS" desc="Instructions shown below the error message when authentication could not be completed.">
+    Please contact your administrator or try again.
   </message>
   <message name="IDS_LOGIN_OFFLINE_EMAIL" desc="Email field text on the offline login screen. Note: should by the same as the one used on the Gaia sign-in page.">
     Email
@@ -5206,6 +5215,9 @@ All users must sign out to continue.
   </message>
   <message name="IDS_ENTERPRISE_ENROLLMENT_AUTH_NETWORK_ERROR" desc="Error message to show when there is a network problem when authenticating for enrollment.">
     Oops!  A network communication problem occurred during authentication.  Please check your network connection and try again.
+  </message>
+  <message name="IDS_ENTERPRISE_ENROLLMENT_AUTH_INSECURE_URL_ERROR" desc="Error message to show when a redirect to an insecure URL was detected and blocked when authenticating for enrollment.">
+    Oops!  Authentication failed because it was configured to use a non-secure URL (<ph name="BLOCKED_URL">$1<ex>http://www.example.com/login.html</ex></ph>).  Please contact your administrator.
   </message>
   <message name="IDS_ENTERPRISE_AUTO_ENROLLMENT_BAD_MODE" desc="Error message to show when auto-enrollment is not supported for the enrollment mode supplied by the DMServer.">
     Oops!  Something went wrong while auto-enrolling this device.  Please try again from the sign-in screen using the Ctrl-Alt-E key combination, or contact your support representative.

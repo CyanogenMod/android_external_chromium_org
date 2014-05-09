@@ -299,8 +299,7 @@
             '../components/components.gyp:breakpad_host',
           ],
         }],
-        # TODO(dmikurube): Kill {linux|android}_use_tcmalloc. http://crbug.com/345554
-        ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and ((OS=="linux" and linux_use_tcmalloc==1) or (OS=="android" and android_use_tcmalloc==1)))', {
+        ['(OS=="linux" or OS=="android") and use_allocator!="none"', {
           'dependencies': [
             # This is needed by content/app/content_main_runner.cc
             '../base/allocator/allocator.gyp:allocator',
@@ -637,23 +636,7 @@
         'content_shell',
       ],
     },
-    {
-      'target_name': 'layout_test_helper',
-      'type': 'executable',
-      'sources': [
-        'shell/renderer/test_runner/helper/layout_test_helper_mac.mm',
-        'shell/renderer/test_runner/helper/layout_test_helper_win.cc',
-      ],
-      'conditions': [
-        ['OS=="mac"', {
-          'link_settings': {
-            'libraries': [
-              '$(SDKROOT)/System/Library/Frameworks/AppKit.framework',
-            ],
-          },
-        }],
-      ],
-    },
+
     {
       'target_name': 'test_netscape_plugin',
       'type': 'loadable_module',
@@ -759,6 +742,27 @@
     }
   ],
   'conditions': [
+    ['OS=="mac" or OS=="win"', {
+      'targets': [
+        {
+          'target_name': 'layout_test_helper',
+          'type': 'executable',
+          'sources': [
+            'shell/renderer/test_runner/helper/layout_test_helper_mac.mm',
+            'shell/renderer/test_runner/helper/layout_test_helper_win.cc',
+          ],
+          'conditions': [
+            ['OS=="mac"', {
+              'link_settings': {
+                'libraries': [
+                  '$(SDKROOT)/System/Library/Frameworks/AppKit.framework',
+                ],
+              },
+            }],
+          ],
+        },
+      ],
+    }],  # OS=="mac" or OS=="win"
     ['OS=="mac"', {
       'targets': [
         {

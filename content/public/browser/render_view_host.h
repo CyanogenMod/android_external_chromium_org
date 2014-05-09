@@ -82,6 +82,9 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // Tells the renderer to clear the focused element (if any).
   virtual void ClearFocusedElement() = 0;
 
+  // Returns true if the current focused element is editable.
+  virtual bool IsFocusedElementEditable() = 0;
+
   // Causes the renderer to close the current page, including running its
   // onunload event handler.  A ClosePage_ACK message will be sent to the
   // ResourceDispatcherHost when it is finished.
@@ -90,6 +93,10 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // Copies the image at location x, y to the clipboard (if there indeed is an
   // image at that location).
   virtual void CopyImageAt(int x, int y) = 0;
+
+  // Saves the image at location x, y to the disk (if there indeed is an
+  // image at that location).
+  virtual void SaveImageAt(int x, int y) = 0;
 
   // Notifies the listener that a directory enumeration is complete.
   virtual void DirectoryEnumerationFinished(

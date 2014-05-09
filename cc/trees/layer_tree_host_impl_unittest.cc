@@ -1367,6 +1367,7 @@ class LayerTreeHostImplOverridePhysicalTime : public LayerTreeHostImpl {
   scoped_ptr<SolidColorScrollbarLayerImpl> scrollbar =                        \
       SolidColorScrollbarLayerImpl::Create(                                   \
           host_impl_->active_tree(), 4, VERTICAL, 10, 0, false, true);        \
+  EXPECT_FLOAT_EQ(0.f, scrollbar->opacity());                                 \
   scrollbar->SetScrollLayerById(2);                                           \
   scrollbar->SetClipLayerById(1);                                             \
                                                                               \
@@ -3452,8 +3453,9 @@ class BlendStateCheckLayer : public LayerImpl {
       opaque_rect = opaque_content_rect_;
     gfx::Rect visible_quad_rect = quad_rect_;
 
-    SharedQuadState* shared_quad_state =
-        quad_sink->UseSharedQuadState(CreateSharedQuadState());
+    SharedQuadState* shared_quad_state = quad_sink->CreateSharedQuadState();
+    PopulateSharedQuadState(shared_quad_state);
+
     scoped_ptr<TileDrawQuad> test_blending_draw_quad = TileDrawQuad::Create();
     test_blending_draw_quad->SetNew(shared_quad_state,
                                     quad_rect_,
@@ -4233,8 +4235,8 @@ class FakeLayerWithQuads : public LayerImpl {
 
   virtual void AppendQuads(QuadSink* quad_sink,
                            AppendQuadsData* append_quads_data) OVERRIDE {
-    SharedQuadState* shared_quad_state =
-        quad_sink->UseSharedQuadState(CreateSharedQuadState());
+    SharedQuadState* shared_quad_state = quad_sink->CreateSharedQuadState();
+    PopulateSharedQuadState(shared_quad_state);
 
     SkColor gray = SkColorSetRGB(100, 100, 100);
     gfx::Rect quad_rect(content_bounds());
@@ -5759,8 +5761,9 @@ TEST_F(LayerTreeHostImplTest, MemoryPolicy) {
       456, gpu::MemoryAllocation::CUTOFF_ALLOW_EVERYTHING, 1000);
   int everything_cutoff_value = ManagedMemoryPolicy::PriorityCutoffToValue(
       gpu::MemoryAllocation::CUTOFF_ALLOW_EVERYTHING);
-  int required_only_cutoff_value = ManagedMemoryPolicy::PriorityCutoffToValue(
-      gpu::MemoryAllocation::CUTOFF_ALLOW_REQUIRED_ONLY);
+  int allow_nice_to_have_cutoff_value =
+      ManagedMemoryPolicy::PriorityCutoffToValue(
+          gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE);
   int nothing_cutoff_value = ManagedMemoryPolicy::PriorityCutoffToValue(
       gpu::MemoryAllocation::CUTOFF_ALLOW_NOTHING);
 
@@ -5791,7 +5794,7 @@ TEST_F(LayerTreeHostImplTest, MemoryPolicy) {
   host_impl_->SetVisible(true);
   host_impl_->SetMemoryPolicy(policy1);
   EXPECT_EQ(policy1.bytes_limit_when_visible, current_limit_bytes_);
-  EXPECT_EQ(required_only_cutoff_value, current_priority_cutoff_value_);
+  EXPECT_EQ(allow_nice_to_have_cutoff_value, current_priority_cutoff_value_);
 
   host_impl_->SetVisible(false);
   EXPECT_EQ(0u, current_limit_bytes_);
@@ -6488,6 +6491,59 @@ TEST_F(LayerTreeHostImplWithImplicitLimitsTest, ImplicitMemoryLimits) {
             300u * 1024u * 1024u);
   EXPECT_EQ(host_impl_->global_tile_state().soft_memory_limit_in_bytes,
             150u * 1024u * 1024u);
+}
+
+TEST_F(LayerTreeHostImplTest, UpdateTilesForMasksWithNoVisibleContent) {
+  gfx::Size bounds(100000, 100);
+
+  host_impl_->CreatePendingTree();
+
+  scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl_->pending_tree(), 1);
+
+  scoped_ptr<FakePictureLayerImpl> layer_with_mask =
+      FakePictureLayerImpl::Create(host_impl_->pending_tree(), 2);
+
+  layer_with_mask->SetBounds(bounds);
+
+  scoped_ptr<FakePictureLayerImpl> mask =
+      FakePictureLayerImpl::Create(host_impl_->pending_tree(), 3);
+
+  mask->SetIsMask(true);
+  mask->SetBounds(bounds);
+
+  FakePictureLayerImpl* pending_mask_content = mask.get();
+  layer_with_mask->SetMaskLayer(mask.PassAs<LayerImpl>());
+
+  scoped_ptr<FakePictureLayerImpl> child_of_layer_with_mask =
+      FakePictureLayerImpl::Create(host_impl_->pending_tree(), 4);
+
+  child_of_layer_with_mask->SetBounds(bounds);
+  child_of_layer_with_mask->SetDrawsContent(true);
+
+  layer_with_mask->AddChild(child_of_layer_with_mask.PassAs<LayerImpl>());
+
+  root->AddChild(layer_with_mask.PassAs<LayerImpl>());
+
+  host_impl_->pending_tree()->SetRootLayer(root.Pass());
+
+  gfx::Rect r1 = pending_mask_content->visible_rect_for_tile_priority();
+  ASSERT_EQ(0, r1.x());
+  ASSERT_EQ(0, r1.y());
+  ASSERT_EQ(0, r1.width());
+  ASSERT_EQ(0, r1.height());
+
+  host_impl_->ActivatePendingTree();
+
+  host_impl_->active_tree()->UpdateDrawProperties();
+
+  ASSERT_EQ(2u, host_impl_->active_tree()->RenderSurfaceLayerList().size());
+
+  FakePictureLayerImpl* active_mask_content =
+      static_cast<FakePictureLayerImpl*>(
+          host_impl_->active_tree()->root_layer()->children()[0]->mask_layer());
+  gfx::Rect r2 = active_mask_content->visible_rect_for_tile_priority();
+
+  ASSERT_TRUE(!r2.IsEmpty());
 }
 
 }  // namespace

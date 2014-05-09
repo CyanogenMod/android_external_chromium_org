@@ -14,6 +14,7 @@
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
+#include "base/scoped_observer.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -43,6 +44,8 @@
 #include "content/public/common/url_utils.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_host.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_registry_observer.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
@@ -57,7 +60,6 @@ using content::RenderProcessHost;
 using content::RenderViewHost;
 using content::RenderWidgetHost;
 using content::WebContents;
-using extensions::ErrorUtils;
 
 namespace keys = debugger_api_constants;
 namespace Attach = extensions::api::debugger::Attach;
@@ -66,11 +68,14 @@ namespace OnDetach = extensions::api::debugger::OnDetach;
 namespace OnEvent = extensions::api::debugger::OnEvent;
 namespace SendCommand = extensions::api::debugger::SendCommand;
 
+namespace extensions {
+class ExtensionRegistry;
 
 // ExtensionDevToolsClientHost ------------------------------------------------
 
 class ExtensionDevToolsClientHost : public DevToolsClientHost,
-                                    public content::NotificationObserver {
+                                    public content::NotificationObserver,
+                                    public ExtensionRegistryObserver {
  public:
   ExtensionDevToolsClientHost(Profile* profile,
                               DevToolsAgentHost* agent_host,
@@ -103,6 +108,12 @@ class ExtensionDevToolsClientHost : public DevToolsClientHost,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  // ExtensionRegistryObserver implementation.
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+
   Profile* profile_;
   scoped_refptr<DevToolsAgentHost> agent_host_;
   std::string extension_id_;
@@ -114,6 +125,10 @@ class ExtensionDevToolsClientHost : public DevToolsClientHost,
   PendingRequests pending_requests_;
   infobars::InfoBar* infobar_;
   OnDetach::Reason detach_reason_;
+
+  // Listen to extension unloaded notification.
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionDevToolsClientHost);
 };
@@ -302,14 +317,15 @@ ExtensionDevToolsClientHost::ExtensionDevToolsClientHost(
       extension_id_(extension_id),
       last_request_id_(0),
       infobar_(infobar),
-      detach_reason_(OnDetach::REASON_TARGET_CLOSED) {
+      detach_reason_(OnDetach::REASON_TARGET_CLOSED),
+      extension_registry_observer_(this) {
   CopyDebuggee(&debuggee_, debuggee);
 
   AttachedClientHosts::GetInstance()->Add(this);
 
-  // Detach from debugger when extension unloads.
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
-                 content::Source<Profile>(profile_));
+  // ExtensionRegistryObserver listen extension unloaded and detach debugger
+  // from there.
+  extension_registry_observer_.Add(ExtensionRegistry::Get(profile_));
 
   // RVH-based agents disconnect from their clients when the app is terminating
   // but shared worker-based agents do not.
@@ -386,42 +402,49 @@ void ExtensionDevToolsClientHost::MarkAsDismissed() {
 }
 
 void ExtensionDevToolsClientHost::SendDetachedEvent() {
-  if (!extensions::EventRouter::Get(profile_))
+  if (!EventRouter::Get(profile_))
     return;
 
   scoped_ptr<base::ListValue> args(OnDetach::Create(debuggee_,
                                                     detach_reason_));
-  scoped_ptr<extensions::Event> event(new extensions::Event(
-      OnDetach::kEventName, args.Pass()));
+  scoped_ptr<Event> event(new Event(OnDetach::kEventName, args.Pass()));
   event->restrict_to_browser_context = profile_;
-  extensions::EventRouter::Get(profile_)
+  EventRouter::Get(profile_)
       ->DispatchEventToExtension(extension_id_, event.Pass());
+}
+
+void ExtensionDevToolsClientHost::OnExtensionUnloaded(
+    content::BrowserContext* browser_context,
+    const Extension* extension,
+    UnloadedExtensionInfo::Reason reason) {
+  if (extension->id() == extension_id_)
+    Close();
 }
 
 void ExtensionDevToolsClientHost::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  if (type == chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED) {
-    if (content::Details<extensions::UnloadedExtensionInfo>(details)->
-        extension->id() == extension_id_)
+  switch (type) {
+    case chrome::NOTIFICATION_APP_TERMINATING:
       Close();
-  } else if (type == chrome::NOTIFICATION_APP_TERMINATING) {
-    Close();
-  } else {
-    DCHECK_EQ(chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED, type);
-    if (content::Details<infobars::InfoBar::RemovedDetails>(details)->first ==
-        infobar_) {
-      infobar_ = NULL;
-      SendDetachedEvent();
-      Close();
-    }
+      break;
+    case chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED:
+      if (content::Details<infobars::InfoBar::RemovedDetails>(details)->first ==
+          infobar_) {
+        infobar_ = NULL;
+        SendDetachedEvent();
+        Close();
+      }
+      break;
+    default:
+      NOTREACHED();
   }
 }
 
 void ExtensionDevToolsClientHost::DispatchOnInspectorFrontend(
     const std::string& message) {
-  if (!extensions::EventRouter::Get(profile_))
+  if (!EventRouter::Get(profile_))
     return;
 
   scoped_ptr<base::Value> result(base::JSONReader::Read(message));
@@ -443,10 +466,9 @@ void ExtensionDevToolsClientHost::DispatchOnInspectorFrontend(
 
     scoped_ptr<base::ListValue> args(
         OnEvent::Create(debuggee_, method_name, params));
-    scoped_ptr<extensions::Event> event(new extensions::Event(
-        OnEvent::kEventName, args.Pass()));
+    scoped_ptr<Event> event(new Event(OnEvent::kEventName, args.Pass()));
     event->restrict_to_browser_context = profile_;
-    extensions::EventRouter::Get(profile_)
+    EventRouter::Get(profile_)
         ->DispatchEventToExtension(extension_id_, event.Pass());
   } else {
     DebuggerSendCommandFunction* function = pending_requests_[id].get();
@@ -483,13 +505,13 @@ void DebuggerFunction::FormatErrorMessage(const std::string& format) {
 bool DebuggerFunction::InitAgentHost() {
   if (debuggee_.tab_id) {
     WebContents* web_contents = NULL;
-    bool result = extensions::ExtensionTabUtil::GetTabById(*debuggee_.tab_id,
-                                                           GetProfile(),
-                                                           include_incognito(),
-                                                           NULL,
-                                                           NULL,
-                                                           &web_contents,
-                                                           NULL);
+    bool result = ExtensionTabUtil::GetTabById(*debuggee_.tab_id,
+                                               GetProfile(),
+                                               include_incognito(),
+                                               NULL,
+                                               NULL,
+                                               &web_contents,
+                                               NULL);
     if (result && web_contents) {
       if (content::HasWebUIScheme(web_contents->GetURL())) {
         error_ = ErrorUtils::FormatErrorMessage(
@@ -500,8 +522,8 @@ bool DebuggerFunction::InitAgentHost() {
       agent_host_ = DevToolsAgentHost::GetOrCreateFor(web_contents);
     }
   } else if (debuggee_.extension_id) {
-    extensions::ExtensionHost* extension_host =
-        extensions::ExtensionSystem::Get(GetProfile())
+    ExtensionHost* extension_host =
+        ExtensionSystem::Get(GetProfile())
             ->process_manager()
             ->GetBackgroundHostForExtension(*debuggee_.extension_id);
     if (extension_host) {
@@ -677,7 +699,7 @@ base::Value* SerializeTarget(const DevToolsTargetImpl& target) {
   dictionary->SetString(kTargetIdField, target.GetId());
   dictionary->SetString(kTargetTitleField, target.GetTitle());
   dictionary->SetBoolean(kTargetAttachedField, target.IsAttached());
-  dictionary->SetString(kTargetUrlField, target.GetUrl().spec());
+  dictionary->SetString(kTargetUrlField, target.GetURL().spec());
 
   std::string type = target.GetType();
   if (type == kTargetTypePage) {
@@ -690,14 +712,14 @@ base::Value* SerializeTarget(const DevToolsTargetImpl& target) {
   }
   dictionary->SetString(kTargetTypeField, type);
 
-  GURL favicon_url = target.GetFaviconUrl();
+  GURL favicon_url = target.GetFaviconURL();
   if (favicon_url.is_valid())
     dictionary->SetString(kTargetFaviconUrlField, favicon_url.spec());
 
   return dictionary;
 }
 
-} // namespace
+}  // namespace
 
 DebuggerGetTargetsFunction::DebuggerGetTargetsFunction() {
 }
@@ -720,3 +742,5 @@ void DebuggerGetTargetsFunction::SendTargetList(
   SetResult(result.release());
   SendResponse(true);
 }
+
+}  // namespace extensions

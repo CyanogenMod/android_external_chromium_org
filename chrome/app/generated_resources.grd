@@ -4364,9 +4364,6 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_PROMPT_WARNING_SIGNED_IN_DEVICES" desc="Permission string for access to privacy settings.">
         Access the list of your signed-in devices
       </message>
-      <message name="IDS_EXTENSION_PROMPT_WARNING_USB" desc="Permission string for access to USB devices.">
-        Access USB devices
-      </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_HID" desc="Permission string for access to HID devices.">
         Access input devices over USB and Bluetooth
       </message>
@@ -4522,18 +4519,19 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_WEBGL_NOT_SUPPORTED" desc="Error message when an extension has a requirement for WebGL that the system does not support.">
         WebGL is not supported.
       </message>
-      <message name="IDS_EXTENSION_CSS3D_NOT_SUPPORTED" desc="Error message when an extension has a requirement for CSS3d that the system does not support.">
-        CSS3d is not supported.
-      </message>
       <message name="IDS_EXTENSION_NPAPI_NOT_SUPPORTED" desc="Error message when an extension has a requirement for plugins that the system does not support.">
         NPAPI plugins are not supported.
       </message>
-      <message name="IDS_EXTENSION_WINDOW_SHAPE_NOT_SUPPORTED" desc="Error message when an extension has a requirement for shaped windows that the system does not support.">
-        Shaped windows are not supported.
-      </message>
-      <message name="IDS_EXTENSION_CANT_INSTALL_IN_DEVICE_LOCAL_ACCOUNT" desc="Error message when a user tries to install or the administrator tries to force-install through policy an extension that is not allowed in a device-local account.">
-        <ph name="EXTENSION_NAME">$1<ex>Google Talk</ex></ph> (extension ID "<ph name="EXTENSION_ID">$2<ex>nckgahadagoaajjgafhacjanaoiihapd</ex></ph>") is not allowed in this type of session.
-      </message>
+      <if expr="not use_aura">
+        <message name="IDS_EXTENSION_WINDOW_SHAPE_NOT_SUPPORTED" desc="Error message when an extension has a requirement for shaped windows that the system does not support.">
+          Shaped windows are not supported.
+        </message>
+      </if>
+      <if expr="chromeos">
+        <message name="IDS_EXTENSION_CANT_INSTALL_IN_DEVICE_LOCAL_ACCOUNT" desc="Error message when a user tries to install or the administrator tries to force-install through policy an extension that is not allowed in a device-local account.">
+          <ph name="EXTENSION_NAME">$1<ex>Google Talk</ex></ph> (extension ID "<ph name="EXTENSION_ID">$2<ex>nckgahadagoaajjgafhacjanaoiihapd</ex></ph>") is not allowed in this type of session.
+        </message>
+      </if>
       <message name="IDS_EXTENSION_MOVE_DIRECTORY_TO_PROFILE_FAILED" desc="">
         Could not move extension directory into profile.
       </message>
@@ -4554,9 +4552,6 @@ Make sure you do not expose any sensitive information.
       </message>
       <message name="IDS_EXTENSION_INSTALL_UNEXPECTED_VERSION" desc="Error displayed during installation of a side-loaded app, extension, or theme when the version of the referenced extension does not match the version the developer declared during registration.">
         Expected version "<ph name="EXPECTED_VERSION">$1<ex>2.0</ex></ph>", but version was "<ph name="NEW_ID">$2<ex>1.0</ex></ph>".
-      </message>
-      <message name="IDS_EXTENSION_INSTALL_DEPENDENCY_NOT_FOUND" desc="Error displayed during installation of an extension when an import dependency is not found.">
-        Required extension with ID "<ph name="IMPORT_ID">$1<ex>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</ex></ph>" and minimum version "<ph name="IMPORT_VERSION">$2<ex>1.0</ex></ph>" not found.
       </message>
       <message name="IDS_EXTENSION_INSTALL_DEPENDENCY_NOT_SHARED_MODULE" desc="Error displayed during installation of an extension which tries to imports resources from an extension which is not a shared module.">
         Unable to import extension with ID "<ph name="IMPORT_ID">$1<ex>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</ex></ph>" because it is not a shared module.
@@ -4593,9 +4588,6 @@ Make sure you do not expose any sensitive information.
       </message>
       <message name="IDS_EXTENSION_LOAD_OPTIONS_PAGE_FAILED" desc="">
         Could not load options page '<ph name="OPTIONS_PAGE">$1<ex>page.html</ex></ph>'.
-      </message>
-      <message name="IDS_EXTENSION_LOAD_INPUT_VIEW_FAILED" desc="">
-        Could not load input view '<ph name="INPUT_VIEW">$1<ex>page.html</ex></ph>'.
       </message>
       <if expr="is_win">
         <message name="IDS_EXTENSION_UNPACK_FAILED" desc="On windows, it is possible to mount a disk without the root of that disk having a drive letter.  The sandbox does not support this. See crbug/49530 .">
@@ -4646,9 +4638,11 @@ Make sure you do not expose any sensitive information.
         We were unable to install:
       </message>
       <if expr="enable_extensions">
-        <message name="IDS_EXTENSION_INSTALLED_APP_INFO" desc="Text displayed inside a link when an app is installed. Clicking this link opens up the New Tab Page to show the app's icon.">
-          Show me
-        </message>
+        <if expr="is_macosx">
+          <message name="IDS_EXTENSION_INSTALLED_APP_INFO" desc="Text displayed inside a link when an app is installed. Clicking this link opens up the New Tab Page to show the app's icon.">
+            Show me
+          </message>
+        </if>
         <message name="IDS_EXTENSION_INSTALLED_PAGE_ACTION_INFO" desc="Text displayed in the InfoBubble which explains that the UI of this extension is a Page Action icon which may appear for some pages.">
           This icon will be visible when the extension can act on the current page.
         </message>
@@ -4665,15 +4659,21 @@ Make sure you do not expose any sensitive information.
           To use this extension, type "<ph name="EXTENSION_KEYWORD">$1<ex>search</ex></ph>", then TAB, then your command or search.
         </message>
 
-        <message name="IDS_EXTENSION_INSTALLED_MANAGE_INFO" desc="Text displayed in the InfoBubble with instructions on how to find the chrome://extensions/ management page">
-          Manage your extensions by clicking Extensions in the Tools menu.
-        </message>
-        <message name="IDS_EXTENSION_INSTALLED_MANAGE_INFO_CHROMEOS" desc="Text displayed in the InfoBubble with instructions on how to find the chrome://extensions/ management page on ChromeOS">
-          Manage your extensions by clicking Extensions in the "More tools" menu.
-        </message>
-        <message name="IDS_EXTENSION_INSTALLED_MANAGE_INFO_MAC" desc="Text displayed in the InfoBubble with instructions on how to find the chrome://extensions/ management page on MAC OS X">
-          Manage your extensions by clicking Extensions in the Window menu.
-        </message>
+        <if expr="not chromeos and not is_macosx">
+          <message name="IDS_EXTENSION_INSTALLED_MANAGE_INFO" desc="Text displayed in the InfoBubble with instructions on how to find the chrome://extensions/ management page">
+            Manage your extensions by clicking Extensions in the Tools menu.
+          </message>
+        </if>
+        <if expr="chromeos">
+          <message name="IDS_EXTENSION_INSTALLED_MANAGE_INFO_CHROMEOS" desc="Text displayed in the InfoBubble with instructions on how to find the chrome://extensions/ management page on ChromeOS">
+            Manage your extensions by clicking Extensions in the "More tools" menu.
+          </message>
+        </if>
+        <if expr="is_macosx">
+          <message name="IDS_EXTENSION_INSTALLED_MANAGE_INFO_MAC" desc="Text displayed in the InfoBubble with instructions on how to find the chrome://extensions/ management page on MAC OS X">
+            Manage your extensions by clicking Extensions in the Window menu.
+          </message>
+        </if>
         <message name="IDS_EXTENSION_INSTALLED_MANAGE_SHORTCUTS" desc="Text for the link in the InfoBubble that opens the chrome://extensions page with the Configure Commands UI visible.">
           Manage shortcuts
         </message>
@@ -4712,12 +4712,6 @@ Make sure you do not expose any sensitive information.
         </message>
         <message name="IDS_EXTENSIONS_NONE_INSTALLED" desc="Text that lets the user know that no extensions are installed.">
           Boo... You have no extensions :-(
-        </message>
-        <message name="IDS_EXTENSIONS_PERMISSIONS_HEADING" desc="Heading for permissions dialog in apps_devtools">
-          It can:
-        </message>
-        <message name="IDS_EXTENSIONS_PERMISSIONS_CLOSE" desc="Close button for permissions dialog in apps_devtools">
-          Close
         </message>
         <message name="IDS_EXTENSIONS_NONE_INSTALLED_SUGGEST_GALLERY" desc="Text on next line after IDS_EXTENSIONS_NONE_INSTALLED that suggests the user look in the gallery for extensions to install.">
           Want to <ph name="BEGIN_LINK">&lt;a target="_blank" href="$1"&gt;</ph>browse the gallery<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> instead?
@@ -4925,23 +4919,11 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_PACK_DIALOG_TITLE" desc="Title of pack extension dialog">
         Pack Extension
       </message>
-      <message name="IDS_EXTENSION_PACK_APP_DIALOG_TITLE" desc="Title of pack application dialog">
-        Pack Application
-      </message>
       <message name="IDS_EXTENSION_PACK_BUTTON" desc="Text of the pack extension button">
         Pack Extension
       </message>
-      <message name="IDS_EXTENSION_ADT_PACK_BUTTON" desc="Text of the pack button in apps developer tool.">
-        Pack
-      </message>
       <message name="IDS_EXTENSION_PACK_DIALOG_HEADING" desc="The heading of the pack extension dialog.">
         Select the root directory of the extension to pack. To update an extension, also select the private key file to reuse.
-      </message>
-      <message name="IDS_EXTENSION_ADT_PACK_DIALOG_HEADING" desc="The heading of the pack extension dialog in the Apps Developer Tool.">
-        The packed extension and the private key will be written in the parent directory of the root directory of the extension to pack. To update an extension, select the private key file to reuse.
-      </message>
-      <message name="IDS_EXTENSION_ADT_PACK_APP_DIALOG_HEADING" desc="The heading of the pack application dialog in the Apps Developer Tool.">
-        The packed application and the private key will be written in the parent directory of the root directory of the application to pack. To update an application, select the private key file to reuse.
       </message>
       <message name="IDS_EXTENSION_PACK_DIALOG_ROOT_DIRECTORY_LABEL" desc="Label in the pack extension dialog for the control that lets the user select the extension to pack.">
         Extension root directory:
@@ -5142,42 +5124,21 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_EXTENSION_EXTERNAL_INSTALL_PROMPT_ABORT_BUTTON" desc="Button on the external install prompt to remove an extension installed by a third party.">
         Remove from Chrome
       </message>
-      <message name="IDS_EXTENSIONS_DISABLED" desc="(Disabled) label next to the application name when the application is disabled.">
-        (Disabled)
-      </message>
-      <message name="IDS_EXTENSIONS_SHOW_LOGS" desc="Text for the link to show logs.">
-        Show Logs
-      </message>
-      <message name="IDS_EXTENSIONS_MORE_DETAILS" desc="Text for the link to show more details about the extension / app.">
-        More Details
-      </message>
-      <message name="IDS_EXTENSIONS_VERSION" desc="The Version label in front of the version number of the extension / app.">
-        Version
-      </message>
-      <message name="IDS_EXTENSIONS_DELETE" desc="Text for the link to delete the extension / app.">
-        Delete
-      </message>
-      <message name="IDS_EXTENSIONS_ADT_DELETE" desc="Text for the link to uninstall the extension / app.">
-        Uninstall
-      </message>
-      <message name="IDS_EXTENSIONS_PACK" desc="Text for the link to pack the extension / app.">
-        Pack
-      </message>
 
       <if expr="use_titlecase">
-        <message name="IDS_EXTENSIONS_SUSPICIOUS_DISABLED_TITLE" desc="In Title Case: Title of the dialog shown when suspicious extensions have been disabled">
-          Suspicious Extensions Disabled
+        <message name="IDS_EXTENSIONS_UNSUPPORTED_DISABLED_TITLE" desc="In Title Case: Title of the dialog shown when unsupported extensions have been disabled">
+          Unsupported Extensions Disabled
         </message>
       </if>
       <if expr="not use_titlecase">
-        <message name="IDS_EXTENSIONS_SUSPICIOUS_DISABLED_TITLE" desc="Title of the dialog shown when suspicious extensions have been disabled">
-          Suspicious extensions disabled
+        <message name="IDS_EXTENSIONS_UNSUPPORTED_DISABLED_TITLE" desc="Title of the dialog shown when unsupported extensions have been disabled">
+          Unsupported extensions disabled
         </message>
       </if>
-      <message name="IDS_EXTENSIONS_SUSPICIOUS_DISABLED_AND_N_MORE" desc="Used for a count of additional items in the IDS_EXTENSIONS_SUSPICIOUS_DISABLED_BODY dialog shown when suspicious extensions have been disabled, if we could not fit them all in the dialog">
+      <message name="IDS_EXTENSIONS_DISABLED_AND_N_MORE" desc="Used for a count of additional items in the IDS_EXTENSIONS_UNSUPPORTED_DISABLED_BODY dialog shown when unsupported extensions have been disabled, if we could not fit them all in the dialog">
         and <ph name="NUMBER_ADDITIONAL_DISABLED">$1<ex>5</ex></ph> more
       </message>
-      <message name="IDS_EXTENSIONS_SUSPICIOUS_DISABLED_BUTTON" desc="Text of the button on the dialog shown when suspicious extensions have been disabled">
+      <message name="IDS_EXTENSIONS_UNSUPPORTED_DISABLED_BUTTON" desc="Text of the button on the dialog shown when unsupported extensions have been disabled">
       OK, got it
       </message>
       <message name="IDS_EXTENSIONS_ADDED_WITHOUT_KNOWLEDGE" desc="Text shown in the extensions settings for items that might have been forcefully added to chrome without the user's knowledge">
@@ -5201,9 +5162,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
 
       <!-- Settings API bubble -->
-      <message name="IDS_EXTENSIONS_DISABLE_EXTENSIONS" desc="Text for the Disable Extensions (note: plural) button">
-        Disable Extensions
-      </message>
       <if expr="use_titlecase">
         <message name="IDS_EXTENSIONS_SETTINGS_API_TITLE_HOME_PAGE_BUBBLE" desc="In Title Case: Title of a bubble warning users that an extension has overridden their home page setting">
          Is This the Home Page You Were Expecting?
@@ -5270,10 +5228,10 @@ Keep your key file in a safe place. You will need it to create new versions of y
         ''' If you didn't want these changes, you can restore your previous settings.'''
       </message>
 
-      <message name="IDS_EXTENSIONS_SETTINGS_API_RESTORE_SETTINGS" desc="The button in the Settings API bubble that reverts the settings changes made by the extension and restores what the user had before.">
+      <message name="IDS_EXTENSION_CONTROLLED_RESTORE_SETTINGS" desc="The button in the extension controlled bubbles that reverts the settings changes made by the extension and restores what the user had before.">
         Restore settings
       </message>
-      <message name="IDS_EXTENSIONS_SETTINGS_API_KEEP_CHANGES" desc="The button in the Settings API bubble that cancels the bubble without action.">
+      <message name="IDS_EXTENSION_CONTROLLED_KEEP_CHANGES" desc="The button in the extension controlled bubbles that cancels the bubble without action.">
         Keep changes
       </message>
 
@@ -6264,6 +6222,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_LCD_TEXT_DESCRIPTION" desc="Description of about:flags option for LCD text.">
         If disabled, text is rendered with grayscale antialiasing instead of LCD (subpixel) when doing accelerated compositing.
       </message>
+      <message name="IDS_FLAGS_DISTANCE_FIELD_TEXT_NAME" desc="Name of about:flags option for distance field text.">
+        Enable distance field text
+      </message>
+      <message name="IDS_FLAGS_DISTANCE_FIELD_TEXT_DESCRIPTION" desc="Description of about:flags option for distance field text.">
+        If enabled, text is rendered with signed distance fields rather than bitmap alpha masks.
+      </message>
       <message name="IDS_FLAGS_DELEGATED_RENDERER_NAME" desc="Name of about:flags option for delegated renderer.">
         Delegated Renderer (AKA Übercompositor).
       </message>
@@ -6622,6 +6586,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_APPS_FILE_ASSOCIATIONS_DESCRIPTION" desc="Description for a flag to enable file associations for Chrome Apps.">
         Enable OS integration of file associations for Chrome Apps.
+      </message>
+      <message name="IDS_FLAGS_TEXT_INPUT_FOCUS_MANAGER_NAME" desc="Title for the flag to enable the new text input focus manager.">
+        Experimental text input focus manager.
+      </message>
+      <message name="IDS_FLAGS_TEXT_INPUT_FOCUS_MANAGER_DESCRIPTION" desc="Description for the flag to enable the new text input focus manager.">
+        Enable an experimental focus manager to track text input clients.
       </message>
 
       <!-- Crashes -->
@@ -8562,10 +8532,10 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         Reload
       </message>
       <message name="IDS_ERRORPAGES_BUTTON_LOAD_STALE" desc="Label for the button on an error page to load a stale entry from the cache">
-        Load Stale Local Copy
+        Show saved copy
       </message>
       <message name="IDS_ERRORPAGES_BUTTON_LOAD_STALE_HELP" desc="Explanation for the BUTTON_LOAD_STALE button">
-        Load a known-to-be-out-of-date saved copy of this page.
+        Load a stale (i.e. known to be out of date) copy of this page.
       </message>
       <message name="IDS_ERRORPAGES_BUTTON_DIAGNOSE" desc="Label for the button that invokes the connection diagnostic tool on the error page">
         Diagnose errors...
@@ -9825,9 +9795,6 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         <message name="IDS_OPTIONS_PASSWORD_MANAGER_ENABLE" desc="The label of the password manager checkbox">
           Offer to save your web passwords.
         </message>
-        <message name="IDS_OPTIONS_PASSWORDS_MANAGE_PASSWORDS" desc="The label of the 'Manage saved passwords' button">
-          Manage saved passwords...
-        </message>
         <message name="IDS_OPTIONS_PASSWORDS_AUTOLOGIN" desc="The label of the 'autologinEnabled' checkbox">
           Offer to sign in to Google sites automatically with this account
         </message>
@@ -10057,9 +10024,6 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         <message name="IDS_OPTIONS_SAFEBROWSING_ENABLEDOWNLOADFEEDBACK" desc="Checkbox label: should Chrome upload suspicious downloads to Safe Browsing">
           Send suspicious downloaded files to Google
         </message>
-        <message name="IDS_OPTIONS_SSL_CHECKREVOCATION" desc="The label of the 'Check for server certificate revocation' checkbox">
-          Check for server certificate revocation
-        </message>
 
         <if expr="chromeos">
           <message name="IDS_OPTIONS_FACTORY_RESET" desc="Name of the factory reset option on the chrome settings page">
@@ -10231,8 +10195,8 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_SETTINGS_SHOW_ADVANCED_SETTINGS" desc="Title for the link to show advanced settings.">
         Show advanced settings...
       </message>
-      <message name="IDS_OPTIONS_PASSWORDS_MANAGE_PASSWORDS_LINK" desc="The label of the 'Manage saved passwords' link">
-        Manage saved passwords
+      <message name="IDS_OPTIONS_PASSWORDS_MANAGE_PASSWORDS_LINK" desc="The label of the 'Manage passwords' link">
+        Manage passwords
       </message>
       <message name="IDS_OPTIONS_HOMEPAGE_TITLE" desc="The title of the home page overlay"  formatter_data="android_java">
         Home page
@@ -10256,24 +10220,6 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
       <message name="IDS_AUTOFILL_DIALOG_PLACEHOLDER_CVC" desc="The placeholder/label text for credit card verification code in the requestAutocomplete dialog.">
         CVC
-      </message>
-      <message name="IDS_AUTOFILL_DIALOG_PLACEHOLDER_CARDHOLDER_NAME" desc="The placeholder/label text for cardholder full name in the requestAutocomplete dialog.">
-        Cardholder name
-      </message>
-      <message name="IDS_AUTOFILL_DIALOG_PLACEHOLDER_ADDRESSEE_NAME" desc="The placeholder/label text for addressee full name in the requestAutocomplete dialog.">
-        Name
-      </message>
-      <message name="IDS_AUTOFILL_DIALOG_PLACEHOLDER_ADDRESS_LINE_1" desc="The placeholder/label text for address line 1 in the requestAutocomplete dialog.">
-        Street address
-      </message>
-      <message name="IDS_AUTOFILL_DIALOG_PLACEHOLDER_ADDRESS_LINE_2" desc="The placeholder/label text for address line 2 in the requestAutocomplete dialog.">
-        Street address (optional)
-      </message>
-      <message name="IDS_AUTOFILL_DIALOG_PLACEHOLDER_LOCALITY" desc="The placeholder/label text for locality (city) in the requestAutocomplete dialog.">
-        City
-      </message>
-      <message name="IDS_AUTOFILL_DIALOG_PLACEHOLDER_POSTAL_CODE" desc="The placeholder/label text for ZIP/postal code in the requestAutocomplete dialog.">
-        ZIP code
       </message>
       <message name="IDS_AUTOFILL_DIALOG_PLACEHOLDER_PHONE_NUMBER" desc="The placeholder/label text for phone number in the requestAutocomplete dialog.">
         Phone number
@@ -11174,7 +11120,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         settings
       </message>
       <message name="IDS_PROFILES_ACCOUNT_REMOVAL_BUTTON" desc="Text of the ok button on the account removal view in the avatar menu bubble.">
-        Remove account and relaunch
+        Remove account
       </message>
       <message name="IDS_PROFILES_PREVIEW_ENABLED_TUTORIAL_TITLE" desc="Title of the tutorial card in the avatar menu bubble view shown when new profile management preview is enabled.">
         You're all set
@@ -13262,9 +13208,11 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_PDF_BUBBLE_INSTALL_READER_LINK" desc="Title of the link to open a PDF with an unsupported feature in Adobe Reader">
         Install Adobe Reader
       </message>
-      <message name="IDS_PDF_BUBBLE_METRO_MODE_LINK" desc="Title of the link to restart Chrome on Windows 8 in metro mode when viewing a PDF with an unsupported feature.">
-        Relaunch Chrome on the desktop
-      </message>
+      <if expr="is_win">
+        <message name="IDS_PDF_BUBBLE_METRO_MODE_LINK" desc="Title of the link to restart Chrome on Windows 8 in metro mode when viewing a PDF with an unsupported feature.">
+          Relaunch Chrome on the desktop
+        </message>
+      </if>
       <message name="IDS_PDF_INFOBAR_QUESTION_ALWAYS_USE_READER" desc="Question asked on the info bar when a user opens a PDF with Reader and we want to ask them if they always want to use it for viewing PDF files.">
         Use Adobe Reader as your default PDF viewer?
       </message>
@@ -14432,6 +14380,26 @@ Do you accept?
     </message>
     <message name="IDS_FLAGS_ENABLE_APP_INSTALL_ALERTS_DESCRIPTION" desc="Description to allow app install alerts">
       If enabled, websites will be parsed for app install alert meta tags.
+    </message>
+
+   <!-- Extension Content Verification -->
+    <message name="IDS_FLAGS_EXTENSION_CONTENT_VERIFICATION_NAME" desc="Name of the 'Extension Content Verification' flag">
+      Extension Content Verification
+    </message>
+    <message name="IDS_FLAGS_EXTENSION_CONTENT_VERIFICATION_DESCRIPTION" desc="Title for the flag to turn on verification of the contents of extensions from the webstore">
+      This flag can be used to turn on verification that the contents of the files on disk for extensions from the webstore match what they're expected to be. This can be used to turn on this feature if it would not otherwise have been turned on, but cannot be used to turn it off (because this setting can be tampered with by malware).
+    </message>
+
+    <message name="IDS_FLAGS_EXTENSION_CONTENT_VERIFICATION_BOOTSTRAP" desc="Description of the 'Extension Content Verification' bootstrap mode">
+      Bootstrap (get expected hashes, but do not enforce them)
+    </message>
+
+    <message name="IDS_FLAGS_EXTENSION_CONTENT_VERIFICATION_ENFORCE" desc="Description of the 'Extension Content Verification' enforce mode">
+      Enforce (try to get hashes, and enforce them if successful)
+    </message>
+
+    <message name="IDS_FLAGS_EXTENSION_CONTENT_VERIFICATION_ENFORCE_STRICT" desc="Description of the 'Extension Content Verification' enforce strict mode">
+      Enforce strict (hard fail if we can't get hashes)
     </message>
   </messages>
   </release>

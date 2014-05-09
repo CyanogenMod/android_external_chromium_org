@@ -354,7 +354,7 @@ FileTransferController.prototype = {
             // TODO(hirono): Make the loop cancellable.
             var requestDriveShare = function(index) {
               if (index >= shareEntries.length)
-                return Promise.cast();
+                return;
               return new Promise(function(fulfill) {
                 chrome.fileBrowserPrivate.requestDriveShare(
                     shareEntries[index].toURL(),
@@ -763,10 +763,8 @@ FileTransferController.prototype = {
     if (!volumeInfo)
       return false;
     var isDriveOffline = this.volumeManager_.getDriveConnectionState().type ===
-        util.DriveConnectionType.OFFLINE;
-    if (this.isOnDrive &&
-        isDriveOffline &&
-        !this.allDriveFilesAvailable)
+        VolumeManagerCommon.DriveConnectionType.OFFLINE;
+    if (this.isOnDrive && isDriveOffline && !this.allDriveFilesAvailable)
       return false;
     return true;
   },

@@ -6,7 +6,7 @@
 
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/command_updater.h"
-#include "chrome/browser/ui/passwords/manage_passwords_bubble_ui_controller.h"
+#include "chrome/browser/ui/passwords/manage_passwords_ui_controller.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/passwords/manage_passwords_bubble_view.h"
 #include "components/password_manager/core/common/password_manager_ui.h"
@@ -43,17 +43,21 @@ void ManagePasswordsIconView::UpdateVisibleUI() {
   // things accordingly if we're either in BLACKLIST_STATE or PENDING_STATE.
   icon_id_ = IDR_SAVE_PASSWORD;
   tooltip_text_id_ = IDS_PASSWORD_MANAGER_TOOLTIP_MANAGE;
-  if (state() == password_manager::ui::BLACKLIST_STATE) {
+  if (state() == password_manager::ui::BLACKLIST_STATE)
     icon_id_ = IDR_SAVE_PASSWORD_BLACKLISTED;
-  } else if (state() == password_manager::ui::PENDING_PASSWORD_STATE ||
-             state() ==
-                 password_manager::ui::PENDING_PASSWORD_AND_BUBBLE_STATE) {
+  else if (password_manager::ui::IsPendingState(state()))
     tooltip_text_id_ = IDS_PASSWORD_MANAGER_TOOLTIP_SAVE;
-  }
 
   SetVisible(true);
   SetImage(ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(icon_id_));
   SetTooltipText(l10n_util::GetStringUTF16(tooltip_text_id_));
+
+  if (password_manager::ui::PENDING_PASSWORD_AND_BUBBLE_STATE) {
+    // We're about the automatically pop up a ManagePasswordsBubbleView.
+    // Force layout of the icon's parent now; the bubble will be incorrectly
+    // positioned otherwise, as the icon won't have been drawn into position.
+    parent()->Layout();
+  }
 }
 
 bool ManagePasswordsIconView::IsBubbleShowing() const {

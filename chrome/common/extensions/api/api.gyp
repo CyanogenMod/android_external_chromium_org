@@ -36,6 +36,7 @@
         'conditions': [
           ['OS!="android"', {
             'schema_files': [
+              'accessibility_private.json',
               'activity_log_private.json',
               'alarms.idl',
               'app_current_window_internal.idl',
@@ -68,7 +69,6 @@
               'echo_private.json',
               'enterprise_platform_keys_private.json',
               'events.json',
-              'experimental_accessibility.json',
               'feedback_private.idl',
               'file_browser_private.idl',
               'file_system.idl',
@@ -102,7 +102,7 @@
               'power.idl',
               'push_messaging.idl',
               'reading_list_private.json',
-              'runtime.json',
+              'screenlock_private.idl',
               'serial.idl',
               'sessions.json',
               'signed_in_devices.idl',
@@ -145,7 +145,6 @@
                 'manifest_types.json',
                 'omnibox.json',
                 'permissions.json',
-                'runtime.json',
                 'sync_file_system.idl',
                 'tab_capture.idl',
                 'tabs.json',
@@ -163,7 +162,6 @@
               'file_browser_handler_internal.json',
               'first_run_private.json',
               'log_private.idl',
-              'screenlock_private.idl',
               'wallpaper.json',
               'wallpaper_private.json',
               'webcam_private.idl',

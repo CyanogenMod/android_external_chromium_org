@@ -39,14 +39,28 @@ namespace {
 // specification. For more details, see
 // http://goto.google.com/binary-clients-logging.
 void AutocompleteMatchToAssistedQuery(
-    const AutocompleteMatch::Type& match, size_t* type, size_t* subtype) {
+    const AutocompleteMatch::Type& match,
+    const AutocompleteProvider* provider,
+    size_t* type,
+    size_t* subtype) {
   // This type indicates a native chrome suggestion.
   *type = 69;
   // Default value, indicating no subtype.
   *subtype = base::string16::npos;
 
+  // If provider is TYPE_ZERO_SUGGEST, set the subtype accordingly.
+  // Type will be set in the switch statement below where we'll enter one of
+  // SEARCH_SUGGEST or NAVSUGGEST.
+  if (provider &&
+      (provider->type() == AutocompleteProvider::TYPE_ZERO_SUGGEST)) {
+    DCHECK((match == AutocompleteMatchType::SEARCH_SUGGEST) ||
+           (match == AutocompleteMatchType::NAVSUGGEST));
+    *subtype = 66;
+  }
+
   switch (match) {
     case AutocompleteMatchType::SEARCH_SUGGEST: {
+      // Do not set subtype here; subtype may have been set above.
       *type = 0;
       return;
     }
@@ -67,6 +81,7 @@ void AutocompleteMatchToAssistedQuery(
       return;
     }
     case AutocompleteMatchType::NAVSUGGEST: {
+      // Do not set subtype here; subtype may have been set above.
       *type = 5;
       return;
     }
@@ -100,6 +115,10 @@ void AutocompleteMatchToAssistedQuery(
     }
     case AutocompleteMatchType::BOOKMARK_TITLE: {
       *subtype = 65;
+      return;
+    }
+    case AutocompleteMatchType::NAVSUGGEST_PERSONALIZED: {
+      *subtype = 39;
       return;
     }
     default: {
@@ -303,20 +322,24 @@ void AutocompleteController::Stop(bool clear_result) {
 }
 
 void AutocompleteController::StartZeroSuggest(const AutocompleteInput& input) {
-  if (zero_suggest_provider_ != NULL) {
-    DCHECK(!in_start_);  // We should not be already running a query.
+  if (zero_suggest_provider_ == NULL)
+    return;
 
-    // Call Start() on all prefix-based providers with an INVALID
-    // AutocompleteInput to clear out cached |matches_|, which ensures that
-    // they aren't used with zero suggest.
-    for (ACProviders::iterator i(providers_.begin()); i != providers_.end();
-        ++i) {
-      if (*i == zero_suggest_provider_)
-        (*i)->Start(input, false);
-      else
-        (*i)->Start(AutocompleteInput(), false);
-    }
+  DCHECK(!in_start_);  // We should not be already running a query.
+
+  // Call Start() on all prefix-based providers with an INVALID
+  // AutocompleteInput to clear out cached |matches_|, which ensures that
+  // they aren't used with zero suggest.
+  for (ACProviders::iterator i(providers_.begin()); i != providers_.end();
+      ++i) {
+    if (*i == zero_suggest_provider_)
+      (*i)->Start(input, false);
+    else
+      (*i)->Start(AutocompleteInput(), false);
   }
+
+  if (!zero_suggest_provider_->matches().empty())
+    UpdateResult(false, false);
 }
 
 void AutocompleteController::DeleteMatch(const AutocompleteMatch& match) {
@@ -551,7 +574,8 @@ void AutocompleteController::UpdateAssistedQueryStats(
        ++match) {
     size_t type = base::string16::npos;
     size_t subtype = base::string16::npos;
-    AutocompleteMatchToAssistedQuery(match->type, &type, &subtype);
+    AutocompleteMatchToAssistedQuery(
+        match->type, match->provider, &type, &subtype);
     if (last_type != base::string16::npos &&
         (type != last_type || subtype != last_subtype)) {
       AppendAvailableAutocompletion(

@@ -54,6 +54,8 @@
         'mojo_system_impl',
         'mojo_system_unittests',
         'mojo_utility',
+        'mojo_view_manager_lib',
+        'mojo_view_manager_lib_unittests',
       ],
       'conditions': [
         ['use_aura==1', {
@@ -502,6 +504,8 @@
         'shell/test_child_process.h',
         'shell/url_request_context_getter.cc',
         'shell/url_request_context_getter.h',
+        'shell/view_manager_loader.cc',
+        'shell/view_manager_loader.h',
       ],
       'conditions': [
         ['OS=="linux"', {
@@ -514,8 +518,14 @@
           'dependencies': [
             # These are only necessary as long as we hard code use of ViewManager.
             '../skia/skia.gyp:skia',
+            'mojo_gles2',
             'mojo_shell_client',
             'mojo_view_manager',
+          ],
+        }, {  # use_aura==0
+          'sources!': [
+            'shell/view_manager_loader.cc',
+            'shell/view_manager_loader.h',
           ],
         }],
       ],

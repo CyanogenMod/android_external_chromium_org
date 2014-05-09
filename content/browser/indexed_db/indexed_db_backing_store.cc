@@ -812,7 +812,7 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
 
   scoped_ptr<LevelDBComparator> comparator(new Comparator());
 
-  if (!IsStringASCII(path_base.AsUTF8Unsafe())) {
+  if (!base::IsStringASCII(path_base.AsUTF8Unsafe())) {
     HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_ATTEMPT_NON_ASCII,
                         origin_url);
   }
@@ -1972,7 +1972,8 @@ class LocalWriteClosure : public FileWriterDelegate::DelegateWriteCallback,
             task_runner_, file_path, 0,
             fileapi::FileStreamWriter::CREATE_NEW_FILE));
     scoped_ptr<FileWriterDelegate> delegate(
-        new FileWriterDelegate(writer.Pass()));
+        new FileWriterDelegate(writer.Pass(),
+                               FileWriterDelegate::FLUSH_ON_COMPLETION));
 
     DCHECK(blob_url.is_valid());
     scoped_ptr<net::URLRequest> blob_request(request_context->CreateRequest(

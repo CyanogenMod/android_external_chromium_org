@@ -57,7 +57,9 @@ SolidColorScrollbarLayerImpl::SolidColorScrollbarLayerImpl(
                              is_overlay),
       thumb_thickness_(thumb_thickness),
       track_start_(track_start),
-      color_(tree_impl->settings().solid_color_scrollbar_color) {}
+      color_(tree_impl->settings().solid_color_scrollbar_color) {
+  SetOpacity(0.f);
+}
 
 void SolidColorScrollbarLayerImpl::PushPropertiesTo(LayerImpl* layer) {
   ScrollbarLayerImplBase::PushPropertiesTo(layer);
@@ -94,8 +96,9 @@ bool SolidColorScrollbarLayerImpl::IsThumbResizable() const {
 
 void SolidColorScrollbarLayerImpl::AppendQuads(QuadSink* quad_sink,
                            AppendQuadsData* append_quads_data) {
-  SharedQuadState* shared_quad_state =
-      quad_sink->UseSharedQuadState(CreateSharedQuadState());
+  SharedQuadState* shared_quad_state = quad_sink->CreateSharedQuadState();
+  PopulateSharedQuadState(shared_quad_state);
+
   AppendDebugBorderQuad(quad_sink, shared_quad_state, append_quads_data);
 
   gfx::Rect thumb_quad_rect(ComputeThumbQuadRect());

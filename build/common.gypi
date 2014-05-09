@@ -482,8 +482,15 @@
       # Enables used resource whitelist generation; disabled by default.
       'enable_resource_whitelist_generation%': 0,
 
+      # Enable FILE support by default.
+      'disable_file_support%': 0,
+
       # Enable FTP support by default.
       'disable_ftp_support%': 0,
+
+      # Use native android functions in place of ICU.  Not supported by most
+      # components.
+      'use_icu_alternatives_on_android%': 0,
 
       # XInput2 multitouch support is enabled by default (use_xi2_mt=2).
       # Setting to zero value disables XI2 MT. When XI2 MT is enabled,
@@ -813,10 +820,7 @@
 
         ['OS=="linux" and target_arch=="arm" and chromeos==0', {
           # Set some defaults for arm/linux chrome builds
-          # TODO(dmikurube): Change the default of use_allocator to "none".
-          # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-          'linux_use_tcmalloc%': 0,
-          'use_allocator%': 'see_use_tcmalloc',
+          'use_allocator%': 'none',
           # sysroot needs to be an absolute path otherwise it generates
           # incorrect results when passed to pkg-config
           'sysroot%': '<!(cd <(DEPTH) && pwd -P)/arm-sysroot',
@@ -1040,7 +1044,9 @@
     'cld2_dynamic%': '<(cld2_dynamic)',
     'cld2_is_component%': '<(cld2_is_component)',
     'enable_captive_portal_detection%': '<(enable_captive_portal_detection)',
+    'disable_file_support%': '<(disable_file_support)',
     'disable_ftp_support%': '<(disable_ftp_support)',
+    'use_icu_alternatives_on_android%': '<(use_icu_alternatives_on_android)',
     'enable_task_manager%': '<(enable_task_manager)',
     'sas_dll_path%': '<(sas_dll_path)',
     'wix_path%': '<(wix_path)',
@@ -1213,15 +1219,8 @@
     'binutils_dir%': '',
 
     # Enable TCMalloc.
-    # TODO(dmikurube): Change Linux default of use_allocator to "tcmalloc".
-    # TODO(dmikurube): Change Android default of use_allocator to "none".
-    # TODO(dmikurube): Kill {linux|android}_use_tcmalloc. http://crbug.com/345554
-    # {linux|android}_use_tcmalloc are to be replaced with use_allocator.
-    # They are now used only if use_allocator=="see_use_tcmalloc" (default).
-    # TODO(dmikurube): Assert when {linux|android}_use_tcmalloc is explicitly specified.
-    'linux_use_tcmalloc%': 1,
-    'android_use_tcmalloc%': 0,
-    'use_allocator%': 'see_use_tcmalloc',
+    # Default of 'use_allocator' is set to 'none' if OS=='android' later.
+    'use_allocator%': 'tcmalloc',
 
     # Set to 1 to link against libgnome-keyring instead of using dlopen().
     'linux_link_gnome_keyring%': 0,
@@ -1451,10 +1450,7 @@
             'werror%': '',
             'disable_nacl%': 1,
             'nacl_untrusted_build%': 0,
-            # TODO(dmikurube): Change the default of use_allocator to "none".
-            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-            'linux_use_tcmalloc%': 0,
-            'use_allocator%': 'see_use_tcmalloc',
+            'use_allocator%': 'none',
           }],
           ['OS=="linux" and target_arch=="mipsel"', {
             'sysroot%': '<(sysroot)',
@@ -1641,10 +1637,7 @@
         'input_speech%': 0,
         'java_bridge%': 1,
         'build_ffmpegsumo%': 0,
-        # TODO(dmikurube): Change the default of use_allocator to "none".
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        'linux_use_tcmalloc%': 0,
-        'use_allocator%': 'see_use_tcmalloc',
+        'use_allocator%': 'none',
 
         # Disable Native Client.
         'disable_nacl%': 1,
@@ -2034,10 +2027,7 @@
         'win_release_InlineFunctionExpansion': '0',
         'win_release_OmitFramePointers': '0',
 
-        # TODO(dmikurube): Change the default of use_allocator to "tcmalloc".
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        'linux_use_tcmalloc%': 1,
-        'use_allocator': 'see_use_tcmalloc',
+        'use_allocator': 'tcmalloc',
         'release_valgrind_build': 1,
         'werror': '',
         'component': 'static_library',
@@ -2290,8 +2280,7 @@
           '<(DEPTH)/build/mac/asan.gyp:asan_dynamic_runtime',
         ],
       }],
-      # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-      ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)) and clang_type_profiler==1', {
+      ['OS=="linux" and use_allocator!="none" and clang_type_profiler==1', {
         'cflags_cc!': ['-fno-rtti'],
         'cflags_cc+': [
           '-frtti',
@@ -2507,6 +2496,12 @@
           'ENABLE_EGLIMAGE=1',
         ],
       }],
+      ['asan==1', {
+        'defines': [
+          'ADDRESS_SANITIZER',
+          'MEMORY_TOOL_REPLACES_ALLOCATOR',
+        ],
+      }],
       ['syzyasan==1', {
         # SyzyAsan needs /PROFILE turned on to produce appropriate pdbs.
         'msvs_settings': {
@@ -2612,8 +2607,14 @@
       ['enable_settings_app==1', {
         'defines': ['ENABLE_SETTINGS_APP=1'],
       }],
+      ['disable_file_support==1', {
+        'defines': ['DISABLE_FILE_SUPPORT=1'],
+      }],
       ['disable_ftp_support==1', {
         'defines': ['DISABLE_FTP_SUPPORT=1'],
+      }],
+      ['use_icu_alternatives_on_android==1', {
+        'defines': ['USE_ICU_ALTERNATIVES_ON_ANDROID=1'],
       }],
       ['enable_managed_users==1', {
         'defines': ['ENABLE_MANAGED_USERS=1'],
@@ -3712,9 +3713,6 @@
                 'ldflags': [
                   '-fsanitize=address',
                 ],
-                'defines': [
-                  'ADDRESS_SANITIZER',
-                ],
               }],
             ],
             'conditions': [
@@ -3847,8 +3845,7 @@
               }],
             ],
           }],
-          # TODO(dmikurube): Kill {linux|android}_use_tcmalloc. http://crbug.com/345554
-          ['use_allocator!="tcmalloc" and (use_allocator!="see_use_tcmalloc" or ((OS=="linux" and linux_use_tcmalloc==0) or (OS=="android" and android_use_tcmalloc==0)))', {
+          ['use_allocator!="tcmalloc"', {
             'defines': ['NO_TCMALLOC'],
           }],
           ['linux_use_gold_flags==1', {
@@ -4441,10 +4438,6 @@
                 '-w',  # http://crbug.com/162783
               ],
             },
-            'defines': [
-              'ADDRESS_SANITIZER',
-              'MEMORY_TOOL_REPLACES_ALLOCATOR',
-            ],
           }],
           ['asan_coverage!=0', {
             'target_conditions': [

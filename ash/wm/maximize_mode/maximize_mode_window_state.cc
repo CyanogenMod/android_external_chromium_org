@@ -11,7 +11,7 @@
 #include "ash/wm/coordinate_conversion.h"
 #include "ash/wm/maximize_mode/maximize_mode_window_manager.h"
 #include "ash/wm/window_animations.h"
-#include "ash/wm/window_state.h"
+#include "ash/wm/window_properties.h"
 #include "ash/wm/window_state_delegate.h"
 #include "ash/wm/window_state_util.h"
 #include "ash/wm/window_util.h"
@@ -22,6 +22,8 @@
 #include "ui/aura/window_delegate.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/rect.h"
+#include "ui/views/view_constants_aura.h"
+#include "ui/views/widget/widget.h"
 
 namespace ash {
 namespace {
@@ -140,13 +142,17 @@ void MaximizeModeWindowState::OnWMEvent(wm::WindowState* window_state,
     case wm::WM_EVENT_SHOW_INACTIVE:
       return;
     case wm::WM_EVENT_SET_BOUNDS:
-      if (window_state->CanResize()) {
-        // In case the window is resizable and / or maximized we ignore the
-        // requested bounds change and resize to the biggest possible size.
-        UpdateBounds(window_state, true);
-      } else
-      if (current_state_type_ != wm::WINDOW_STATE_TYPE_MINIMIZED &&
-          current_state_type_ != wm::WINDOW_STATE_TYPE_MAXIMIZED) {
+      if (current_state_type_ == wm::WINDOW_STATE_TYPE_MAXIMIZED) {
+        // Having a maximized window, it could have been created with an empty
+        // size and the caller should get his size upon leaving the maximized
+        // mode. As such we set the restore bounds to the requested bounds.
+        gfx::Rect bounds_in_parent =
+            (static_cast<const wm::SetBoundsEvent*>(event))->requested_bounds();
+        if (!bounds_in_parent.IsEmpty())
+          window_state->SetRestoreBoundsInParent(bounds_in_parent);
+      } else if (current_state_type_ != wm::WINDOW_STATE_TYPE_MINIMIZED &&
+                 current_state_type_ != wm::WINDOW_STATE_TYPE_MAXIMIZED &&
+                 current_state_type_ != wm::WINDOW_STATE_TYPE_FULLSCREEN) {
         // In all other cases (except for minimized windows) we respect the
         // requested bounds and center it to a fully visible area on the screen.
         gfx::Rect bounds_in_parent =
@@ -186,6 +192,20 @@ void MaximizeModeWindowState::AttachState(
     wm::WindowState::State* previous_state) {
   current_state_type_ = previous_state->GetType();
 
+  views::Widget* widget =
+      views::Widget::GetWidgetForNativeWindow(window_state->window());
+  if (widget) {
+    gfx::Rect bounds = widget->GetRestoredBounds();
+    if (!bounds.IsEmpty()) {
+      // We do not want to do a session restore to our window states. Therefore
+      // we tell the window to use the current default states instead.
+      window_state->window()->SetProperty(ash::kRestoreShowStateOverrideKey,
+                                          window_state->GetShowState());
+      window_state->window()->SetProperty(ash::kRestoreBoundsOverrideKey,
+          new gfx::Rect(widget->GetRestoredBounds()));
+    }
+  }
+
   // Initialize the state to a good preset.
   if (current_state_type_ != wm::WINDOW_STATE_TYPE_MAXIMIZED &&
       current_state_type_ != wm::WINDOW_STATE_TYPE_MINIMIZED &&
@@ -199,6 +219,8 @@ void MaximizeModeWindowState::AttachState(
 }
 
 void MaximizeModeWindowState::DetachState(wm::WindowState* window_state) {
+  // From now on, we can use the default session restore mechanism again.
+  window_state->window()->ClearProperty(ash::kRestoreBoundsOverrideKey);
   window_state->set_can_be_dragged(true);
 }
 

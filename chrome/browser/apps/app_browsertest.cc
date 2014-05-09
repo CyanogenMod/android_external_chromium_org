@@ -546,6 +546,16 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithFileExtension) {
       << message_;
 }
 
+// Tests that launch data is sent through to a whitelisted extension if the file
+// extension matches.
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
+                       LaunchWhiteListedExtensionWithFile) {
+  SetCommandLineArg(kTestFilePath);
+  ASSERT_TRUE(RunPlatformAppTest(
+      "platform_apps/launch_whitelisted_ext_with_file"))
+          << message_;
+}
+
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
 // TODO(erg): linux_aura bringup: http://crbug.com/163931
 #define MAYBE_LaunchWithFileExtensionAndMimeType DISABLED_LaunchWithFileExtensionAndMimeType
@@ -1185,8 +1195,6 @@ class PlatformAppIncognitoBrowserTest : public PlatformAppBrowserTest,
   virtual void OnAppWindowAdded(AppWindow* app_window) OVERRIDE {
     opener_app_ids_.insert(app_window->extension_id());
   }
-  virtual void OnAppWindowIconChanged(AppWindow* app_window) OVERRIDE {}
-  virtual void OnAppWindowRemoved(AppWindow* app_window) OVERRIDE {}
 
  protected:
   // A set of ids of apps we've seen open a app window.

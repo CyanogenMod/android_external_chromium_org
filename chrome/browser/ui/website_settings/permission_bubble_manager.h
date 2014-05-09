@@ -48,7 +48,8 @@ class PermissionBubbleManager
   // removed and never shown. If the request is showing, it will continue to be
   // shown, but the user's action won't be reported back to the request object.
   // In some circumstances, we can remove the request from the bubble, and may
-  // do so. The caller may delete the request after calling this method.
+  // do so. The request will have RequestFinished executed on it if it is found,
+  // at which time the caller is free to delete the request.
   virtual void CancelRequest(PermissionBubbleRequest* request);
 
   // Sets the active view for the permission bubble. If this is NULL, it
@@ -73,8 +74,7 @@ class PermissionBubbleManager
   // they will be finalized as if canceled by the user.
   virtual void NavigationEntryCommitted(
       const content::LoadCommittedDetails& details) OVERRIDE;
-  virtual void WebContentsDestroyed(
-      content::WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
 
   // PermissionBubbleView::Delegate:
   virtual void ToggleAccept(int request_index, bool new_value) OVERRIDE;
@@ -101,8 +101,12 @@ class PermissionBubbleManager
 
   std::vector<PermissionBubbleRequest*> requests_;
   std::vector<PermissionBubbleRequest*> queued_requests_;
+
+  // URL of the main frame in the WebContents to which this manager is attached.
+  // TODO(gbillock): if there are iframes in the page, we need to deal with it.
   GURL request_url_;
   bool request_url_has_loaded_;
+
   std::vector<bool> accept_states_;
   bool customization_mode_;
 

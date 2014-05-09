@@ -14,6 +14,7 @@
 #include "content/browser/media/capture/desktop_capture_device_uma_types.h"
 #include "content/common/gpu/client/gl_helper.h"
 #include "content/public/browser/browser_thread.h"
+#include "media/base/bind_to_current_loop.h"
 #include "media/base/video_util.h"
 #include "media/video/capture/video_capture_types.h"
 #include "skia/ext/image_operations.h"
@@ -97,8 +98,8 @@ class DesktopVideoCaptureMachine
   virtual ~DesktopVideoCaptureMachine();
 
   // VideoCaptureFrameSource overrides.
-  virtual bool Start(
-      const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy) OVERRIDE;
+  virtual bool Start(const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy,
+                     const media::VideoCaptureParams& params) OVERRIDE;
   virtual void Stop(const base::Closure& callback) OVERRIDE;
 
   // Implements aura::WindowObserver.
@@ -162,6 +163,9 @@ class DesktopVideoCaptureMachine
   // Makes all the decisions about which frames to copy, and how.
   scoped_refptr<ThreadSafeCaptureOracle> oracle_proxy_;
 
+  // The capture parameters for this capture.
+  media::VideoCaptureParams capture_params_;
+
   // YUV readback pipeline.
   scoped_ptr<content::ReadbackYUVInterface> yuv_readback_pipeline_;
 
@@ -183,7 +187,8 @@ DesktopVideoCaptureMachine::DesktopVideoCaptureMachine(
 DesktopVideoCaptureMachine::~DesktopVideoCaptureMachine() {}
 
 bool DesktopVideoCaptureMachine::Start(
-    const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy) {
+    const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy,
+    const media::VideoCaptureParams& params) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   desktop_window_ = content::DesktopMediaID::GetAuraWindowById(window_id_);
@@ -197,6 +202,7 @@ bool DesktopVideoCaptureMachine::Start(
 
   DCHECK(oracle_proxy.get());
   oracle_proxy_ = oracle_proxy;
+  capture_params_ = params;
 
   // Update capture size.
   UpdateCaptureSize();
@@ -294,7 +300,18 @@ void CopyOutputFinishedForVideo(
   if (!cursor_bitmap.isNull())
     RenderCursorOnVideoFrame(target, cursor_bitmap, cursor_position);
   release_callback->Run(0, false);
-  capture_frame_cb.Run(start_time, result);
+  capture_frame_cb.Run(target, start_time, result);
+}
+
+void RunSingleReleaseCallback(scoped_ptr<cc::SingleReleaseCallback> cb,
+                              const std::vector<uint32>& sync_points) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  GLHelper* gl_helper = ImageTransportFactory::GetInstance()->GetGLHelper();
+  DCHECK(gl_helper);
+  for (unsigned i = 0; i < sync_points.size(); i++)
+    gl_helper->WaitSyncPoint(sync_points[i]);
+  uint32 new_sync_point = gl_helper->InsertSyncPoint();
+  cb->Run(new_sync_point, false);
 }
 
 void DesktopVideoCaptureMachine::DidCopyOutput(
@@ -331,8 +348,33 @@ bool DesktopVideoCaptureMachine::ProcessCopyOutputResponse(
     base::TimeTicks start_time,
     const ThreadSafeCaptureOracle::CaptureFrameCallback& capture_frame_cb,
     scoped_ptr<cc::CopyOutputResult> result) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (result->IsEmpty() || result->size().IsEmpty() || !desktop_layer_)
     return false;
+
+  if (capture_params_.requested_format.pixel_format ==
+      media::PIXEL_FORMAT_TEXTURE) {
+    DCHECK(!video_frame);
+    cc::TextureMailbox texture_mailbox;
+    scoped_ptr<cc::SingleReleaseCallback> release_callback;
+    result->TakeTexture(&texture_mailbox, &release_callback);
+    DCHECK(texture_mailbox.IsTexture());
+    if (!texture_mailbox.IsTexture())
+      return false;
+    video_frame = media::VideoFrame::WrapNativeTexture(
+        make_scoped_ptr(new gpu::MailboxHolder(texture_mailbox.mailbox(),
+                                               texture_mailbox.target(),
+                                               texture_mailbox.sync_point())),
+        media::BindToCurrentLoop(base::Bind(&RunSingleReleaseCallback,
+                                            base::Passed(&release_callback))),
+        result->size(),
+        gfx::Rect(result->size()),
+        result->size(),
+        base::TimeDelta(),
+        media::VideoFrame::ReadPixelsCB());
+    capture_frame_cb.Run(video_frame, start_time, true);
+    return true;
+  }
 
   // Compute the dest size we want after the letterboxing resize. Make the
   // coordinates and sizes even because we letterbox in YUV space

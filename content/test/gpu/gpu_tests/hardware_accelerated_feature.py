@@ -26,9 +26,6 @@ test_harness_script = r"""
 """;
 
 class _HardwareAcceleratedFeatureValidator(page_test.PageTest):
-  def __init__(self):
-    super(_HardwareAcceleratedFeatureValidator, self).__init__('ValidatePage')
-
   def ValidatePage(self, page, tab, results):
     feature = page.feature
     if not tab.EvaluateJavaScript('VerifyHardwareAccelerated("%s")' % feature):
@@ -40,9 +37,9 @@ def safe_feature_name(feature):
 class ChromeGpuPage(page_module.Page):
   def __init__(self, page_set, feature):
     super(ChromeGpuPage, self).__init__(
-      url='chrome://gpu', page_set=page_set, base_dir=page_set.base_dir)
-    self.name = ('HardwareAcceleratedFeature.%s_accelerated' %
-                 safe_feature_name(feature))
+      url='chrome://gpu', page_set=page_set, base_dir=page_set.base_dir,
+      name=('HardwareAcceleratedFeature.%s_accelerated' %
+            safe_feature_name(feature)))
     self.feature = feature
     self.script_to_evaluate_on_commit = test_harness_script
 

@@ -49,6 +49,7 @@ class QuicConnection;
 class QuicDecrypter;
 class QuicEncrypter;
 class QuicFecGroup;
+class QuicFlowController;
 class QuicRandom;
 
 namespace test {
@@ -266,6 +267,8 @@ class NET_EXPORT_PRIVATE QuicConnection
                           QuicStreamId last_good_stream_id,
                           const std::string& reason);
 
+  QuicFlowController* flow_controller() { return flow_controller_.get(); }
+
   // Returns statistics tracked for this connection.
   const QuicConnectionStats& GetStats();
 
@@ -414,9 +417,9 @@ class NET_EXPORT_PRIVATE QuicConnection
   // initially encrypted packets when the initial encrypter changes.
   void RetransmitUnackedPackets(RetransmissionType retransmission_type);
 
-  // Calls |sent_packet_manager_|'s NeuterUnencryptedPackets. Used when the
+  // Calls |sent_packet_manager_|'s DiscardUnencryptedPackets. Used when the
   // connection becomes forward secure and hasn't received acks for all packets.
-  void NeuterUnencryptedPackets();
+  void DiscardUnencryptedPackets();
 
   // Changes the encrypter used for level |level| to |encrypter|. The function
   // takes ownership of |encrypter|.
@@ -741,6 +744,9 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   // Initial flow control receive window size for new streams.
   uint32 max_flow_control_receive_window_bytes_;
+
+  // Used for connection level flow control.
+  scoped_ptr<QuicFlowController> flow_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicConnection);
 };

@@ -22,7 +22,8 @@
     'sources': [
       'usb_service/usb_context.cc',
       'usb_service/usb_context.h',
-      'usb_service/usb_device.cc',
+      'usb_service/usb_device_impl.cc',
+      'usb_service/usb_device_impl.h',
       'usb_service/usb_device.h',
       'usb_service/usb_device_handle.cc',
       'usb_service/usb_device_handle.h',
@@ -30,6 +31,13 @@
       'usb_service/usb_interface.h',
       'usb_service/usb_service.h',
       'usb_service/usb_service_impl.cc',
+    ],
+    'conditions': [
+      ['OS == "linux"', {
+        'dependencies': [
+          '../build/linux/system.gyp:udev',
+        ],
+      }]
     ]
   }],
 }

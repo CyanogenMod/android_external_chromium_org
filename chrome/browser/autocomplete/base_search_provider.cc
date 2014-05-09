@@ -7,6 +7,7 @@
 #include "base/i18n/case_conversion.h"
 #include "base/i18n/icu_string_conversions.h"
 #include "base/json/json_string_value_serializer.h"
+#include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -21,6 +22,8 @@
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/net/url_fixer_upper.h"
@@ -45,6 +48,10 @@ AutocompleteMatchType::Type GetAutocompleteMatchType(const std::string& type) {
     return AutocompleteMatchType::SEARCH_SUGGEST_PERSONALIZED;
   if (type == "PROFILE")
     return AutocompleteMatchType::SEARCH_SUGGEST_PROFILE;
+  if (type == "NAVIGATION")
+    return AutocompleteMatchType::NAVSUGGEST;
+  if (type == "PERSONALIZED_NAVIGATION")
+    return AutocompleteMatchType::NAVSUGGEST_PERSONALIZED;
   return AutocompleteMatchType::SEARCH_SUGGEST;
 }
 
@@ -149,7 +156,6 @@ void BaseSearchProvider::Stop(bool clear_cached_results) {
 
 void BaseSearchProvider::DeleteMatch(const AutocompleteMatch& match) {
   DCHECK(match.deletable);
-
   if (!match.GetAdditionalInfo(BaseSearchProvider::kDeletionUrlKey).empty()) {
     deletion_handlers_.push_back(new SuggestionDeletionHandler(
         match.GetAdditionalInfo(BaseSearchProvider::kDeletionUrlKey),
@@ -188,6 +194,7 @@ void BaseSearchProvider::AddProviderInfo(ProvidersInfo* provider_info) const {
           field_trial_hashes[i]);
     }
   }
+  ModifyProviderInfo(&new_entry);
 }
 
 // static
@@ -205,10 +212,14 @@ BaseSearchProvider::~BaseSearchProvider() {}
 
 BaseSearchProvider::Result::Result(bool from_keyword_provider,
                                    int relevance,
-                                   bool relevance_from_server)
+                                   bool relevance_from_server,
+                                   AutocompleteMatchType::Type type,
+                                   const std::string& deletion_url)
     : from_keyword_provider_(from_keyword_provider),
-      relevance_(relevance),
-      relevance_from_server_(relevance_from_server) {}
+       type_(type),
+       relevance_(relevance),
+       relevance_from_server_(relevance_from_server),
+       deletion_url_(deletion_url) {}
 
 BaseSearchProvider::Result::~Result() {}
 
@@ -227,13 +238,15 @@ BaseSearchProvider::SuggestResult::SuggestResult(
     bool relevance_from_server,
     bool should_prefetch,
     const base::string16& input_text)
-    : Result(from_keyword_provider, relevance, relevance_from_server),
+    : Result(from_keyword_provider,
+             relevance,
+             relevance_from_server,
+             type,
+             deletion_url),
       suggestion_(suggestion),
-      type_(type),
       match_contents_prefix_(match_contents_prefix),
       annotation_(annotation),
       suggest_query_params_(suggest_query_params),
-      deletion_url_(deletion_url),
       should_prefetch_(should_prefetch) {
   match_contents_ = match_contents;
   DCHECK(!match_contents_.empty());
@@ -326,13 +339,19 @@ int BaseSearchProvider::SuggestResult::CalculateRelevance(
 BaseSearchProvider::NavigationResult::NavigationResult(
     const AutocompleteProvider& provider,
     const GURL& url,
+    AutocompleteMatchType::Type type,
     const base::string16& description,
+    const std::string& deletion_url,
     bool from_keyword_provider,
     int relevance,
     bool relevance_from_server,
     const base::string16& input_text,
     const std::string& languages)
-    : Result(from_keyword_provider, relevance, relevance_from_server),
+    : Result(from_keyword_provider,
+             relevance,
+             relevance_from_server,
+             type,
+             deletion_url),
       url_(url),
       formatted_url_(AutocompleteInput::FormattedStringWithEquivalentMeaning(
           url,
@@ -428,6 +447,24 @@ bool BaseSearchProvider::Results::HasServerProvidedScores() const {
   }
 
   return false;
+}
+
+void BaseSearchProvider::SetDeletionURL(const std::string& deletion_url,
+                                        AutocompleteMatch* match) {
+  if (deletion_url.empty())
+    return;
+  TemplateURLService* template_service =
+      TemplateURLServiceFactory::GetForProfile(profile_);
+  if (!template_service)
+    return;
+  GURL url = TemplateURLService::GenerateSearchURL(
+      template_service->GetDefaultSearchProvider());
+  url = url.GetOrigin().Resolve(deletion_url);
+  if (url.is_valid()) {
+    match->RecordAdditionalInfo(BaseSearchProvider::kDeletionUrlKey,
+        url.spec());
+    match->deletable = true;
+  }
 }
 
 // BaseSearchProvider ---------------------------------------------------------
@@ -542,7 +579,7 @@ bool BaseSearchProvider::ZeroSuggestEnabled(
 
   // Make sure we are sending the suggest request through HTTPS to prevent
   // exposing the current page URL or personalized results without encryption.
-  if (!suggest_url.SchemeIs(content::kHttpsScheme))
+  if (!suggest_url.SchemeIs(url::kHttpsScheme))
     return false;
 
   // Don't show zero suggest on the NTP.
@@ -589,8 +626,8 @@ bool BaseSearchProvider::CanSendURL(
 
   // Only allow HTTP URLs or HTTPS URLs for the same domain as the search
   // provider.
-  if ((current_page_url.scheme() != content::kHttpScheme) &&
-      ((current_page_url.scheme() != content::kHttpsScheme) ||
+  if ((current_page_url.scheme() != url::kHttpScheme) &&
+      ((current_page_url.scheme() != url::kHttpsScheme) ||
        !net::registry_controlled_domains::SameDomainOrHost(
            current_page_url, suggest_url,
            net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES)))
@@ -648,6 +685,9 @@ void BaseSearchProvider::OnURLFetchComplete(const net::URLFetcher* source) {
     }
 
     scoped_ptr<base::Value> data(DeserializeJsonData(json_data));
+    if (data && StoreSuggestionResponse(json_data, *data.get()))
+      return;
+
     results_updated = data.get() && ParseSuggestResults(
         *data.get(), is_keyword, GetResultsToFill(is_keyword));
   }
@@ -681,17 +721,9 @@ void BaseSearchProvider::AddMatchToMap(const SuggestResult& result,
                              result.relevance_from_server() ? kTrue : kFalse);
   match.RecordAdditionalInfo(kShouldPrefetchKey,
                              result.should_prefetch() ? kTrue : kFalse);
-
-  if (!result.deletion_url().empty()) {
-    GURL url(match.destination_url.GetOrigin().Resolve(result.deletion_url()));
-    if (url.is_valid()) {
-      match.RecordAdditionalInfo(kDeletionUrlKey, url.spec());
-      match.deletable = true;
-    }
-  } else if (mark_as_deletable) {
+  SetDeletionURL(result.deletion_url(), &match);
+  if (mark_as_deletable)
     match.deletable = true;
-  }
-
   // Metadata is needed only for prefetching queries.
   if (result.should_prefetch())
     match.RecordAdditionalInfo(kSuggestMetadataKey, metadata);
@@ -827,8 +859,19 @@ bool BaseSearchProvider::ParseSuggestResults(const base::Value& root_val,
     // Apply valid suggested relevance scores; discard invalid lists.
     if (relevances != NULL && !relevances->GetInteger(index, &relevance))
       relevances = NULL;
+    AutocompleteMatchType::Type match_type =
+        AutocompleteMatchType::SEARCH_SUGGEST;
+    if (types && types->GetString(index, &type))
+      match_type = GetAutocompleteMatchType(type);
+    const base::DictionaryValue* suggestion_detail = NULL;
+    std::string deletion_url;
 
-    if (types && types->GetString(index, &type) && (type == "NAVIGATION")) {
+    if (suggestion_details &&
+        suggestion_details->GetDictionary(index, &suggestion_detail))
+      suggestion_detail->GetString("du", &deletion_url);
+
+    if ((match_type == AutocompleteMatchType::NAVSUGGEST) ||
+        (match_type == AutocompleteMatchType::NAVSUGGEST_PERSONALIZED)) {
       // Do not blindly trust the URL coming from the server to be valid.
       GURL url(URLFixerUpper::FixupURL(
           base::UTF16ToUTF8(suggestion), std::string()));
@@ -837,23 +880,18 @@ bool BaseSearchProvider::ParseSuggestResults(const base::Value& root_val,
         if (descriptions != NULL)
           descriptions->GetString(index, &title);
         results->navigation_results.push_back(NavigationResult(
-            *this, url, title, is_keyword_result, relevance,
-            relevances != NULL, input.text(), languages));
+            *this, url, match_type, title, deletion_url, is_keyword_result,
+            relevance, relevances != NULL, input.text(), languages));
       }
     } else {
-      AutocompleteMatchType::Type match_type = GetAutocompleteMatchType(type);
-      bool should_prefetch = static_cast<int>(index) == prefetch_index;
-      const base::DictionaryValue* suggestion_detail = NULL;
       base::string16 match_contents = suggestion;
       base::string16 match_contents_prefix;
       base::string16 annotation;
       std::string suggest_query_params;
-      std::string deletion_url;
 
       if (suggestion_details) {
         suggestion_details->GetDictionary(index, &suggestion_detail);
         if (suggestion_detail) {
-          suggestion_detail->GetString("du", &deletion_url);
           suggestion_detail->GetString("t", &match_contents);
           suggestion_detail->GetString("mp", &match_contents_prefix);
           // Error correction for bad data from server.
@@ -864,6 +902,7 @@ bool BaseSearchProvider::ParseSuggestResults(const base::Value& root_val,
         }
       }
 
+      bool should_prefetch = static_cast<int>(index) == prefetch_index;
       // TODO(kochi): Improve calculator suggestion presentation.
       results->suggest_results.push_back(SuggestResult(
           base::CollapseWhitespace(suggestion, false), match_type,
@@ -880,6 +919,16 @@ bool BaseSearchProvider::ParseSuggestResults(const base::Value& root_val,
 void BaseSearchProvider::SortResults(bool is_keyword,
                                      const base::ListValue* relevances,
                                      Results* results) {
+}
+
+bool BaseSearchProvider::StoreSuggestionResponse(
+    const std::string& json_data,
+    const base::Value& parsed_data) {
+  return false;
+}
+
+void BaseSearchProvider::ModifyProviderInfo(
+    metrics::OmniboxEventProto_ProviderInfo* provider_info) const {
 }
 
 void BaseSearchProvider::DeleteMatchFromMatches(

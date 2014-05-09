@@ -528,10 +528,6 @@ IPC_MESSAGE_ROUTED1(ViewMsg_LockMouse_ACK,
 // Tells the render side that the mouse has been unlocked.
 IPC_MESSAGE_ROUTED0(ViewMsg_MouseLockLost)
 
-// Screen was rotated. Dispatched to the onorientationchange javascript API.
-IPC_MESSAGE_ROUTED1(ViewMsg_OrientationChangeEvent,
-                    int /* orientation */)
-
 // Sent by the browser when the parameters for vsync alignment have changed.
 IPC_MESSAGE_ROUTED2(ViewMsg_UpdateVSyncParameters,
                     base::TimeTicks /* timebase */,
@@ -647,6 +643,12 @@ IPC_MESSAGE_ROUTED1(ViewMsg_ReplaceDateTime,
 // Copies the image at location x, y to the clipboard (if there indeed is an
 // image at that location).
 IPC_MESSAGE_ROUTED2(ViewMsg_CopyImageAt,
+                    int /* x */,
+                    int /* y */)
+
+// Saves the image at location x, y to the disk (if there indeed is an
+// image at that location).
+IPC_MESSAGE_ROUTED2(ViewMsg_SaveImageAt,
                     int /* x */,
                     int /* y */)
 
@@ -1287,10 +1289,11 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_AppCacheAccessed,
                     bool /* blocked by policy */)
 
 // Initiates a download based on user actions like 'ALT+click'.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_DownloadUrl,
+IPC_MESSAGE_ROUTED4(ViewHostMsg_DownloadUrl,
                     GURL     /* url */,
                     content::Referrer /* referrer */,
-                    base::string16 /* suggested_name */)
+                    base::string16 /* suggested_name */,
+                    bool /* use prompt for save location */)
 
 // Used to go to the session history entry at the given offset (ie, -1 will
 // return the "back" item).

@@ -224,6 +224,9 @@ const char kDisablePrefixedEncryptedMedia[] =
 // Disables LCD text.
 const char kDisableLCDText[]                = "disable-lcd-text";
 
+// Disables distance field text.
+const char kDisableDistanceFieldText[]      = "disable-distance-field-text";
+
 // Disable LocalStorage.
 const char kDisableLocalStorage[]           = "disable-local-storage";
 
@@ -330,6 +333,10 @@ const char kEnableAcceleratedOverflowScroll[] =
 
 // Enables LCD text.
 const char kEnableLCDText[]                 = "enable-lcd-text";
+
+// Enables using signed distance fields when rendering text.
+// Only valid if GPU rasterization is enabled as well.
+const char kEnableDistanceFieldText[]       = "enable-distance-field-text";
 
 // Enables experimental feature that maps multiple RenderLayers to
 // one composited layer to avoid pathological layer counts.
@@ -440,11 +447,6 @@ const char kEnableLogging[]                 = "enable-logging";
 
 // Enables the memory benchmarking extension
 const char kEnableMemoryBenchmarking[]      = "enable-memory-benchmarking";
-
-// On Windows, converts the page to the currently-installed monitor profile.
-// This does NOT enable color management for images. The source is still
-// assumed to be sRGB.
-const char kEnableMonitorProfile[]          = "enable-monitor-profile";
 
 // Enables use of cache if offline, even if it's stale
 const char kEnableOfflineCacheAccess[]      = "enable-offline-cache-access";

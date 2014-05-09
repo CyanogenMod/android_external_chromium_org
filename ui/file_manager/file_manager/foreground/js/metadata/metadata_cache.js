@@ -320,26 +320,16 @@ MetadataCache.prototype.getOne = function(entry, type, callback) {
 
 /**
  * Returns the cached metadata value, or |null| if not present.
- * @param {Entry|Array.<Entry>} entries The list of entries. May be just a
- *     single entry.
+ * @param {Entry} entry Entry.
  * @param {string} type The metadata type.
  * @return {Object} The metadata or null.
  */
-MetadataCache.prototype.getCached = function(entries, type) {
-  var single = false;
-  if (!(entries instanceof Array)) {
-    single = true;
-    entries = [entries];
-  }
-
-  var result = [];
-  for (var index = 0; index < entries.length; index++) {
-    var entryURL = entries[index].toURL();
-    result.push(entryURL in this.cache_ ?
-        (this.cache_[entryURL].properties[type] || null) : null);
-  }
-
-  return single ? result[0] : result;
+MetadataCache.prototype.getCached = function(entry, type) {
+  // Entry.cachedUrl may be set in DirectoryContents.onNewEntries_().
+  // See the comment there for detail.
+  var entryURL = entry.cachedUrl || entry.toURL();
+  var cache = this.cache_[entryURL];
+  return cache ? (cache.properties[type] || null) : null;
 };
 
 /**

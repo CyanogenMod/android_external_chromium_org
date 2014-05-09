@@ -87,7 +87,6 @@ class WebRtcAudioQualityBrowserTest : public WebRtcTestBase,
  public:
   WebRtcAudioQualityBrowserTest() {}
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    test::PeerConnectionServerRunner::KillAllPeerConnectionServers();
     DetectErrorsInJavaScript();  // Look for errors in our rather complex js.
   }
 
@@ -114,18 +113,6 @@ class WebRtcAudioQualityBrowserTest : public WebRtcTestBase,
     EXPECT_EQ("ok-playing", ExecuteJavascript("playAudioFile()", tab_contents));
   }
 
-  void EstablishCall(content::WebContents* from_tab,
-                     content::WebContents* to_tab) {
-    EXPECT_EQ("ok-negotiating",
-              ExecuteJavascript("negotiateCall()", from_tab));
-
-    // Ensure the call gets up on both sides.
-    EXPECT_TRUE(test::PollingWaitUntil("getPeerConnectionReadyState()",
-                                       "active", from_tab));
-    EXPECT_TRUE(test::PollingWaitUntil("getPeerConnectionReadyState()",
-                                       "active", to_tab));
-  }
-
   base::FilePath CreateTemporaryWaveFile() {
     base::FilePath filename;
     EXPECT_TRUE(base::CreateTemporaryFile(&filename));
@@ -134,8 +121,6 @@ class WebRtcAudioQualityBrowserTest : public WebRtcTestBase,
     EXPECT_TRUE(base::Move(filename, wav_filename));
     return wav_filename;
   }
-
-  test::PeerConnectionServerRunner peerconnection_server_;
 };
 
 class AudioRecorder {
@@ -373,7 +358,6 @@ IN_PROC_BROWSER_TEST_P(WebRtcAudioQualityBrowserTest,
 #endif
   ASSERT_TRUE(test::HasReferenceFilesInCheckout());
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
-  ASSERT_TRUE(peerconnection_server_.Start());
 
   ASSERT_TRUE(ForceMicrophoneVolumeTo100Percent());
 
@@ -388,15 +372,16 @@ IN_PROC_BROWSER_TEST_P(WebRtcAudioQualityBrowserTest,
   ui_test_utils::NavigateToURL(
       browser(), embedded_test_server()->GetURL(kMainWebrtcTestHtmlPage));
 
-  ConnectToPeerConnectionServer("peer 1", left_tab);
-  ConnectToPeerConnectionServer("peer 2", right_tab);
-
+  // Prepare the peer connections manually in this test since we don't add
+  // getUserMedia-derived media streams in this test like the other tests.
   EXPECT_EQ("ok-peerconnection-created",
             ExecuteJavascript("preparePeerConnection()", left_tab));
+  EXPECT_EQ("ok-peerconnection-created",
+            ExecuteJavascript("preparePeerConnection()", right_tab));
 
   AddAudioFile(kReferenceFileRelativeUrl, left_tab);
 
-  EstablishCall(left_tab, right_tab);
+  NegotiateCall(left_tab, right_tab);
 
   // Note: the media flow isn't necessarily established on the connection just
   // because the ready state is ok on both sides. We sleep a bit between call
@@ -418,8 +403,6 @@ IN_PROC_BROWSER_TEST_P(WebRtcAudioQualityBrowserTest,
   VLOG(0) << "Done recording to " << recording.value() << std::endl;
 
   HangUp(left_tab);
-  WaitUntilHangupVerified(left_tab);
-  WaitUntilHangupVerified(right_tab);
 
   base::FilePath trimmed_recording = CreateTemporaryWaveFile();
 
@@ -438,6 +421,4 @@ IN_PROC_BROWSER_TEST_P(WebRtcAudioQualityBrowserTest,
 
   EXPECT_TRUE(base::DeleteFile(recording, false));
   EXPECT_TRUE(base::DeleteFile(trimmed_recording, false));
-
-  ASSERT_TRUE(peerconnection_server_.Stop());
 }

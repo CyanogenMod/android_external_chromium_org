@@ -47,7 +47,6 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "url/url_util.h"
 
-
 // Helpers --------------------------------------------------------------------
 
 namespace {
@@ -559,8 +558,8 @@ bool SearchProvider::IsQuerySuitableForSuggest() const {
   // and happens to currently be invalid -- in which case we again want to run
   // our checks below.  Other QUERY cases are less likely to be URLs and thus we
   // assume we're OK.
-  if (!LowerCaseEqualsASCII(input_.scheme(), content::kHttpScheme) &&
-      !LowerCaseEqualsASCII(input_.scheme(), content::kHttpsScheme) &&
+  if (!LowerCaseEqualsASCII(input_.scheme(), url::kHttpScheme) &&
+      !LowerCaseEqualsASCII(input_.scheme(), url::kHttpsScheme) &&
       !LowerCaseEqualsASCII(input_.scheme(), content::kFtpScheme))
     return (input_.type() == AutocompleteInput::QUERY);
 
@@ -582,7 +581,7 @@ bool SearchProvider::IsQuerySuitableForSuggest() const {
   // Don't send anything for https except the hostname.  Hostnames are OK
   // because they are visible when the TCP connection is established, but the
   // specific path may reveal private information.
-  if (LowerCaseEqualsASCII(input_.scheme(), content::kHttpsScheme) &&
+  if (LowerCaseEqualsASCII(input_.scheme(), url::kHttpsScheme) &&
       parts.path.is_nonempty())
     return false;
 
@@ -807,7 +806,8 @@ bool SearchProvider::IsTopMatchSearchWithURLInput() const {
   return (input_.type() == AutocompleteInput::URL) &&
       (first_match != matches_.end()) &&
       (first_match->relevance > CalculateRelevanceForVerbatim()) &&
-      (first_match->type != AutocompleteMatchType::NAVSUGGEST);
+      (first_match->type != AutocompleteMatchType::NAVSUGGEST) &&
+      (first_match->type != AutocompleteMatchType::NAVSUGGEST_PERSONALIZED);
 }
 
 void SearchProvider::AddNavigationResultsToMatches(
@@ -1063,9 +1063,9 @@ AutocompleteMatch SearchProvider::NavigationToMatch(
           keyword_input_.text() : input_.text(),
       base::TRIM_TRAILING, &input) != base::TRIM_NONE;
   AutocompleteMatch match(this, navigation.relevance(), false,
-                          AutocompleteMatchType::NAVSUGGEST);
+                          navigation.type());
   match.destination_url = navigation.url();
-
+  BaseSearchProvider::SetDeletionURL(navigation.deletion_url(), &match);
   // First look for the user's input inside the formatted url as it would be
   // without trimming the scheme, so we can find matches at the beginning of the
   // scheme.
@@ -1110,7 +1110,7 @@ AutocompleteMatch SearchProvider::NavigationToMatch(
   match.allowed_to_be_default_match = navigation.IsInlineable(input) &&
       (providers_.GetKeywordProviderURL() == NULL) &&
       (match.inline_autocompletion.empty() ||
-       (!input_.prevent_inline_autocomplete() && !trimmed_whitespace));
+      (!input_.prevent_inline_autocomplete() && !trimmed_whitespace));
 
   match.contents = navigation.match_contents();
   match.contents_class = navigation.match_contents_class();

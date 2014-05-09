@@ -15,23 +15,8 @@ scoped_ptr<BookmarkModel> TestBookmarkClient::CreateModel(bool index_urls) {
   return bookmark_model.Pass();
 }
 
-base::CancelableTaskTracker::TaskId TestBookmarkClient::GetFaviconImageForURL(
-    const GURL& page_url,
-    int icon_types,
-    int desired_size_in_dip,
-    const FaviconImageCallback& callback,
-    base::CancelableTaskTracker* tracker) {
-  return base::CancelableTaskTracker::kBadTaskId;
-}
-
-bool TestBookmarkClient::SupportsTypedCountForNodes() {
+bool TestBookmarkClient::PreferTouchIcon() {
   return false;
-}
-
-void TestBookmarkClient::GetTypedCountForNodes(
-    const NodeSet& nodes,
-    NodeTypedCountPairs* node_typed_count_pairs) {
-  NOTREACHED();
 }
 
 void TestBookmarkClient::RecordAction(const base::UserMetricsAction& action) {

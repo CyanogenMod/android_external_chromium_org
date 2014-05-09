@@ -488,24 +488,19 @@ void WebTestProxyBase::didCompositeAndReadback(const SkBitmap& bitmap) {
                bitmap.info().fHeight);
   SkCanvas canvas(bitmap);
   DrawSelectionRect(&canvas);
+  DCHECK(!m_compositeAndReadbackCallback.is_null());
   base::ResetAndReturn(&m_compositeAndReadbackCallback).Run(bitmap);
 }
 
 void WebTestProxyBase::CapturePixelsAsync(
     base::Callback<void(const SkBitmap&)> callback) {
-  m_compositeAndReadbackCallback = callback;
   TRACE_EVENT0("shell", "WebTestProxyBase::CapturePixelsAsync");
 
-  // Do a layout here because it might leave compositing mode! x.x
-  // TODO(danakj): Remove this when we have kForceCompositingMode everywhere.
-  webWidget()->layout();
-
-  if (!webWidget()->compositeAndReadbackAsync(this)) {
-    TRACE_EVENT0("shell",
-                 "WebTestProxyBase::CapturePixelsAsync "
-                 "compositeAndReadbackAsync failed");
-    didCompositeAndReadback(SkBitmap());
-  }
+  DCHECK(webWidget()->isAcceleratedCompositingActive());
+  DCHECK(!callback.is_null());
+  DCHECK(m_compositeAndReadbackCallback.is_null());
+  m_compositeAndReadbackCallback = callback;
+  webWidget()->compositeAndReadbackAsync(this);
 }
 
 void WebTestProxyBase::setLogConsoleOutput(bool enabled)

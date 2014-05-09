@@ -50,9 +50,11 @@
         '../testing/gtest.gyp:gtest',
         '../ui/accessibility/accessibility.gyp:ax_gen',
         '../ui/base/ui_base.gyp:ui_base',
+        '../ui/base/ui_base.gyp:ui_base_test_support',
         '../ui/events/events.gyp:dom4_keycode_converter',
         '../ui/events/events.gyp:events_base',
         '../ui/events/events.gyp:events_test_support',
+        '../ui/events/events.gyp:gesture_detection',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
         '../ui/gfx/gfx.gyp:gfx_test_support',
@@ -1411,10 +1413,9 @@
                   '<(angle_path)/src/build_angle.gyp:libGLESv2',
                 ],
               }],
-              # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
               ['(OS=="win" and win_use_allocator_shim==1) or '
                '(os_posix == 1 and OS != "android" and '
-               ' ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)))', {
+               ' use_allocator!="none")', {
                 'dependencies': [
                   '../base/allocator/allocator.gyp:allocator',
                 ],

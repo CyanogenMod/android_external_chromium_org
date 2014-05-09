@@ -128,6 +128,21 @@
             'disk_cache/blockfile/mapped_file_avoid_mmap_posix.cc',
           ],
         }],
+        ['disable_file_support==1', {
+          # TODO(mmenke):  Should probably get rid of the dependency on
+          # net_resources in this case (It's used in net_util, to format
+          # directory listings.  Also used outside of net/).
+          'sources!': [
+            'base/directory_lister.cc',
+            'base/directory_lister.h',
+            'url_request/url_request_file_dir_job.cc',
+            'url_request/url_request_file_dir_job.h',
+            'url_request/url_request_file_job.cc',
+            'url_request/url_request_file_job.h',
+            'url_request/file_protocol_handler.cc',
+            'url_request/file_protocol_handler.h',
+          ],
+        }],
         ['disable_ftp_support==1', {
           'sources/': [
             ['exclude', '^ftp/'],
@@ -208,7 +223,6 @@
           {  # else !use_openssl: remove the unneeded files
             'sources!': [
               'base/crypto_module_openssl.cc',
-              'base/keygen_handler_openssl.cc',
               'cert/ct_log_verifier_openssl.cc',
               'cert/ct_objects_extractor_openssl.cc',
               'cert/jwk_serializer_openssl.cc',
@@ -234,6 +248,7 @@
         ],
         [ 'use_openssl_certs == 0', {
             'sources!': [
+              'base/keygen_handler_openssl.cc',
               'base/openssl_private_key_store.h',
               'base/openssl_private_key_store_android.cc',
               'base/openssl_private_key_store_memory.cc',
@@ -533,8 +548,7 @@
         }],
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
           'conditions': [
-            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-            ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
+            ['use_allocator!="none"', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
@@ -594,6 +608,12 @@
               ['exclude', '^websockets/'],
               ['exclude', '^spdy/spdy_websocket_stream_unittest\\.cc$'],
             ],
+        }],
+        ['disable_file_support==1', {
+          'sources!': [
+            'base/directory_lister_unittest.cc',
+            'url_request/url_request_file_job_unittest.cc',
+          ],
         }],
         [ 'disable_ftp_support==1', {
             'sources/': [
@@ -887,8 +907,7 @@
         }],
         ['os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
           'conditions': [
-            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-            ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
+            ['use_allocator!="none"', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
