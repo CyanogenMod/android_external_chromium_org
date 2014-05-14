@@ -11,7 +11,6 @@
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/timer/elapsed_timer.h"
-#include "chrome/browser/local_discovery/service_discovery_client_utility.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "chrome/installer/util/firewall_manager_win.h"
 #endif  // OS_WIN
@@ -21,26 +20,25 @@
 #endif
 
 #if defined(ENABLE_MDNS)
-#include "chrome/browser/local_discovery/service_discovery_client_mdns.h"
+#include "chrome/browser/local_discovery/service_discovery_client_utility.h"
 #endif  // ENABLE_MDNS
 
 namespace {
 
 #if defined(OS_WIN)
-bool IsFirewallReady() {
+void ReportFirewallStats() {
   base::FilePath exe_path;
   if (!PathService::Get(base::FILE_EXE, &exe_path))
-    return false;
+    return;
   base::ElapsedTimer timer;
   scoped_ptr<installer::FirewallManager> manager =
       installer::FirewallManager::Create(BrowserDistribution::GetDistribution(),
                                          exe_path);
   if (!manager)
-    return false;
+    return;
   bool is_ready = manager->CanUseLocalPorts();
   UMA_HISTOGRAM_TIMES("LocalDiscovery.FirewallAccessTime", timer.Elapsed());
   UMA_HISTOGRAM_BOOLEAN("LocalDiscovery.IsFirewallReady", is_ready);
-  return is_ready;
 }
 #endif  // OS_WIN
 
@@ -76,18 +74,18 @@ scoped_refptr<ServiceDiscoverySharedClient>
 
 #if defined(OS_MACOSX)
   return ServiceDiscoveryClientMacFactory::CreateInstance();
-#else
+#else  // OS_MACOSX
 
 #if defined(OS_WIN)
-  static bool is_firewall_ready = IsFirewallReady();
-  if (!is_firewall_ready) {
-    // TODO(vitalybuka): Remove after we find what to do with firewall for
-    // user-level installs. crbug.com/366408
-    return new ServiceDiscoveryClientUtility();
-  }
+  static bool reported =
+      BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
+                              base::Bind(&ReportFirewallStats));
 #endif  // OS_WIN
-  return new ServiceDiscoveryClientMdns();
-#endif
+
+  // TODO(vitalybuka): Switch to |ServiceDiscoveryClientMdns| after we find what
+  // to do with firewall for user-level installs. crbug.com/366408
+  return new ServiceDiscoveryClientUtility();
+#endif // OS_MACOSX
 }
 
 #else

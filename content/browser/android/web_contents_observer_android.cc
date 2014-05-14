@@ -48,8 +48,7 @@ void WebContentsObserverAndroid::Destroy(JNIEnv* env, jobject obj) {
   delete this;
 }
 
-void WebContentsObserverAndroid::WebContentsDestroyed(
-    WebContents* web_contents) {
+void WebContentsObserverAndroid::WebContentsDestroyed() {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
   if (obj.is_null()) {
@@ -273,13 +272,13 @@ void WebContentsObserverAndroid::DidFailLoadInternal(
       jstring_error_description.obj(), jstring_url.obj());
 }
 
-void WebContentsObserverAndroid::DidFirstVisuallyNonEmptyPaint(int32 page_id) {
+void WebContentsObserverAndroid::DidFirstVisuallyNonEmptyPaint() {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
   if (obj.is_null())
     return;
   Java_WebContentsObserverAndroid_didFirstVisuallyNonEmptyPaint(
-      env, obj.obj(), page_id);
+      env, obj.obj());
 }
 
 bool RegisterWebContentsObserverAndroid(JNIEnv* env) {

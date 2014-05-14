@@ -4,6 +4,8 @@
 
 #include "chrome/browser/component_updater/recovery_component_installer.h"
 
+#include <string>
+
 #include "base/base_paths.h"
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -66,8 +68,7 @@ class RecoveryComponentInstaller : public ComponentInstaller {
   PrefService* prefs_;
 };
 
-void RecoveryRegisterHelper(ComponentUpdateService* cus,
-                            PrefService* prefs) {
+void RecoveryRegisterHelper(ComponentUpdateService* cus, PrefService* prefs) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   Version version(prefs->GetString(prefs::kRecoveryComponentVersion));
   if (!version.IsValid()) {
@@ -90,9 +91,9 @@ void RecoveryUpdateVersionHelper(const Version& version, PrefService* prefs) {
   prefs->SetString(prefs::kRecoveryComponentVersion, version.GetString());
 }
 
-RecoveryComponentInstaller::RecoveryComponentInstaller(
-      const Version& version, PrefService* prefs)
-    : current_version_(version), prefs_(prefs){
+RecoveryComponentInstaller::RecoveryComponentInstaller(const Version& version,
+                                                       PrefService* prefs)
+    : current_version_(version), prefs_(prefs) {
   DCHECK(version.IsValid());
 }
 
@@ -129,14 +130,17 @@ bool RecoveryComponentInstaller::Install(const base::DictionaryValue& manifest,
   }
   current_version_ = version;
   if (prefs_) {
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+    BrowserThread::PostTask(
+        BrowserThread::UI,
+        FROM_HERE,
         base::Bind(&RecoveryUpdateVersionHelper, version, prefs_));
   }
   return base::LaunchProcess(cmdline, base::LaunchOptions(), NULL);
 }
 
 bool RecoveryComponentInstaller::GetInstalledFile(
-    const std::string& file, base::FilePath* installed_file) {
+    const std::string& file,
+    base::FilePath* installed_file) {
   return false;
 }
 
@@ -158,4 +162,3 @@ void RegisterPrefsForRecoveryComponent(PrefRegistrySimple* registry) {
 }
 
 }  // namespace component_updater
-

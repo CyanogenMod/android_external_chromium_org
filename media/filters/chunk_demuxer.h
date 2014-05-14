@@ -96,6 +96,10 @@ class ChunkDemuxerStream : public DemuxerStream {
     stream_->set_memory_limit_for_testing(memory_limit);
   }
 
+  bool supports_partial_append_window_trimming() const {
+    return partial_append_window_trimming_enabled_;
+  }
+
  private:
   enum State {
     UNINITIALIZED,
@@ -117,7 +121,8 @@ class ChunkDemuxerStream : public DemuxerStream {
   mutable base::Lock lock_;
   State state_;
   ReadCB read_cb_;
-  const bool splice_frames_enabled_;
+  bool splice_frames_enabled_;
+  bool partial_append_window_trimming_enabled_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(ChunkDemuxerStream);
 };
@@ -221,7 +226,12 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
 
   // Aborts parsing the current segment and reset the parser to a state where
   // it can accept a new segment.
-  void Abort(const std::string& id);
+  // Some pending frames can be emitted during that process. These frames are
+  // applied |timestamp_offset|.
+  void Abort(const std::string& id,
+             base::TimeDelta append_window_start,
+             base::TimeDelta append_window_end,
+             base::TimeDelta* timestamp_offset);
 
   // Remove buffers between |start| and |end| for the source buffer
   // associated with |id|.

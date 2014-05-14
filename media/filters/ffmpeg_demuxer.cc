@@ -50,6 +50,11 @@ static base::Time ExtractTimelineOffset(AVFormatContext* format_context) {
   return base::Time();
 }
 
+static base::TimeDelta FramesToTimeDelta(int frames, double sample_rate) {
+  return base::TimeDelta::FromMicroseconds(
+      frames * base::Time::kMicrosecondsPerSecond / sample_rate);
+}
+
 //
 // FFmpegDemuxerStream
 //
@@ -90,10 +95,12 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(
   // Calculate the duration.
   duration_ = ConvertStreamTimestamp(stream->time_base, stream->duration);
 
+#if defined(USE_PROPRIETARY_CODECS)
   if (stream_->codec->codec_id == AV_CODEC_ID_H264) {
     bitstream_converter_.reset(
         new FFmpegH264ToAnnexBBitstreamConverter(stream_->codec));
   }
+#endif
 
   if (is_encrypted) {
     AVDictionaryEntry* key = av_dict_get(stream->metadata, "enc_key_id", NULL,
@@ -122,11 +129,13 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
     return;
   }
 
+#if defined(USE_PROPRIETARY_CODECS)
   // Convert the packet if there is a bitstream filter.
   if (packet->data && bitstream_converter_enabled_ &&
       !bitstream_converter_->ConvertPacket(packet.get())) {
     LOG(ERROR) << "Format conversion failed.";
   }
+#endif
 
   // Get side data if any. For now, the only type of side_data is VP8 Alpha. We
   // keep this generic so that other side_data types in the future can be
@@ -189,20 +198,28 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
     }
 
     int skip_samples_size = 0;
-    uint8* skip_samples = av_packet_get_side_data(packet.get(),
-                                                  AV_PKT_DATA_SKIP_SAMPLES,
-                                                  &skip_samples_size);
+    const uint32* skip_samples_ptr =
+        reinterpret_cast<const uint32*>(av_packet_get_side_data(
+            packet.get(), AV_PKT_DATA_SKIP_SAMPLES, &skip_samples_size));
     const int kSkipSamplesValidSize = 10;
-    const int kSkipSamplesOffset = 4;
+    const int kSkipEndSamplesOffset = 1;
     if (skip_samples_size >= kSkipSamplesValidSize) {
-      int discard_padding_samples = base::ByteSwapToLE32(
-          *(reinterpret_cast<const uint32*>(skip_samples +
-                                            kSkipSamplesOffset)));
-      // TODO(vigneshv): Change decoder buffer to use number of samples so that
-      // this conversion can be avoided.
-      buffer->set_discard_padding(base::TimeDelta::FromMicroseconds(
-          discard_padding_samples * 1000000.0 /
-          audio_decoder_config().samples_per_second()));
+      // Because FFmpeg rolls codec delay and skip samples into one we can only
+      // allow front discard padding on the first buffer.  Otherwise the discard
+      // helper can't figure out which data to discard.  See AudioDiscardHelper.
+      int discard_front_samples = base::ByteSwapToLE32(*skip_samples_ptr);
+      if (last_packet_timestamp_ != kNoTimestamp()) {
+        DLOG(ERROR) << "Skip samples are only allowed for the first packet.";
+        discard_front_samples = 0;
+      }
+
+      const int discard_end_samples =
+          base::ByteSwapToLE32(*(skip_samples_ptr + kSkipEndSamplesOffset));
+      const int samples_per_second =
+          audio_decoder_config().samples_per_second();
+      buffer->set_discard_padding(std::make_pair(
+          FramesToTimeDelta(discard_front_samples, samples_per_second),
+          FramesToTimeDelta(discard_end_samples, samples_per_second)));
     }
 
     if (decrypt_config)
@@ -280,8 +297,13 @@ void FFmpegDemuxerStream::Read(const ReadCB& read_cb) {
 
 void FFmpegDemuxerStream::EnableBitstreamConverter() {
   DCHECK(task_runner_->BelongsToCurrentThread());
+
+#if defined(USE_PROPRIETARY_CODECS)
   CHECK(bitstream_converter_.get());
   bitstream_converter_enabled_ = true;
+#else
+  NOTREACHED() << "Proprietary codecs not enabled.";
+#endif
 }
 
 bool FFmpegDemuxerStream::SupportsConfigChanges() { return false; }

@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "base/memory/scoped_vector.h"
-#include "chrome/browser/notifications/sync_notifier/image_holder.h"
+#include "chrome/browser/image_holder.h"
 #include "ui/gfx/image/image.h"
 #include "ui/message_center/notifier_settings.h"
 #include "url/gurl.h"
@@ -23,7 +23,7 @@ namespace notifier {
 
 class SyncedNotificationAppInfoService;
 
-class SyncedNotificationAppInfo : public notifier::ImageHolderDelegate {
+class SyncedNotificationAppInfo : public chrome::ImageHolderDelegate {
  public:
   SyncedNotificationAppInfo(
       Profile* const profile,
@@ -72,7 +72,7 @@ class SyncedNotificationAppInfo : public notifier::ImageHolderDelegate {
   std::vector<std::string> added_app_ids() { return added_app_ids_; }
 
   // If an app info is updated removing app ids, keep track of the removed app
-  // ids so we can later remove any affected notfications.
+  // ids so we can later remove any affected notifications.
   void set_removed_app_ids(std::vector<std::string> removed_app_ids) {
     removed_app_ids_ = removed_app_ids;
   }
@@ -111,11 +111,11 @@ class SyncedNotificationAppInfo : public notifier::ImageHolderDelegate {
   GURL welcome_link_url_;
 
   // The 1x and 2x versions of the icon for settings, small.
-  scoped_ptr<ImageHolder> settings_holder_;
+  scoped_ptr<chrome::ImageHolder> settings_holder_;
   // Monochrome icons for app badging (1x and 2x), small.
-  scoped_ptr<ImageHolder> monochrome_holder_;
+  scoped_ptr<chrome::ImageHolder> monochrome_holder_;
   // Welcome dialog icon (1x and 2x), large.
-  scoped_ptr<ImageHolder> welcome_holder_;
+  scoped_ptr<chrome::ImageHolder> welcome_holder_;
   // A landing page link for settings/welcome toast.
   GURL welcome_landing_page_url_;
   std::vector<std::string> added_app_ids_;

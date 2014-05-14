@@ -789,6 +789,10 @@ const InputMethod* Widget::GetInputMethod() const {
   }
 }
 
+ui::InputMethod* Widget::GetHostInputMethod() {
+  return native_widget_private()->GetHostInputMethod();
+}
+
 void Widget::RunShellDrag(View* view,
                           const ui::OSExchangeData& data,
                           const gfx::Point& location,
@@ -1030,11 +1034,19 @@ void Widget::OnNativeWidgetActivationChanged(bool active) {
 }
 
 void Widget::OnNativeFocus(gfx::NativeView old_focused_view) {
+  // Ensure the focused view's TextInputClient is used for text input.
+  views::FocusManager* focus_manager = GetFocusManager();
+  focus_manager->FocusTextInputClient(focus_manager->GetFocusedView());
+
   WidgetFocusManager::GetInstance()->OnWidgetFocusEvent(old_focused_view,
                                                         GetNativeView());
 }
 
 void Widget::OnNativeBlur(gfx::NativeView new_focused_view) {
+  // Ensure the focused view's TextInputClient is not used for text input.
+  views::FocusManager* focus_manager = GetFocusManager();
+  focus_manager->BlurTextInputClient(focus_manager->GetFocusedView());
+
   WidgetFocusManager::GetInstance()->OnWidgetFocusEvent(GetNativeView(),
                                                         new_focused_view);
 }
@@ -1253,7 +1265,14 @@ void Widget::OnMouseCaptureLost() {
 }
 
 void Widget::OnScrollEvent(ui::ScrollEvent* event) {
-  SendEventToProcessor(event);
+  ui::ScrollEvent event_copy(*event);
+  SendEventToProcessor(&event_copy);
+
+  // Convert unhandled ui::ET_SCROLL events into ui::ET_MOUSEWHEEL events.
+  if (!event_copy.handled() && event_copy.type() == ui::ET_SCROLL) {
+    ui::MouseWheelEvent wheel(*event);
+    OnMouseEvent(&wheel);
+  }
 }
 
 void Widget::OnGestureEvent(ui::GestureEvent* event) {
@@ -1356,8 +1375,15 @@ View* Widget::GetFocusTraversableParentView() {
 // Widget, ui::NativeThemeObserver implementation:
 
 void Widget::OnNativeThemeUpdated(ui::NativeTheme* observed_theme) {
-  DCHECK_EQ(observed_theme, GetNativeTheme());
-  root_view_->PropagateNativeThemeChanged(GetNativeTheme());
+  DCHECK(observer_manager_.IsObserving(observed_theme));
+
+  ui::NativeTheme* current_native_theme = GetNativeTheme();
+  if (!observer_manager_.IsObserving(current_native_theme)) {
+    observer_manager_.RemoveAll();
+    observer_manager_.Add(current_native_theme);
+  }
+
+  root_view_->PropagateNativeThemeChanged(current_native_theme);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -70,6 +70,7 @@ LOCAL_SRC_FILES := \
 	third_party/libjingle/source/talk/media/webrtc/webrtcvideocapturer.cc \
 	third_party/libjingle/source/talk/media/webrtc/webrtcvideoframe.cc \
 	third_party/libjingle/source/talk/session/media/audiomonitor.cc \
+	third_party/libjingle/source/talk/session/media/bundlefilter.cc \
 	third_party/libjingle/source/talk/session/media/call.cc \
 	third_party/libjingle/source/talk/session/media/channel.cc \
 	third_party/libjingle/source/talk/session/media/channelmanager.cc \
@@ -82,7 +83,6 @@ LOCAL_SRC_FILES := \
 	third_party/libjingle/source/talk/session/media/rtcpmuxfilter.cc \
 	third_party/libjingle/source/talk/session/media/soundclip.cc \
 	third_party/libjingle/source/talk/session/media/srtpfilter.cc \
-	third_party/libjingle/source/talk/session/media/ssrcmuxfilter.cc \
 	third_party/libjingle/source/talk/session/media/typingmonitor.cc \
 	third_party/libjingle/source/talk/session/tunnel/pseudotcpchannel.cc \
 	third_party/libjingle/source/talk/session/tunnel/tunnelsessionclient.cc \
@@ -104,7 +104,6 @@ MY_CFLAGS_Debug := \
 	-mfpmath=sse \
 	-mmmx \
 	-m32 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \
@@ -245,7 +244,6 @@ MY_CFLAGS_Release := \
 	-mfpmath=sse \
 	-mmmx \
 	-m32 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \

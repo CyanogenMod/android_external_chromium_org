@@ -232,13 +232,12 @@ class ContentViewCoreImpl : public ContentViewCore,
   // |multiple| defines if it should support multi-select.
   // If not |multiple|, |selected_item| sets the initially selected item.
   // Otherwise, item's "checked" flag selects it.
-  void ShowSelectPopupMenu(const std::vector<MenuItem>& items,
+  void ShowSelectPopupMenu(const gfx::Rect& bounds,
+                           const std::vector<MenuItem>& items,
                            int selected_item,
                            bool multiple);
   // Hides a visible popup menu.
   void HideSelectPopupMenu();
-
-  void OnTabCrashed();
 
   // All sizes and offsets are in CSS pixels as cached by the renderer.
   void UpdateFrameInfo(const gfx::Vector2dF& scroll_offset,
@@ -293,6 +292,8 @@ class ContentViewCoreImpl : public ContentViewCore,
   // Returns the viewport size after accounting for the viewport offset.
   gfx::Size GetViewSize() const;
 
+  void SetAccessibilityEnabledInternal(bool enabled);
+
   // --------------------------------------------------------------------------
   // Methods called from native code
   // --------------------------------------------------------------------------
@@ -318,7 +319,7 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   // WebContentsObserver implementation.
   virtual void RenderViewReady() OVERRIDE;
-  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
 
   // --------------------------------------------------------------------------
   // Other private methods and data
@@ -374,6 +375,8 @@ class ContentViewCoreImpl : public ContentViewCore,
   int device_orientation_;
 
   bool geolocation_needs_pause_;
+
+  bool accessibility_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentViewCoreImpl);
 };

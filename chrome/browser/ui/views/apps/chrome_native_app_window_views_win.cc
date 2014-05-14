@@ -116,16 +116,25 @@ HWND ChromeNativeAppWindowViewsWin::GetNativeAppWindowHWND() const {
   return views::HWNDForWidget(widget()->GetTopLevelWidget());
 }
 
+void ChromeNativeAppWindowViewsWin::EnsureCaptionStyleSet() {
+  // Windows seems to have issues maximizing windows without WS_CAPTION.
+  // The default views / Aura implementation will remove this if we are using
+  // frameless or colored windows, so we put it back here.
+  HWND hwnd = GetNativeAppWindowHWND();
+  int current_style = ::GetWindowLong(hwnd, GWL_STYLE);
+  ::SetWindowLong(hwnd, GWL_STYLE, current_style | WS_CAPTION);
+}
+
 void ChromeNativeAppWindowViewsWin::OnBeforeWidgetInit(
     views::Widget::InitParams* init_params,
     views::Widget* widget) {
   content::BrowserContext* browser_context = app_window()->browser_context();
-  const extensions::Extension* extension = app_window()->extension();
+  std::string extension_id = app_window()->extension_id();
   // If an app has any existing windows, ensure new ones are created on the
   // same desktop.
   apps::AppWindow* any_existing_window =
       apps::AppWindowRegistry::Get(browser_context)
-          ->GetCurrentAppWindowForApp(extension->id());
+          ->GetCurrentAppWindowForApp(extension_id);
   chrome::HostDesktopType desktop_type;
   if (any_existing_window) {
     desktop_type = chrome::GetHostDesktopTypeForNativeWindow(
@@ -133,8 +142,8 @@ void ChromeNativeAppWindowViewsWin::OnBeforeWidgetInit(
   } else {
     PerAppSettingsService* settings =
         PerAppSettingsServiceFactory::GetForBrowserContext(browser_context);
-    if (settings->HasDesktopLastLaunchedFrom(extension->id())) {
-      desktop_type = settings->GetDesktopLastLaunchedFrom(extension->id());
+    if (settings->HasDesktopLastLaunchedFrom(extension_id)) {
+      desktop_type = settings->GetDesktopLastLaunchedFrom(extension_id);
     } else {
       // We don't know what desktop this app was last launched from, so take our
       // best guess as to what desktop the user is on.
@@ -151,7 +160,10 @@ void ChromeNativeAppWindowViewsWin::InitializeDefaultWindow(
     const apps::AppWindow::CreateParams& create_params) {
   ChromeNativeAppWindowViews::InitializeDefaultWindow(create_params);
 
-  const extensions::Extension* extension = app_window()->extension();
+  const extensions::Extension* extension = app_window()->GetExtension();
+  if (!extension)
+    return;
+
   std::string app_name =
       web_app::GenerateApplicationNameFromExtensionId(extension->id());
   base::string16 app_name_wide = base::UTF8ToWide(app_name);
@@ -169,6 +181,7 @@ void ChromeNativeAppWindowViewsWin::InitializeDefaultWindow(
       base::Bind(&ChromeNativeAppWindowViewsWin::OnShortcutInfoLoaded,
                  weak_ptr_factory_.GetWeakPtr()));
 
+  EnsureCaptionStyleSet();
   UpdateShelfMenu();
 }
 
@@ -203,6 +216,10 @@ void ChromeNativeAppWindowViewsWin::UpdateShelfMenu() {
     return;
   }
 
+  const extensions::Extension* extension = app_window()->GetExtension();
+  if (!extension)
+    return;
+
   // For the icon resources.
   base::FilePath chrome_path;
   if (!PathService::Get(base::FILE_EXE, &chrome_path))
@@ -213,8 +230,6 @@ void ChromeNativeAppWindowViewsWin::UpdateShelfMenu() {
     return;
 
   // Add item to install ephemeral apps.
-  const extensions::Extension* extension = app_window()->extension();
-  DCHECK(extension);
   if (extension->is_ephemeral()) {
     scoped_refptr<ShellLinkItem> link(new ShellLinkItem());
     link->set_title(l10n_util::GetStringUTF16(IDS_APP_INSTALL_TITLE));

@@ -53,6 +53,7 @@ LOCAL_SRC_FILES := \
 	mojo/system/raw_shared_buffer_posix.cc \
 	mojo/system/shared_buffer_dispatcher.cc \
 	mojo/system/simple_dispatcher.cc \
+	mojo/system/transport_data.cc \
 	mojo/system/waiter.cc \
 	mojo/system/waiter_list.cc \
 	mojo/embedder/test_embedder.cc

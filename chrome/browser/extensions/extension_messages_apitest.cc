@@ -21,7 +21,6 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/api/runtime.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
@@ -29,6 +28,7 @@
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/common/api/runtime.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/value_builder.h"
 #include "net/cert/asn1_util.h"
@@ -1011,38 +1011,6 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MessagingUserGesture) {
           "    window.domAutomationController.send('' + response.result);\n"
           "  });\n"
           "});", receiver->id().c_str())));
-
-  // Messges sent from a setTimeout handler should not forward the user gesture
-  // again.
-  EXPECT_EQ(
-      "false",
-      ExecuteScriptInBackgroundPage(
-          sender->id(),
-          base::StringPrintf(
-              "chrome.test.runWithUserGesture(function() {\n"
-              "  window.setTimeout(function() {\n"
-              "    chrome.runtime.sendMessage('%s', {}, function(response)  {\n"
-              "      window.domAutomationController.send('' + "
-              "          response.result);\n"
-              "    });\n"
-              "  }, 0);\n"
-              "});",
-              receiver->id().c_str())));
-
-  // The user gesture should not be send back with the reply message, gestures
-  // are only forwarded once.
-  EXPECT_EQ(
-      "false",
-      ExecuteScriptInBackgroundPage(
-          sender->id(),
-          base::StringPrintf(
-              "chrome.test.runWithUserGesture(function() {\n"
-              "  chrome.runtime.sendMessage('%s', {}, function(response)  {\n"
-              "    window.domAutomationController.send('' + "
-              "        chrome.test.isProcessingUserGesture());\n"
-              "  });\n"
-              "});",
-              receiver->id().c_str())));
 }
 
 // Tests that a hosted app on a connectable site doesn't interfere with the

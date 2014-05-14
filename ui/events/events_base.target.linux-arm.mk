@@ -27,6 +27,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 LOCAL_SRC_FILES := \
 	ui/events/event_switches.cc \
 	ui/events/gesture_event_details.cc \
+	ui/events/gestures/gesture_configuration.cc \
 	ui/events/keycodes/keyboard_code_conversion.cc \
 	ui/events/keycodes/keyboard_code_conversion_android.cc \
 	ui/events/latency_info.cc
@@ -46,7 +47,6 @@ MY_CFLAGS_Debug := \
 	-pipe \
 	-fPIC \
 	-fno-tree-sra \
-	-fuse-ld=gold \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \
@@ -95,11 +95,6 @@ MY_DEFS_Debug := \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
-	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
-	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
 	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
@@ -170,7 +165,6 @@ MY_CFLAGS_Release := \
 	-pipe \
 	-fPIC \
 	-fno-tree-sra \
-	-fuse-ld=gold \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \
@@ -219,11 +213,6 @@ MY_DEFS_Release := \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
-	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
-	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
 	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \

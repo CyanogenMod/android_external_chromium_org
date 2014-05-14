@@ -5,6 +5,7 @@
 #include "tools/gn/ninja_helper.h"
 
 #include "base/logging.h"
+#include "base/strings/string_util.h"
 #include "tools/gn/filesystem_utils.h"
 #include "tools/gn/string_utils.h"
 #include "tools/gn/target.h"
@@ -34,15 +35,16 @@ std::string NinjaHelper::GetTopleveOutputDir() const {
   return kObjectDirNoSlash;
 }
 
-std::string NinjaHelper::GetTargetOutputDir(const Target* target) const {
-  return kObjectDirNoSlash + target->label().dir().SourceAbsoluteWithOneSlash();
-}
-
-OutputFile NinjaHelper::GetNinjaFileForTarget(const Target* target) const {
+OutputFile NinjaHelper::GetTargetOutputDir(const Target* target) const {
   OutputFile ret(target->settings()->toolchain_output_subdir());
   ret.value().append(kObjectDirNoSlash);
   AppendStringPiece(&ret.value(),
                     target->label().dir().SourceAbsoluteWithOneSlash());
+  return ret;
+}
+
+OutputFile NinjaHelper::GetNinjaFileForTarget(const Target* target) const {
+  OutputFile ret = GetTargetOutputDir(target);
   ret.value().append(target->label().name());
   ret.value().append(".ninja");
   return ret;
@@ -84,6 +86,33 @@ OutputFile NinjaHelper::GetOutputFileForSource(
     case SOURCE_RC:
       name.append("res");
       break;
+
+    // Pass .o/.obj files through unchanged.
+    case SOURCE_O: {
+      // System-absolute file names get preserved (they don't need to be
+      // rebased relative to the build dir).
+      if (source.is_system_absolute())
+        return OutputFile(source.value());
+
+      // Files that are already inside the build dir should not be made
+      // relative to the source tree. Doing so will insert an unnecessary
+      // "../.." into the path which won't match the corresponding target
+      // name in ninja.
+      CHECK(build_settings_->build_dir().is_source_absolute());
+      CHECK(source.is_source_absolute());
+      if (StartsWithASCII(source.value(),
+                          build_settings_->build_dir().value(),
+                          true)) {
+        return OutputFile(
+            source.value().substr(
+                build_settings_->build_dir().value().size()));
+      }
+
+      // Construct the relative location of the file from the build dir.
+      OutputFile ret(build_to_src_no_last_slash());
+      source.SourceAbsoluteWithOneSlash().AppendToString(&ret.value());
+      return ret;
+    }
 
     case SOURCE_H:
     case SOURCE_UNKNOWN:
@@ -223,5 +252,7 @@ std::string NinjaHelper::GetRuleForSourceType(const Settings* settings,
 
   // TODO(brettw) asm files.
 
+  // .obj files have no rules to make them (they're already built) so we return
+  // the enpty string for SOURCE_O.
   return std::string();
 }

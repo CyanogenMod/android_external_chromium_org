@@ -72,24 +72,22 @@ MojoResult MessagePipe::WriteMessage(
     std::vector<DispatcherTransport>* transports,
     MojoWriteMessageFlags flags) {
   DCHECK(port == 0 || port == 1);
-  uint32_t num_handles =
-      transports ? static_cast<uint32_t>(transports->size()) : 0;
   return EnqueueMessageInternal(
       GetPeerPort(port),
       make_scoped_ptr(new MessageInTransit(
           MessageInTransit::kTypeMessagePipeEndpoint,
           MessageInTransit::kSubtypeMessagePipeEndpointData,
-          num_bytes, num_handles, bytes)),
+          num_bytes,
+          bytes)),
       transports);
 }
 
-MojoResult MessagePipe::ReadMessage(
-    unsigned port,
-    void* bytes,
-    uint32_t* num_bytes,
-    std::vector<scoped_refptr<Dispatcher> >* dispatchers,
-    uint32_t* num_dispatchers,
-    MojoReadMessageFlags flags) {
+MojoResult MessagePipe::ReadMessage(unsigned port,
+                                    void* bytes,
+                                    uint32_t* num_bytes,
+                                    DispatcherVector* dispatchers,
+                                    uint32_t* num_dispatchers,
+                                    MojoReadMessageFlags flags) {
   DCHECK(port == 0 || port == 1);
 
   base::AutoLock locker(lock_);
@@ -226,9 +224,6 @@ MojoResult MessagePipe::EnqueueMessageInternal(
       return result;
   }
 
-  if (message->has_dispatchers())
-    DCHECK_EQ(message->dispatchers()->size(), message->num_handles());
-
   // The endpoint's |EnqueueMessage()| may not report failure.
   endpoints_[port]->EnqueueMessage(message.Pass());
   return MOJO_RESULT_OK;
@@ -239,7 +234,6 @@ MojoResult MessagePipe::AttachTransportsNoLock(
     MessageInTransit* message,
     std::vector<DispatcherTransport>* transports) {
   DCHECK(!message->has_dispatchers());
-  DCHECK_EQ(transports->size(), message->num_handles());
 
   // You're not allowed to send either handle to a message pipe over the message
   // pipe, so check for this. (The case of trying to write a handle to itself is
@@ -264,8 +258,7 @@ MojoResult MessagePipe::AttachTransportsNoLock(
 
   // Clone the dispatchers and attach them to the message. (This must be done as
   // a separate loop, since we want to leave the dispatchers alone on failure.)
-  scoped_ptr<std::vector<scoped_refptr<Dispatcher> > >
-      dispatchers(new std::vector<scoped_refptr<Dispatcher> >());
+  scoped_ptr<DispatcherVector> dispatchers(new DispatcherVector());
   dispatchers->reserve(transports->size());
   for (size_t i = 0; i < transports->size(); i++) {
     if ((*transports)[i].is_valid()) {

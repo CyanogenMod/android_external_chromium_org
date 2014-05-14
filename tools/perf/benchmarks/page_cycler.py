@@ -61,7 +61,7 @@ class PageCyclerMoz(test.Test):
   options = {'pageset_repeat': 10}
 
 
-@test.Disabled('win')  # crbug.com/353260
+@test.Disabled('linux', 'win')  # crbug.com/353260
 class PageCyclerNetsimTop10(test.Test):
   """Measures load time of the top 10 sites under simulated cable network."""
   tag = 'netsim'
@@ -95,6 +95,7 @@ class PageCyclerKeyMobileSites(test.Test):
   options = {'pageset_repeat': 10}
 
 
+@test.Disabled('android')  # crbug.com/357326
 class PageCyclerToughLayoutCases(test.Test):
   test = page_cycler.PageCycler
   page_set = 'page_sets/tough_layout_cases.py'

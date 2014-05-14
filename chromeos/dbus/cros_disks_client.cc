@@ -148,17 +148,21 @@ class CrosDisksClientImpl : public CrosDisksClient {
   }
 
   // CrosDisksClient override.
-  virtual void FormatDevice(const std::string& device_path,
-                            const std::string& filesystem,
-                            const FormatDeviceCallback& callback,
-                            const base::Closure& error_callback) OVERRIDE {
+  virtual void Format(const std::string& device_path,
+                      const std::string& filesystem,
+                      const base::Closure& callback,
+                      const base::Closure& error_callback) OVERRIDE {
     dbus::MethodCall method_call(cros_disks::kCrosDisksInterface,
-                                 cros_disks::kFormatDevice);
+                                 cros_disks::kFormat);
     dbus::MessageWriter writer(&method_call);
     writer.AppendString(device_path);
     writer.AppendString(filesystem);
+    // No format option is currently specified, but we can later use this
+    // argument to specify options for the format operation.
+    std::vector<std::string> format_options;
+    writer.AppendArrayOfStrings(format_options);
     proxy_->CallMethod(&method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
-                       base::Bind(&CrosDisksClientImpl::OnFormatDevice,
+                       base::Bind(&CrosDisksClientImpl::OnFormat,
                                   weak_ptr_factory_.GetWeakPtr(),
                                   callback,
                                   error_callback));
@@ -183,9 +187,8 @@ class CrosDisksClientImpl : public CrosDisksClient {
   }
 
   // CrosDisksClient override.
-  virtual void SetUpConnections(
-      const MountEventHandler& mount_event_handler,
-      const MountCompletedHandler& mount_completed_handler) OVERRIDE {
+  virtual void SetMountEventHandler(
+      const MountEventHandler& mount_event_handler) OVERRIDE {
     static const SignalEventTuple kSignalEventTuples[] = {
       { cros_disks::kDeviceAdded, CROS_DISKS_DEVICE_ADDED },
       { cros_disks::kDeviceScanned, CROS_DISKS_DEVICE_SCANNED },
@@ -193,7 +196,6 @@ class CrosDisksClientImpl : public CrosDisksClient {
       { cros_disks::kDiskAdded, CROS_DISKS_DISK_ADDED },
       { cros_disks::kDiskChanged, CROS_DISKS_DISK_CHANGED },
       { cros_disks::kDiskRemoved, CROS_DISKS_DISK_REMOVED },
-      { cros_disks::kFormattingFinished, CROS_DISKS_FORMATTING_FINISHED },
     };
     const size_t kNumSignalEventTuples = arraysize(kSignalEventTuples);
 
@@ -208,12 +210,30 @@ class CrosDisksClientImpl : public CrosDisksClient {
           base::Bind(&CrosDisksClientImpl::OnSignalConnected,
                      weak_ptr_factory_.GetWeakPtr()));
     }
+  }
+
+  // CrosDisksClient override.
+  virtual void SetMountCompletedHandler(
+      const MountCompletedHandler& mount_completed_handler) OVERRIDE {
     proxy_->ConnectToSignal(
         cros_disks::kCrosDisksInterface,
         cros_disks::kMountCompleted,
         base::Bind(&CrosDisksClientImpl::OnMountCompleted,
                    weak_ptr_factory_.GetWeakPtr(),
                    mount_completed_handler),
+        base::Bind(&CrosDisksClientImpl::OnSignalConnected,
+                   weak_ptr_factory_.GetWeakPtr()));
+  }
+
+  // CrosDisksClient override.
+  virtual void SetFormatCompletedHandler(
+      const FormatCompletedHandler& format_completed_handler) OVERRIDE {
+    proxy_->ConnectToSignal(
+        cros_disks::kCrosDisksInterface,
+        cros_disks::kFormatCompleted,
+        base::Bind(&CrosDisksClientImpl::OnFormatCompleted,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   format_completed_handler),
         base::Bind(&CrosDisksClientImpl::OnSignalConnected,
                    weak_ptr_factory_.GetWeakPtr()));
   }
@@ -227,7 +247,7 @@ class CrosDisksClientImpl : public CrosDisksClient {
 
  private:
   // A struct to contain a pair of signal name and mount event type.
-  // Used by SetUpConnections.
+  // Used by SetMountEventHandler.
   struct SignalEventTuple {
     const char *signal_name;
     MountEventType event_type;
@@ -262,7 +282,7 @@ class CrosDisksClientImpl : public CrosDisksClient {
     // make this fail if reader is not able to read the error code value from
     // the response.
     dbus::MessageReader reader(response);
-    unsigned int error_code;
+    uint32 error_code = 0;
     if (reader.PopUint32(&error_code) &&
         static_cast<MountError>(error_code) != MOUNT_ERROR_NONE) {
       error_callback.Run();
@@ -292,23 +312,15 @@ class CrosDisksClientImpl : public CrosDisksClient {
     callback.Run(device_paths);
   }
 
-  // Handles the result of FormatDevice and calls |callback| or
-  // |error_callback|.
-  void OnFormatDevice(const FormatDeviceCallback& callback,
-                      const base::Closure& error_callback,
-                      dbus::Response* response) {
+  // Handles the result of Format and calls |callback| or |error_callback|.
+  void OnFormat(const base::Closure& callback,
+                const base::Closure& error_callback,
+                dbus::Response* response) {
     if (!response) {
       error_callback.Run();
       return;
     }
-    dbus::MessageReader reader(response);
-    bool success = false;
-    if (!reader.PopBool(&success)) {
-      LOG(ERROR) << "Invalid response: " << response->ToString();
-      error_callback.Run();
-      return;
-    }
-    callback.Run(success);
+    callback.Run();
   }
 
   // Handles the result of GetDeviceProperties and calls |callback| or
@@ -341,9 +353,9 @@ class CrosDisksClientImpl : public CrosDisksClient {
   // Handles MountCompleted signal and calls |handler|.
   void OnMountCompleted(MountCompletedHandler handler, dbus::Signal* signal) {
     dbus::MessageReader reader(signal);
-    unsigned int error_code = 0;
+    uint32 error_code = 0;
     std::string source_path;
-    unsigned int mount_type = 0;
+    uint32 mount_type = 0;
     std::string mount_path;
     if (!reader.PopUint32(&error_code) ||
         !reader.PopString(&source_path) ||
@@ -354,6 +366,18 @@ class CrosDisksClientImpl : public CrosDisksClient {
     }
     handler.Run(static_cast<MountError>(error_code), source_path,
                 static_cast<MountType>(mount_type), mount_path);
+  }
+
+  // Handles FormatCompleted signal and calls |handler|.
+  void OnFormatCompleted(FormatCompletedHandler handler, dbus::Signal* signal) {
+    dbus::MessageReader reader(signal);
+    uint32 error_code = 0;
+    std::string device_path;
+    if (!reader.PopUint32(&error_code) || !reader.PopString(&device_path)) {
+      LOG(ERROR) << "Invalid signal: " << signal->ToString();
+      return;
+    }
+    handler.Run(static_cast<FormatError>(error_code), device_path);
   }
 
   // Handles the result of signal connection setup.
@@ -444,10 +468,10 @@ class CrosDisksClientStubImpl : public CrosDisksClient {
         FROM_HERE, base::Bind(callback, device_paths));
   }
 
-  virtual void FormatDevice(const std::string& device_path,
-                            const std::string& filesystem,
-                            const FormatDeviceCallback& callback,
-                            const base::Closure& error_callback) OVERRIDE {
+  virtual void Format(const std::string& device_path,
+                      const std::string& filesystem,
+                      const base::Closure& callback,
+                      const base::Closure& error_callback) OVERRIDE {
     base::MessageLoopProxy::current()->PostTask(FROM_HERE, error_callback);
   }
 
@@ -458,11 +482,19 @@ class CrosDisksClientStubImpl : public CrosDisksClient {
     base::MessageLoopProxy::current()->PostTask(FROM_HERE, error_callback);
   }
 
-  virtual void SetUpConnections(
-      const MountEventHandler& mount_event_handler,
-      const MountCompletedHandler& mount_completed_handler) OVERRIDE {
+  virtual void SetMountEventHandler(
+      const MountEventHandler& mount_event_handler) OVERRIDE {
     mount_event_handler_ = mount_event_handler;
+  }
+
+  virtual void SetMountCompletedHandler(
+      const MountCompletedHandler& mount_completed_handler) OVERRIDE {
     mount_completed_handler_ = mount_completed_handler;
+  }
+
+  virtual void SetFormatCompletedHandler(
+      const FormatCompletedHandler& format_completed_handler) OVERRIDE {
+    format_completed_handler_ = format_completed_handler;
   }
 
  private:
@@ -532,6 +564,7 @@ class CrosDisksClientStubImpl : public CrosDisksClient {
 
   MountEventHandler mount_event_handler_;
   MountCompletedHandler mount_completed_handler_;
+  FormatCompletedHandler format_completed_handler_;
 
   base::WeakPtrFactory<CrosDisksClientStubImpl> weak_ptr_factory_;
 

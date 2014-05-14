@@ -8,7 +8,6 @@
 
 #include "base/logging.h"
 #include "content/shell/common/test_runner/test_preferences.h"
-#include "content/shell/renderer/test_runner/MockWebSpeechInputController.h"
 #include "content/shell/renderer/test_runner/MockWebSpeechRecognizer.h"
 #include "content/shell/renderer/test_runner/TestInterfaces.h"
 #include "content/shell/renderer/test_runner/WebPermissions.h"
@@ -48,7 +47,8 @@
 #endif
 
 using namespace blink;
-using namespace WebTestRunner;
+
+namespace content {
 
 namespace {
 
@@ -59,12 +59,11 @@ WebString V8StringToWebString(v8::Handle<v8::String> v8_str) {
   return WebString::fromUTF8(chars.get());
 }
 
-class HostMethodTask :
-      public ::WebTestRunner::WebMethodTask<content::TestRunner> {
+class HostMethodTask : public WebMethodTask<TestRunner> {
  public:
-  typedef void (content::TestRunner::*CallbackMethodType)();
-  HostMethodTask(content::TestRunner* object, CallbackMethodType callback)
-      : WebMethodTask<content::TestRunner>(object), callback_(callback) {}
+  typedef void (TestRunner::*CallbackMethodType)();
+  HostMethodTask(TestRunner* object, CallbackMethodType callback)
+      : WebMethodTask<TestRunner>(object), callback_(callback) {}
 
   virtual void runIfValid() OVERRIDE {
     (m_object->*callback_)();
@@ -76,13 +75,10 @@ class HostMethodTask :
 
 }  // namespace
 
-namespace content {
-
-class InvokeCallbackTask : public WebMethodTask<content::TestRunner> {
+class InvokeCallbackTask : public WebMethodTask<TestRunner> {
  public:
-  InvokeCallbackTask(content::TestRunner* object,
-                     v8::Handle<v8::Function> callback)
-      : WebMethodTask<content::TestRunner>(object),
+  InvokeCallbackTask(TestRunner* object, v8::Handle<v8::Function> callback)
+      : WebMethodTask<TestRunner>(object),
         callback_(blink::mainThreadIsolate(), callback) {}
 
   virtual void runIfValid() OVERRIDE {
@@ -232,15 +228,13 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
   void SetWindowIsKey(bool value);
   std::string PathToLocalResource(const std::string& path);
   void SetBackingScaleFactor(double value, v8::Handle<v8::Function> callback);
+  void SetColorProfile(const std::string& name,
+                       v8::Handle<v8::Function> callback);
   void SetPOSIXLocale(const std::string& locale);
   void SetMIDIAccessorResult(bool result);
   void SetMIDISysexPermission(bool value);
   void GrantWebNotificationPermission(gin::Arguments* args);
   bool SimulateWebNotificationClick(const std::string& value);
-  void AddMockSpeechInputResult(const std::string& result,
-                                double confidence,
-                                const std::string& language);
-  void SetMockSpeechInputDumpRect(bool value);
   void AddMockSpeechRecognitionResult(const std::string& transcript,
                                       double confidence);
   void SetMockSpeechRecognitionError(const std::string& error,
@@ -250,6 +244,7 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
   void RemoveWebPageOverlay();
   void DisplayAsync();
   void DisplayAsyncThen(v8::Handle<v8::Function> callback);
+  void SetCustomTextOutput(std::string output);
 
   bool GlobalFlag();
   void SetGlobalFlag(bool value);
@@ -298,8 +293,7 @@ TestRunnerBindings::~TestRunnerBindings() {}
 
 gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
     v8::Isolate* isolate) {
-  return gin::Wrappable<TestRunnerBindings>::GetObjectTemplateBuilder(
-      isolate)
+  return gin::Wrappable<TestRunnerBindings>::GetObjectTemplateBuilder(isolate)
       // Methods controlling test execution.
       .SetMethod("notifyDone", &TestRunnerBindings::NotifyDone)
       .SetMethod("waitUntilDone", &TestRunnerBindings::WaitUntilDone)
@@ -331,9 +325,9 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
                  &TestRunnerBindings::CallShouldCloseOnWebView)
       .SetMethod("setDomainRelaxationForbiddenForURLScheme",
                  &TestRunnerBindings::SetDomainRelaxationForbiddenForURLScheme)
-      .SetMethod("evaluateScriptInIsolatedWorldAndReturnValue",
-                 &TestRunnerBindings::
-                     EvaluateScriptInIsolatedWorldAndReturnValue)
+      .SetMethod(
+           "evaluateScriptInIsolatedWorldAndReturnValue",
+           &TestRunnerBindings::EvaluateScriptInIsolatedWorldAndReturnValue)
       .SetMethod("evaluateScriptInIsolatedWorld",
                  &TestRunnerBindings::EvaluateScriptInIsolatedWorld)
       .SetMethod("setIsolatedWorldSecurityOrigin",
@@ -434,9 +428,9 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
                  &TestRunnerBindings::DumpBackForwardList)
       .SetMethod("dumpSelectionRect", &TestRunnerBindings::DumpSelectionRect)
       .SetMethod("setPrinting", &TestRunnerBindings::SetPrinting)
-      .SetMethod("setShouldStayOnPageAfterHandlingBeforeUnload",
-                 &TestRunnerBindings::
-                     SetShouldStayOnPageAfterHandlingBeforeUnload)
+      .SetMethod(
+           "setShouldStayOnPageAfterHandlingBeforeUnload",
+           &TestRunnerBindings::SetShouldStayOnPageAfterHandlingBeforeUnload)
       .SetMethod("setWillSendRequestClearHeader",
                  &TestRunnerBindings::SetWillSendRequestClearHeader)
       .SetMethod("dumpResourceRequestPriorities",
@@ -458,6 +452,8 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
                  &TestRunnerBindings::PathToLocalResource)
       .SetMethod("setBackingScaleFactor",
                  &TestRunnerBindings::SetBackingScaleFactor)
+      .SetMethod("setColorProfile",
+                 &TestRunnerBindings::SetColorProfile)
       .SetMethod("setPOSIXLocale", &TestRunnerBindings::SetPOSIXLocale)
       .SetMethod("setMIDIAccessorResult",
                  &TestRunnerBindings::SetMIDIAccessorResult)
@@ -467,10 +463,6 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
                  &TestRunnerBindings::GrantWebNotificationPermission)
       .SetMethod("simulateWebNotificationClick",
                  &TestRunnerBindings::SimulateWebNotificationClick)
-      .SetMethod("addMockSpeechInputResult",
-                 &TestRunnerBindings::AddMockSpeechInputResult)
-      .SetMethod("setMockSpeechInputDumpRect",
-                 &TestRunnerBindings::SetMockSpeechInputDumpRect)
       .SetMethod("addMockSpeechRecognitionResult",
                  &TestRunnerBindings::AddMockSpeechRecognitionResult)
       .SetMethod("setMockSpeechRecognitionError",
@@ -482,9 +474,12 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
                  &TestRunnerBindings::RemoveWebPageOverlay)
       .SetMethod("displayAsync", &TestRunnerBindings::DisplayAsync)
       .SetMethod("displayAsyncThen", &TestRunnerBindings::DisplayAsyncThen)
+      .SetMethod("setCustomTextOutput",
+                 &TestRunnerBindings::SetCustomTextOutput)
 
       // Properties.
-      .SetProperty("globalFlag", &TestRunnerBindings::GlobalFlag,
+      .SetProperty("globalFlag",
+                   &TestRunnerBindings::GlobalFlag,
                    &TestRunnerBindings::SetGlobalFlag)
       .SetProperty("platformName", &TestRunnerBindings::PlatformName)
       .SetProperty("tooltipText", &TestRunnerBindings::TooltipText)
@@ -531,7 +526,6 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
       // Used at fast/dom/assign-to-window-status.html
       .SetMethod("dumpStatusCallbacks",
                  &TestRunnerBindings::DumpWindowStatusChanges);
-
 }
 
 void TestRunnerBindings::NotifyDone() {
@@ -1156,6 +1150,12 @@ void TestRunnerBindings::SetBackingScaleFactor(
     runner_->SetBackingScaleFactor(value, callback);
 }
 
+void TestRunnerBindings::SetColorProfile(
+    const std::string& name, v8::Handle<v8::Function> callback) {
+  if (runner_)
+    runner_->SetColorProfile(name, callback);
+}
+
 void TestRunnerBindings::SetPOSIXLocale(const std::string& locale) {
   if (runner_)
     runner_->SetPOSIXLocale(locale);
@@ -1186,18 +1186,6 @@ bool TestRunnerBindings::SimulateWebNotificationClick(
   if (runner_)
     return runner_->SimulateWebNotificationClick(value);
   return false;
-}
-
-void TestRunnerBindings::AddMockSpeechInputResult(const std::string& result,
-                                                  double confidence,
-                                                  const std::string& language) {
-  if (runner_)
-    runner_->AddMockSpeechInputResult(result, confidence, language);
-}
-
-void TestRunnerBindings::SetMockSpeechInputDumpRect(bool value) {
-  if (runner_)
-    runner_->SetMockSpeechInputDumpRect(value);
 }
 
 void TestRunnerBindings::AddMockSpeechRecognitionResult(
@@ -1236,6 +1224,10 @@ void TestRunnerBindings::DisplayAsync() {
 void TestRunnerBindings::DisplayAsyncThen(v8::Handle<v8::Function> callback) {
   if (runner_)
     runner_->DisplayAsyncThen(callback);
+}
+
+void TestRunnerBindings::SetCustomTextOutput(std::string output) {
+  runner_->setCustomTextOutput(output);
 }
 
 bool TestRunnerBindings::GlobalFlag() {
@@ -1374,7 +1366,7 @@ TestRunner::TestRunner(TestInterfaces* interfaces)
       web_view_(NULL),
       page_overlay_(NULL),
       web_permissions_(new WebPermissions()),
-      notification_presenter_(new content::NotificationPresenter()),
+      notification_presenter_(new NotificationPresenter()),
       weak_factory_(this) {}
 
 TestRunner::~TestRunner() {}
@@ -1431,6 +1423,7 @@ void TestRunner::Reset() {
   if (delegate_) {
     // Reset the default quota for each origin to 5MB
     delegate_->setDatabaseQuota(5 * 1024 * 1024);
+    delegate_->setDeviceColorProfile("sRGB");
     delegate_->setDeviceScaleFactor(1);
     delegate_->setAcceptAllCookies(false);
     delegate_->setLocale("");
@@ -1467,6 +1460,8 @@ void TestRunner::Reset() {
   midi_accessor_result_ = true;
   should_stay_on_page_after_handling_before_unload_ = false;
   should_dump_resource_priorities_ = false;
+  has_custom_text_output_ = false;
+  custom_text_output_.clear();
 
   http_headers_to_clear_.clear();
 
@@ -1520,6 +1515,19 @@ bool TestRunner::shouldDumpAsMarkup() {
 
 void TestRunner::setShouldDumpAsMarkup(bool value) {
   dump_as_markup_ = value;
+}
+
+bool TestRunner::shouldDumpAsCustomText() const {
+  return has_custom_text_output_;
+}
+
+std::string TestRunner::customDumpText() const {
+  return custom_text_output_;
+}
+
+void TestRunner::setCustomTextOutput(std::string text) {
+  custom_text_output_ = text;
+  has_custom_text_output_ = true;
 }
 
 bool TestRunner::shouldGeneratePixelResults() {
@@ -2499,6 +2507,12 @@ void TestRunner::SetBackingScaleFactor(double value,
   delegate_->postTask(new InvokeCallbackTask(this, callback));
 }
 
+void TestRunner::SetColorProfile(const std::string& name,
+                                 v8::Handle<v8::Function> callback) {
+  delegate_->setDeviceColorProfile(name);
+  delegate_->postTask(new InvokeCallbackTask(this, callback));
+}
+
 void TestRunner::SetPOSIXLocale(const std::string& locale) {
   delegate_->setLocale(locale);
 }
@@ -2521,21 +2535,6 @@ void TestRunner::GrantWebNotificationPermission(const std::string& origin,
 
 bool TestRunner::SimulateWebNotificationClick(const std::string& value) {
   return notification_presenter_->SimulateClick(value);
-}
-
-void TestRunner::AddMockSpeechInputResult(const std::string& result,
-                                          double confidence,
-                                          const std::string& language) {
-#if ENABLE_INPUT_SPEECH
-  proxy_->speechInputControllerMock()->addMockRecognitionResult(
-      WebString::fromUTF8(result), confidence, WebString::fromUTF8(language));
-#endif
-}
-
-void TestRunner::SetMockSpeechInputDumpRect(bool value) {
-#if ENABLE_INPUT_SPEECH
-  proxy_->speechInputControllerMock()->setDumpRect(value);
-#endif
 }
 
 void TestRunner::AddMockSpeechRecognitionResult(const std::string& transcript,

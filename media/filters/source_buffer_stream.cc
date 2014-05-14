@@ -1399,11 +1399,6 @@ bool SourceBufferStream::UpdateVideoConfig(const VideoDecoderConfig& config) {
   DCHECK(audio_configs_.empty());
   DVLOG(3) << "UpdateVideoConfig.";
 
-  if (video_configs_[0].is_encrypted() != config.is_encrypted()) {
-    MEDIA_LOG(log_cb_) << "Video Encryption changes not allowed.";
-    return false;
-  }
-
   if (video_configs_[0].codec() != config.codec()) {
     MEDIA_LOG(log_cb_) << "Video codec changes not allowed.";
     return false;
@@ -1642,34 +1637,30 @@ void SourceBufferStream::GenerateSpliceFrame(const BufferQueue& new_buffers) {
   if (pre_splice_buffers.front()->timestamp() >= splice_timestamp)
     return;
 
-  // Sanitize |pre_splice_buffers| so that there are no recursive splices.
+  // If any |pre_splice_buffers| are already splices, do not generate a splice.
   for (size_t i = 0; i < pre_splice_buffers.size(); ++i) {
     const BufferQueue& original_splice_buffers =
         pre_splice_buffers[i]->get_splice_buffers();
-    if (original_splice_buffers.empty())
-      continue;
-
-    // Remove the original splice and move our index back to compensate.  NOTE:
-    // |i| will underflow if the splice is the first buffer, this is okay.  It
-    // will be corrected below or on the next loop iteration.
-    pre_splice_buffers.erase(pre_splice_buffers.begin() + i--);
-
-    // Cull all buffers which start after the end of the new splice point or
-    // after original overlapping buffer; this may introduce gaps, but no more
-    // than Remove() does currently.
-    const scoped_refptr<StreamParserBuffer>& overlapping_buffer =
-        original_splice_buffers.back();
-    for (BufferQueue::const_iterator it = original_splice_buffers.begin();
-         it != original_splice_buffers.end();
-         ++it) {
-      const scoped_refptr<StreamParserBuffer>& buffer = *it;
-      if (buffer->timestamp() <= max_splice_end_timestamp &&
-          (buffer->timestamp() < overlapping_buffer->timestamp() ||
-           buffer == overlapping_buffer)) {
-        // Add the buffer and adjust the index forward to compensate.
-        pre_splice_buffers.insert(pre_splice_buffers.begin() + ++i, buffer);
-      }
+    if (!original_splice_buffers.empty()) {
+      DVLOG(1) << "Can't generate splice: overlapped buffers contain a "
+                  "pre-existing splice.";
+      return;
     }
+  }
+
+  // Don't generate splice frames which represent less than two frames, since we
+  // need at least that much to generate a crossfade.  Per the spec, make this
+  // check using the sample rate of the overlapping buffers.
+  const base::TimeDelta splice_duration =
+      pre_splice_buffers.back()->timestamp() +
+      pre_splice_buffers.back()->duration() - splice_timestamp;
+  const base::TimeDelta minimum_splice_duration = base::TimeDelta::FromSecondsD(
+      2.0 / audio_configs_[append_config_index_].samples_per_second());
+  if (splice_duration < minimum_splice_duration) {
+    DVLOG(1) << "Can't generate splice: not enough samples for crossfade; have "
+             << splice_duration.InMicroseconds() << " us, but need "
+             << minimum_splice_duration.InMicroseconds() << " us.";
+    return;
   }
 
   new_buffers.front()->ConvertToSpliceBuffer(pre_splice_buffers);

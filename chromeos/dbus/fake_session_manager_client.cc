@@ -46,14 +46,11 @@ void FakeSessionManagerClient::RestartJob(int pid,
                                           const std::string& command_line) {
 }
 
-void FakeSessionManagerClient::StartSession(
-    const std::string& user_email,
-    const StartSessionCallback& callback) {
+void FakeSessionManagerClient::StartSession(const std::string& user_email) {
   DCHECK_EQ(0UL, user_sessions_.count(user_email));
   std::string user_id_hash =
       CryptohomeClient::GetStubSanitizedUsername(user_email);
   user_sessions_[user_email] = user_id_hash;
-  base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(callback, true));
 }
 
 void FakeSessionManagerClient::StopSession() {
@@ -117,7 +114,6 @@ void FakeSessionManagerClient::StoreDevicePolicy(
 void FakeSessionManagerClient::StorePolicyForUser(
     const std::string& username,
     const std::string& policy_blob,
-    const std::string& policy_key,
     const StorePolicyCallback& callback) {
   user_policies_[username] = policy_blob;
   base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(callback, true));
@@ -134,6 +130,12 @@ void FakeSessionManagerClient::StoreDeviceLocalAccountPolicy(
 void FakeSessionManagerClient::SetFlagsForUser(
     const std::string& username,
     const std::vector<std::string>& flags) {
+}
+
+void FakeSessionManagerClient::GetServerBackedStateKeys(
+    const StateKeysCallback& callback) {
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE, base::Bind(callback, server_backed_state_keys_));
 }
 
 const std::string& FakeSessionManagerClient::device_policy() const {

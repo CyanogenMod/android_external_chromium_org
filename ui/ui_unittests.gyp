@@ -41,13 +41,7 @@
         'base/resource/resource_bundle_unittest.cc',
         'base/test/run_all_unittests.cc',
         'gfx/font_unittest.cc',
-        'gfx/image/image_family_unittest.cc',
         'gfx/image/image_skia_unittest.cc',
-        'gfx/image/image_unittest.cc',
-        'gfx/image/image_unittest_util.cc',
-        'gfx/image/image_unittest_util.h',
-        'gfx/image/image_unittest_util_ios.mm',
-        'gfx/image/image_unittest_util_mac.mm',
         'gfx/screen_unittest.cc',
         'gfx/text_elider_unittest.cc',
         'gfx/text_utils_unittest.cc',
@@ -77,21 +71,11 @@
         'base/text/bytes_formatting_unittest.cc',
         'base/view_prop_unittest.cc',
         'base/webui/web_ui_util_unittest.cc',
-        'gfx/animation/tween_unittest.cc',
-        'gfx/blit_unittest.cc',
-        'gfx/break_list_unittest.cc',
         'gfx/canvas_unittest.cc',
         'gfx/canvas_unittest_mac.mm',
-        'gfx/codec/jpeg_codec_unittest.cc',
-        'gfx/color_analysis_unittest.cc',
         'gfx/font_list_unittest.cc',
-        'gfx/image/image_mac_unittest.mm',
-        'gfx/image/image_util_unittest.cc',
         'gfx/platform_font_mac_unittest.mm',
         'gfx/render_text_unittest.cc',
-        'gfx/sequential_id_generator_unittest.cc',
-        'gfx/transform_util_unittest.cc',
-        'gfx/utf16_indexing_unittest.cc',
       ],
       'includes': [
         'display/display_unittests.gypi',
@@ -170,8 +154,7 @@
             'gfx/platform_font_pango_unittest.cc',
           ],
           'conditions': [
-            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-            ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
+            ['use_allocator!="none"', {
                'dependencies': [
                  '../base/allocator/allocator.gyp:allocator',
                ],
@@ -233,6 +216,11 @@
         ['chromeos==1', {
           'dependencies': [
             '../chromeos/chromeos.gyp:chromeos',
+            'aura/aura.gyp:aura_test_support',
+            'chromeos/ui_chromeos.gyp:ui_chromeos',
+          ],
+          'sources': [
+            'chromeos/touch_exploration_controller_unittest.cc'
           ],
           'sources!': [
             'base/dragdrop/os_exchange_data_provider_aurax11_unittest.cc',

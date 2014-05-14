@@ -54,7 +54,7 @@ class WebContentsObserverAndroid : public WebContentsObserver {
                                     const FrameNavigateParams& params) OVERRIDE;
   virtual void DidNavigateAnyFrame(const LoadCommittedDetails& details,
                                    const FrameNavigateParams& params) OVERRIDE;
-  virtual void DidFirstVisuallyNonEmptyPaint(int32 page_id) OVERRIDE;
+  virtual void DidFirstVisuallyNonEmptyPaint() OVERRIDE;
   virtual void DidStartProvisionalLoadForFrame(
       int64 frame_id,
       int64 parent_frame_id,
@@ -76,7 +76,7 @@ class WebContentsObserverAndroid : public WebContentsObserver {
                              RenderViewHost* render_view_host) OVERRIDE;
   virtual void NavigationEntryCommitted(
       const LoadCommittedDetails& load_details) OVERRIDE;
-  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
   virtual void DidChangeVisibleSSLState() OVERRIDE;
   virtual void DidAttachInterstitialPage() OVERRIDE;
   virtual void DidDetachInterstitialPage() OVERRIDE;

@@ -1677,15 +1677,9 @@ name=bug_290435
 *!WebCore::OfflineAudioDestinationNode::offlineRender
 
 UNINITIALIZED READ
-name=bug_290451
+name=bug_364724
 *!base::MD5DigestToBase16
-*!content::WebKitTestRunner::CaptureDump
-*!content::WebKitTestRunner::testFinished
-*!WebTestRunner::TestRunner::completeNotifyDone
-*!WebTestRunner::TestRunner::notifyDone
-*!WebTestRunner::CppBoundClass::MemberCallback<>::run
-*!WebTestRunner::CppBoundClass::invoke
-*!WebTestRunner::CppNPObject::invoke
+*!content::WebKitTestRunner::CaptureDumpPixels
 
 UNINITIALIZED READ
 name=bug_298143
@@ -2101,3 +2095,25 @@ UNINITIALIZED READ
 name=bug_42043
 ...
 QuickTime.qts!*
+
+UNINITIALIZED READ
+name=bug_369141
+...
+*!WebCore::RenderLayerClipper::updateClipRects
+*!WebCore::RenderLayerClipper::parentClipRects
+*!WebCore::RenderLayerClipper::backgroundClipRect
+
+HANDLE LEAK
+name=bug_370178
+system call NtCreateEvent
+KERNELBASE.dll!CreateEventExW
+KERNELBASE.dll!CreateEventW
+base.dll!base::WaitableEvent::WaitableEvent
+gpu.dll!gpu::InProcessCommandBuffer::Initialize
+gl_in_process_context.dll!gpu::`anonymous namespace'::GLInProcessContextImpl::Initialize
+gl_in_process_context.dll!gpu::GLInProcessContext::CreateContext
+
+UNINITIALIZED READ
+name=bug_371844
+*!content::GamepadProvider::PadState::Match
+*!content::GamepadProvider::DoPoll

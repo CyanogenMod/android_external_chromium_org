@@ -30,7 +30,6 @@
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
 #include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/browser/view_type_utils.h"
@@ -224,13 +223,15 @@ void BookmarkManagerPrivateEventRouter::BookmarkMetaInfoChanged(
   }
 
   // Identify added fields:
-  for (BookmarkNode::MetaInfoMap::const_iterator it = new_meta_info->begin();
-       it != new_meta_info->end();
-       ++it) {
-    BookmarkNode::MetaInfoMap::const_iterator prev_meta_field =
-        prev_meta_info_.find(it->first);
-    if (prev_meta_field == prev_meta_info_.end())
-      changes.additional_properties[it->first] = it->second;
+  if (new_meta_info) {
+    for (BookmarkNode::MetaInfoMap::const_iterator it = new_meta_info->begin();
+         it != new_meta_info->end();
+         ++it) {
+      BookmarkNode::MetaInfoMap::const_iterator prev_meta_field =
+          prev_meta_info_.find(it->first);
+      if (prev_meta_field == prev_meta_info_.end())
+        changes.additional_properties[it->first] = it->second;
+    }
   }
 
   prev_meta_info_.clear();
@@ -440,7 +441,7 @@ bool BookmarkManagerPrivateSortChildrenFunction::RunOnReady() {
   return true;
 }
 
-bool BookmarkManagerPrivateGetStringsFunction::RunImpl() {
+bool BookmarkManagerPrivateGetStringsFunction::RunAsync() {
   base::DictionaryValue* localized_strings = new base::DictionaryValue();
 
   localized_strings->SetString("title",
@@ -544,7 +545,7 @@ bool BookmarkManagerPrivateStartDragFunction::RunOnReady() {
       source = ui::DragDropTypes::DRAG_EVENT_SOURCE_TOUCH;
 
     chrome::DragBookmarks(
-        GetProfile(), nodes, web_contents->GetView()->GetNativeView(), source);
+        GetProfile(), nodes, web_contents->GetNativeView(), source);
 
     return true;
   } else {

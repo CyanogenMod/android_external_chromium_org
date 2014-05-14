@@ -5,6 +5,8 @@
 #ifndef CHROME_BROWSER_COMPONENT_UPDATER_TEST_TEST_INSTALLER_H_
 #define CHROME_BROWSER_COMPONENT_UPDATER_TEST_TEST_INSTALLER_H_
 
+#include <string>
+
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "chrome/browser/component_updater/component_updater_service.h"
@@ -56,7 +58,7 @@ class ReadOnlyTestInstaller : public TestInstaller {
 // A VersionedTestInstaller is an installer that installs files into versioned
 // directories (e.g. somedir/25.23.89.141/<files>).
 class VersionedTestInstaller : public TestInstaller {
- public :
+ public:
   explicit VersionedTestInstaller();
 
   virtual ~VersionedTestInstaller();

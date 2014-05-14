@@ -548,7 +548,6 @@ bool Textfield::OnMousePressed(const ui::MouseEvent& event) {
 #endif
   }
 
-  touch_selection_controller_.reset();
   return true;
 }
 
@@ -592,7 +591,6 @@ void Textfield::OnMouseReleased(const ui::MouseEvent& event) {
 
 bool Textfield::OnKeyPressed(const ui::KeyEvent& event) {
   bool handled = controller_ && controller_->HandleKeyEvent(this, event);
-  touch_selection_controller_.reset();
   if (handled)
     return true;
 
@@ -685,7 +683,7 @@ void Textfield::OnGestureEvent(ui::GestureEvent* event) {
           event->SetHandled();
       } else if (switches::IsTouchDragDropEnabled()) {
         initiating_drag_ = true;
-        touch_selection_controller_.reset();
+        DestroyTouchSelection();
       } else {
         if (!touch_selection_controller_)
           CreateTouchSelectionControllerAndNotifyIt();
@@ -887,7 +885,7 @@ void Textfield::OnBlur() {
     RepaintCursor();
   }
 
-  touch_selection_controller_.reset();
+  DestroyTouchSelection();
 
   // Border typically draws focus indicator.
   SchedulePaint();
@@ -1036,8 +1034,12 @@ bool Textfield::DrawsHandles() {
 }
 
 void Textfield::OpenContextMenu(const gfx::Point& anchor) {
-  touch_selection_controller_.reset();
+  DestroyTouchSelection();
   ShowContextMenu(anchor, ui::MENU_SOURCE_TOUCH_EDIT_MENU);
+}
+
+void Textfield::DestroyTouchSelection() {
+  touch_selection_controller_.reset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1099,7 +1101,7 @@ bool Textfield::GetAcceleratorForCommandId(int command_id,
 }
 
 void Textfield::ExecuteCommand(int command_id, int event_flags) {
-  touch_selection_controller_.reset();
+  DestroyTouchSelection();
   if (!IsCommandIdEnabled(command_id))
     return;
 
@@ -1334,7 +1336,7 @@ bool Textfield::GetCompositionCharacterBounds(uint32 index,
   size_t text_index = composition_range.start() + index;
   if (composition_range.end() <= text_index)
     return false;
-  if (!render_text->IsCursorablePosition(text_index)) {
+  if (!render_text->IsValidCursorIndex(text_index)) {
     text_index = render_text->IndexOfAdjacentGrapheme(
         text_index, gfx::CURSOR_BACKWARD);
   }
@@ -1486,7 +1488,7 @@ void Textfield::UpdateAfterChange(bool text_changed, bool cursor_changed) {
     cursor_visible_ = true;
     RepaintCursor();
     if (cursor_repaint_timer_.IsRunning())
-    cursor_repaint_timer_.Reset();
+      cursor_repaint_timer_.Reset();
     if (!text_changed) {
       // TEXT_CHANGED implies SELECTION_CHANGED, so we only need to fire
       // this if only the selection changed.

@@ -7,13 +7,13 @@ from telemetry.page import page as page_module
 from telemetry.page import page_set as page_set_module
 
 
-class MemoryTestsPage(page_module.PageWithDefaultRunNavigate):
+class MemoryTestsPage(page_module.Page):
 
   def __init__(self, page_set):
     super(MemoryTestsPage, self).__init__(
-      url='file://../../data/gpu/mem_css3d.html', page_set=page_set)
+      url='file://../../data/gpu/mem_css3d.html', page_set=page_set,
+      name='Memory.CSS3D')
     self.user_agent_type = 'desktop'
-    self.name = 'Memory.CSS3D'
 
   def RunNavigateSteps(self, action_runner):
     action_runner.RunAction(NavigateAction())

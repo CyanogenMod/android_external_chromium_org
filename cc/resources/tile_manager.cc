@@ -338,13 +338,10 @@ const ManagedTileBin kBinIsActiveMap[2][NUM_BINS] = {
 // Determine bin based on three categories of tiles: things we need now,
 // things we need soon, and eventually.
 inline ManagedTileBin BinFromTilePriority(const TilePriority& prio) {
-  const float kBackflingGuardDistancePixels = 314.0f;
-
   if (prio.priority_bin == TilePriority::NOW)
     return NOW_BIN;
 
-  if (prio.priority_bin == TilePriority::SOON ||
-      prio.distance_to_visible < kBackflingGuardDistancePixels)
+  if (prio.priority_bin == TilePriority::SOON)
     return SOON_BIN;
 
   if (prio.distance_to_visible == std::numeric_limits<float>::infinity())
@@ -675,8 +672,7 @@ void TileManager::GetTilesWithAssignedBins(PrioritizedTileSet* tiles) {
     // should keep it in the prioritized tile set to ensure that AssignGpuMemory
     // can visit it.
     if (mts.bin == NEVER_BIN &&
-        !mts.tile_versions[mts.raster_mode].raster_task_ &&
-        !tile->required_for_activation()) {
+        !mts.tile_versions[mts.raster_mode].raster_task_) {
       FreeResourcesForTile(tile);
       continue;
     }
@@ -841,7 +837,6 @@ void TileManager::AssignGpuMemoryToTiles(
   size_t max_raster_bytes = max_raster_usage_bytes_ / 2;
   size_t raster_bytes = 0;
 
-  int processed_required_for_activation_tile_count = 0;
   unsigned schedule_priority = 1u;
   for (PrioritizedTileSet::Iterator it(tiles, true); it; ++it) {
     Tile* tile = *it;
@@ -861,8 +856,6 @@ void TileManager::AssignGpuMemoryToTiles(
     // If the tile is not needed, free it up.
     if (mts.bin == NEVER_BIN) {
       FreeResourcesForTile(tile);
-      if (tile->required_for_activation())
-        ++processed_required_for_activation_tile_count;
       continue;
     }
 
@@ -921,10 +914,8 @@ void TileManager::AssignGpuMemoryToTiles(
       hard_bytes_left -= tile_bytes;
       soft_bytes_left =
           (soft_bytes_left > tile_bytes) ? soft_bytes_left - tile_bytes : 0;
-      if (tile_version.resource_) {
-        DCHECK(tile->IsReadyToDraw());
+      if (tile_version.resource_)
         continue;
-      }
     }
 
     DCHECK(!tile_version.resource_);
@@ -943,29 +934,15 @@ void TileManager::AssignGpuMemoryToTiles(
 
     if (!can_schedule_tile) {
       all_tiles_that_need_to_be_rasterized_have_memory_ = false;
+      if (tile->required_for_activation())
+        all_tiles_required_for_activation_have_memory_ = false;
       it.DisablePriorityOrdering();
       continue;
     }
 
     raster_bytes = raster_bytes_if_rastered;
     tiles_that_need_to_be_rasterized->push_back(tile);
-    if (tile->required_for_activation())
-      ++processed_required_for_activation_tile_count;
   }
-
-  int total_required_for_activation_tile_count = 0;
-  for (std::vector<PictureLayerImpl*>::const_iterator it = layers_.begin();
-       it != layers_.end();
-       ++it) {
-    if ((*it)->GetTree() == PENDING_TREE) {
-      total_required_for_activation_tile_count +=
-          (*it)->UninitializedTilesRequiredForActivationCount();
-    }
-  }
-
-  all_tiles_required_for_activation_have_memory_ =
-      processed_required_for_activation_tile_count ==
-      total_required_for_activation_tile_count;
 
   // OOM reporting uses hard-limit, soft-OOM is normal depending on limit.
   ever_exceeded_memory_budget_ |= oomed_hard;
@@ -983,7 +960,7 @@ void TileManager::AssignGpuMemoryToTiles(
   memory_stats_from_last_assign_.bytes_allocated =
       hard_bytes_allocatable - hard_bytes_left;
   memory_stats_from_last_assign_.bytes_unreleasable =
-      hard_bytes_allocatable - bytes_releasable_;
+      resource_pool_->acquired_memory_usage_bytes() - bytes_releasable_;
   memory_stats_from_last_assign_.bytes_over = bytes_that_exceeded_memory_budget;
 }
 

@@ -11,6 +11,7 @@ namespace manifest_keys {
 const char kAllFrames[] = "all_frames";
 const char kAltKey[] = "altKey";
 const char kApp[] = "app";
+const char kAutomation[] = "automation";
 const char kBackgroundAllowJsAccess[] = "background.allow_js_access";
 const char kBackgroundPage[] = "background.page";
 const char kBackgroundPageLegacy[] = "background_page";
@@ -171,6 +172,7 @@ const char kWebview[] = "webview";
 const char kWebviewAccessibleResources[] = "accessible_resources";
 const char kWebviewName[] = "name";
 const char kWebviewPartitions[] = "partitions";
+const char kWhitelist[] = "whitelist";
 
 }  // namespace manifest_keys
 
@@ -330,6 +332,10 @@ const char kInvalidExportResources[] =
     "Invalid value for 'export.resources'.";
 const char kInvalidExportResourcesString[] =
     "Invalid value for 'export.resources[*]'.";
+const char kInvalidExportWhitelist[] =
+    "Invalid value for 'export.whitelist'.";
+const char kInvalidExportWhitelistString[] =
+    "Invalid value for 'export.whitelist[*]'.";
 const char kInvalidFileAccessList[] =
     "Invalid value for 'file_access'.";
 const char kInvalidFileAccessValue[] =

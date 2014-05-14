@@ -54,6 +54,8 @@
         'mojo_system_impl',
         'mojo_system_unittests',
         'mojo_utility',
+        'mojo_view_manager_lib',
+        'mojo_view_manager_lib_unittests',
       ],
       'conditions': [
         ['use_aura==1', {
@@ -192,6 +194,8 @@
         'system/shared_buffer_dispatcher.h',
         'system/simple_dispatcher.cc',
         'system/simple_dispatcher.h',
+        'system/transport_data.cc',
+        'system/transport_data.h',
         'system/waiter.cc',
         'system/waiter.h',
         'system/waiter_list.cc',
@@ -409,6 +413,8 @@
         'mojo_system_impl',
       ],
       'sources': [
+        'service_manager/background_service_loader.cc',
+        'service_manager/background_service_loader.h',
         'service_manager/service_loader.h',
         'service_manager/service_manager.cc',
         'service_manager/service_manager.h',
@@ -498,6 +504,8 @@
         'shell/test_child_process.h',
         'shell/url_request_context_getter.cc',
         'shell/url_request_context_getter.h',
+        'shell/view_manager_loader.cc',
+        'shell/view_manager_loader.h',
       ],
       'conditions': [
         ['OS=="linux"', {
@@ -510,8 +518,14 @@
           'dependencies': [
             # These are only necessary as long as we hard code use of ViewManager.
             '../skia/skia.gyp:skia',
+            'mojo_gles2',
             'mojo_shell_client',
             'mojo_view_manager',
+          ],
+        }, {  # use_aura==0
+          'sources!': [
+            'shell/view_manager_loader.cc',
+            'shell/view_manager_loader.h',
           ],
         }],
       ],
@@ -626,6 +640,21 @@
       ],
       'sources': [
         'tools/message_generator.cc',
+      ],
+    },
+    {
+      'target_name': 'mojo_cc_support',
+      'type': 'static_library',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../cc/cc.gyp:cc',
+        '../skia/skia.gyp:skia',
+        '../gpu/gpu.gyp:gles2_implementation',
+        'mojo_gles2',
+      ],
+      'sources': [
+        'cc/context_provider_mojo.cc',
+        'cc/context_provider_mojo.h',
       ],
     },
   ],
@@ -777,6 +806,27 @@
         }
       ],
     }],
+    ['OS=="linux"', {
+      'targets': [
+        {
+          'target_name': 'mojo_dbus_service',
+          'type': 'static_library',
+          'dependencies': [
+            '../base/base.gyp:base',
+            '../build/linux/system.gyp:dbus',
+            '../dbus/dbus.gyp:dbus',
+            'mojo_common_lib',
+            'mojo_external_service_bindings',
+            'mojo_shell_client',
+            'mojo_system_impl',
+          ],
+          'sources': [
+            'dbus/dbus_external_service.h',
+            'dbus/dbus_external_service.cc',
+          ],
+        },
+      ],
+    }],
     ['test_isolation_mode != "noop"', {
       'targets': [
         {
@@ -791,6 +841,34 @@
           ],
           'sources': [
             'mojo_js_unittests.isolate',
+          ],
+        },
+      ],
+    }],
+    ['use_aura==1', {
+      'targets': [
+        {
+          'target_name': 'mojo_aura_support',
+          'type': 'static_library',
+          'dependencies': [
+            '../cc/cc.gyp:cc',
+            '../ui/aura/aura.gyp:aura',
+            '../ui/events/events.gyp:events',
+            '../ui/events/events.gyp:events_base',
+            '../ui/compositor/compositor.gyp:compositor',
+            '../ui/gl/gl.gyp:gl',
+            '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
+            'mojo_cc_support',
+            'mojo_gles2',
+            'mojo_native_viewport_bindings',
+          ],
+          'sources': [
+            'aura/context_factory_mojo.cc',
+            'aura/context_factory_mojo.h',
+            'aura/screen_mojo.cc',
+            'aura/screen_mojo.h',
+            'aura/window_tree_host_mojo.cc',
+            'aura/window_tree_host_mojo.h',
           ],
         },
       ],

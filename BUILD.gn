@@ -49,6 +49,7 @@ group("root") {
     "//third_party/smhasher:pmurhash",
     "//third_party/WebKit/Source/wtf",
     "//third_party/zlib",
+    "//third_party:jpeg",
     "//tools/gn",
     "//ui/base:ui_base",
     "//ui/base/strings",
@@ -56,7 +57,6 @@ group("root") {
     "//ui/gfx",
     "//ui/resources",
     "//url",
-    "//v8:v8_base",
   ]
 
   if (is_linux) {

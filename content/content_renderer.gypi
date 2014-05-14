@@ -184,8 +184,6 @@
     'renderer/input/input_handler_proxy.h',
     'renderer/input/input_handler_wrapper.cc',
     'renderer/input/input_handler_wrapper.h',
-    'renderer/input_tag_speech_dispatcher.cc',
-    'renderer/input_tag_speech_dispatcher.h',
     'renderer/internal_document_state_data.cc',
     'renderer/internal_document_state_data.h',
     'renderer/java/java_bridge_channel.cc',
@@ -377,8 +375,6 @@
     'renderer/pepper/pepper_platform_audio_input.h',
     'renderer/pepper/pepper_platform_audio_output.cc',
     'renderer/pepper/pepper_platform_audio_output.h',
-    'renderer/pepper/pepper_platform_context_3d.cc',
-    'renderer/pepper/pepper_platform_context_3d.h',
     'renderer/pepper/pepper_platform_video_capture.cc',
     'renderer/pepper/pepper_platform_video_capture.h',
     'renderer/pepper/pepper_plugin_instance_impl.cc',
@@ -558,12 +554,6 @@
         'renderer/active_notification_tracker.cc',
       ],
     }],
-    ['input_speech==0', {
-      'sources!': [
-        'renderer/input_tag_speech_dispatcher.cc',
-        'renderer/input_tag_speech_dispatcher.h',
-      ]
-    }],
     ['OS=="mac"', {
       'sources!': [
         'common/process_watcher_posix.cc',
@@ -686,6 +676,8 @@
         'renderer/media/rtc_video_encoder_factory.h',
         'renderer/media/rtc_video_renderer.cc',
         'renderer/media/rtc_video_renderer.h',
+        'renderer/media/video_frame_deliverer.cc',
+        'renderer/media/video_frame_deliverer.h',
         'renderer/media/video_source_handler.cc',
         'renderer/media/video_source_handler.h',
         'renderer/media/webaudio_capturer_source.cc',

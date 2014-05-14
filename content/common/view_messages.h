@@ -15,11 +15,11 @@
 #include "content/common/content_param_traits.h"
 #include "content/common/cookie_data.h"
 #include "content/common/input/did_overscroll_params.h"
+#include "content/common/input/input_event_ack_state.h"
 #include "content/common/navigation_gesture.h"
 #include "content/common/pepper_renderer_instance_data.h"
 #include "content/common/view_message_enums.h"
 #include "content/common/webplugin_geometry.h"
-#include "content/port/common/input_event_ack_state.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/favicon_url.h"
 #include "content/public/common/file_chooser_params.h"
@@ -528,10 +528,6 @@ IPC_MESSAGE_ROUTED1(ViewMsg_LockMouse_ACK,
 // Tells the render side that the mouse has been unlocked.
 IPC_MESSAGE_ROUTED0(ViewMsg_MouseLockLost)
 
-// Screen was rotated. Dispatched to the onorientationchange javascript API.
-IPC_MESSAGE_ROUTED1(ViewMsg_OrientationChangeEvent,
-                    int /* orientation */)
-
 // Sent by the browser when the parameters for vsync alignment have changed.
 IPC_MESSAGE_ROUTED2(ViewMsg_UpdateVSyncParameters,
                     base::TimeTicks /* timebase */,
@@ -647,6 +643,12 @@ IPC_MESSAGE_ROUTED1(ViewMsg_ReplaceDateTime,
 // Copies the image at location x, y to the clipboard (if there indeed is an
 // image at that location).
 IPC_MESSAGE_ROUTED2(ViewMsg_CopyImageAt,
+                    int /* x */,
+                    int /* y */)
+
+// Saves the image at location x, y to the disk (if there indeed is an
+// image at that location).
+IPC_MESSAGE_ROUTED2(ViewMsg_SaveImageAt,
                     int /* x */,
                     int /* y */)
 
@@ -1118,14 +1120,6 @@ IPC_MESSAGE_ROUTED5(ViewHostMsg_Find_Reply,
 // message.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_ClosePage_ACK)
 
-// Notifies the browser that media has started/stopped playing.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_MediaPlayingNotification,
-                    int64 /* player_cookie, distinguishes instances */,
-                    bool /* has_video */,
-                    bool /* has_audio */)
-IPC_MESSAGE_ROUTED1(ViewHostMsg_MediaPausedNotification,
-                    int64 /* player_cookie, distinguishes instances */)
-
 // Notifies the browser that we have session history information.
 // page_id: unique ID that allows us to distinguish between history entries.
 IPC_MESSAGE_ROUTED2(ViewHostMsg_UpdateState,
@@ -1154,19 +1148,10 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_UpdateTargetURL,
 IPC_MESSAGE_ROUTED1(ViewHostMsg_DidChangeLoadProgress,
                     double /* load_progress */)
 
-// Sent when the renderer main frame sets its opener to null, disowning it for
-// the lifetime of the window.
-IPC_MESSAGE_ROUTED0(ViewHostMsg_DidDisownOpener)
-
 // Sent when the document element is available for the top-level frame.  This
 // happens after the page starts loading, but before all resources are
 // finished.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_DocumentAvailableInMainFrame)
-
-// Sent when after the onload handler has been invoked for the document
-// in the top-level frame.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_DocumentOnLoadCompletedInMainFrame,
-                    int32 /* page_id */)
 
 // Sent when the renderer loads a resource from its memory cache.
 // The security info is non empty if the resource was originally loaded over
@@ -1304,10 +1289,11 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_AppCacheAccessed,
                     bool /* blocked by policy */)
 
 // Initiates a download based on user actions like 'ALT+click'.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_DownloadUrl,
+IPC_MESSAGE_ROUTED4(ViewHostMsg_DownloadUrl,
                     GURL     /* url */,
                     content::Referrer /* referrer */,
-                    base::string16 /* suggested_name */)
+                    base::string16 /* suggested_name */,
+                    bool /* use prompt for save location */)
 
 // Used to go to the session history entry at the given offset (ie, -1 will
 // return the "back" item).
@@ -1652,14 +1638,12 @@ IPC_MESSAGE_CONTROL3(ViewHostMsg_DidLose3DContext,
 IPC_MESSAGE_ROUTED0(ViewHostMsg_WillInsertBody)
 
 // Notification that the urls for the favicon of a site has been determined.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_UpdateFaviconURL,
-                    int32 /* page_id */,
+IPC_MESSAGE_ROUTED1(ViewHostMsg_UpdateFaviconURL,
                     std::vector<content::FaviconURL> /* candidates */)
 
 // Sent once a paint happens after the first non empty layout. In other words
 // after the page has painted something.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_DidFirstVisuallyNonEmptyPaint,
-                    int /* page_id */)
+IPC_MESSAGE_ROUTED0(ViewHostMsg_DidFirstVisuallyNonEmptyPaint)
 
 // Sent by the renderer to the browser to start a vibration with the given
 // duration.

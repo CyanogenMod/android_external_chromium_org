@@ -195,6 +195,11 @@ PP_Resource ResourceCreationImpl::CreateKeyboardInputEvent_1_2(
                                                          code);
 }
 
+PP_Resource ResourceCreationImpl::CreateMediaStreamVideoTrack(
+    PP_Instance instance) {
+  return 0;  // Not supported in-process.
+}
+
 PP_Resource ResourceCreationImpl::CreateMouseInputEvent(
     PP_Instance instance,
     PP_InputEvent_Type type,
@@ -231,14 +236,6 @@ PP_Resource ResourceCreationImpl::CreateNetAddressFromNetAddressPrivate(
     PP_Instance instance,
     const PP_NetAddress_Private& private_addr) {
   return 0;  // Not supported in-process.
-}
-
-PP_Resource ResourceCreationImpl::CreateTouchInputEvent(PP_Instance instance,
-                                                        PP_InputEvent_Type type,
-                                                        PP_TimeTicks time_stamp,
-                                                        uint32_t modifiers) {
-  return PPB_InputEvent_Shared::CreateTouchInputEvent(
-      ppapi::OBJECT_IS_IMPL, instance, type, time_stamp, modifiers);
 }
 
 PP_Resource ResourceCreationImpl::CreateNetworkMonitor(PP_Instance instance) {
@@ -281,6 +278,14 @@ PP_Resource ResourceCreationImpl::CreateTCPSocketPrivate(PP_Instance instance) {
   return 0;  // Not supported in-process.
 }
 
+PP_Resource ResourceCreationImpl::CreateTouchInputEvent(PP_Instance instance,
+                                                        PP_InputEvent_Type type,
+                                                        PP_TimeTicks time_stamp,
+                                                        uint32_t modifiers) {
+  return PPB_InputEvent_Shared::CreateTouchInputEvent(
+      ppapi::OBJECT_IS_IMPL, instance, type, time_stamp, modifiers);
+}
+
 PP_Resource ResourceCreationImpl::CreateUDPSocket(PP_Instance instance) {
   return 0;  // Not supported in-process.
 }
@@ -293,7 +298,7 @@ PP_Resource ResourceCreationImpl::CreateVideoCapture(PP_Instance instance) {
   return 0;  // VideoCapture is not supported in process now.
 }
 
-PP_Resource ResourceCreationImpl::CreateVideoDecoder(
+PP_Resource ResourceCreationImpl::CreateVideoDecoderDev(
     PP_Instance instance,
     PP_Resource graphics3d_id,
     PP_VideoDecoder_Profile profile) {

@@ -15,6 +15,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #import "chrome/browser/ui/chrome_style.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
+#import "chrome/browser/ui/cocoa/browser_window_utils.h"
 #import "chrome/browser/ui/cocoa/constrained_window/constrained_window_button.h"
 #import "chrome/browser/ui/cocoa/hover_close_button.h"
 #import "chrome/browser/ui/cocoa/hyperlink_text_view.h"
@@ -27,6 +28,7 @@
 #include "chrome/browser/ui/website_settings/permission_bubble_request.h"
 #include "chrome/browser/ui/website_settings/permission_bubble_view.h"
 #include "chrome/browser/ui/website_settings/permission_menu_model.h"
+#include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
 #include "skia/ext/skia_utils_mac.h"
@@ -127,6 +129,23 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
 
 @end
 
+// The window used for the permission bubble controller.
+// Subclassed to allow browser-handled keyboard events to be passed from the
+// permission bubble to its parent window, which is a browser window.
+@interface PermissionBubbleWindow : InfoBubbleWindow
+@end
+
+@implementation PermissionBubbleWindow
+- (BOOL)performKeyEquivalent:(NSEvent*)event {
+  content::NativeWebKeyboardEvent wrappedEvent(event);
+  if ([BrowserWindowUtils shouldHandleKeyboardEvent:wrappedEvent]) {
+    return [BrowserWindowUtils handleKeyboardEvent:event
+                                          inWindow:[self parentWindow]];
+  }
+  return [super performKeyEquivalent:event];
+}
+@end
+
 @interface PermissionBubbleController ()
 
 // Returns an autoreleased NSView displaying the icon and label for |request|.
@@ -171,9 +190,6 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
 // Called when the 'customize' button is pressed.
 - (void)onCustomize:(id)sender;
 
-// Called when the parent window is resized.
-- (void)parentWindowDidResize:(NSNotification*)notification;
-
 // Sets the width of both |viewA| and |viewB| to be the larger of the
 // two views' widths.  Does not change either view's origin or height.
 + (CGFloat)matchWidthsOf:(NSView*)viewA andOf:(NSView*)viewB;
@@ -190,30 +206,21 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
                     bridge:(PermissionBubbleCocoa*)bridge {
   DCHECK(parentWindow);
   DCHECK(bridge);
-  base::scoped_nsobject<InfoBubbleWindow> window([[InfoBubbleWindow alloc]
-      initWithContentRect:ui::kWindowSizeDeterminedLater
-                styleMask:NSBorderlessWindowMask
-                  backing:NSBackingStoreBuffered
-                    defer:NO]);
+  base::scoped_nsobject<PermissionBubbleWindow> window(
+      [[PermissionBubbleWindow alloc]
+          initWithContentRect:ui::kWindowSizeDeterminedLater
+                    styleMask:NSBorderlessWindowMask
+                      backing:NSBackingStoreBuffered
+                        defer:NO]);
   [window setAllowedAnimations:info_bubble::kAnimateNone];
   if ((self = [super initWithWindow:window
                        parentWindow:parentWindow
                          anchoredAt:NSZeroPoint])) {
     [self setShouldCloseOnResignKey:NO];
     [[self bubble] setArrowLocation:info_bubble::kTopLeft];
-    NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
-    [nc addObserver:self
-           selector:@selector(parentWindowDidResize:)
-               name:NSWindowDidResizeNotification
-             object:parentWindow];
     bridge_ = bridge;
   }
   return self;
-}
-
-- (void)dealloc {
-  [[NSNotificationCenter defaultCenter] removeObserver:self];
-  [super dealloc];
 }
 
 - (void)windowWillClose:(NSNotification*)notification {
@@ -362,12 +369,6 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
     [self setAnchorPoint:anchorPoint];
     [self showWindow:nil];
   }
-  // The offset of the anchor from the parent's upper-left-hand corner is kept
-  // to ensure the bubble stays anchored correctly if the parent is resized.
-  anchorOffset_ = NSMakePoint(NSMinX([[self parentWindow] frame]),
-                              NSMaxY([[self parentWindow] frame]));
-  anchorOffset_.x -= anchorPoint.x;
-  anchorOffset_.y -= anchorPoint.y;
 }
 
 - (NSView*)labelForRequest:(PermissionBubbleRequest*)request {
@@ -515,13 +516,12 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
   [self onCustomize:nil];
 }
 
-- (void)parentWindowDidResize:(NSNotification*)notification {
-  DCHECK_EQ([self parentWindow], [notification object]);
-  NSPoint newOrigin = NSMakePoint(NSMinX([[self parentWindow] frame]),
-                                  NSMaxY([[self parentWindow] frame]));
-  newOrigin.x -= anchorOffset_.x;
-  newOrigin.y -= anchorOffset_.y;
-  [self setAnchorPoint:newOrigin];
+- (void)activateTabWithContents:(content::WebContents*)newContents
+               previousContents:(content::WebContents*)oldContents
+                        atIndex:(NSInteger)index
+                         reason:(int)reason {
+  // The show/hide of this bubble is handled by the PermissionBubbleManager.
+  // So bypass the base class, which would close the bubble here.
 }
 
 + (CGFloat)matchWidthsOf:(NSView*)viewA andOf:(NSView*)viewB {

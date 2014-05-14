@@ -137,6 +137,45 @@ WebViewInternal.prototype.maybeAttachWebRequestEventToObject =
   );
 };
 
+/** @private */
+WebViewInternal.prototype.maybeHandleContextMenu = function(e, webViewEvent) {
+  var requestId = e.requestId;
+  var self = this;
+  // Construct the event.menu object.
+  var actionTaken = false;
+  var validateCall = function() {
+    var ERROR_MSG_CONTEXT_MENU_ACTION_ALREADY_TAKEN = '<webview>: ' +
+        'An action has already been taken for this "contextmenu" event.';
+
+    if (actionTaken) {
+      throw new Error(ERROR_MSG_CONTEXT_MENU_ACTION_ALREADY_TAKEN);
+    }
+    actionTaken = true;
+  };
+  var menu = {
+    show: function(items) {
+      validateCall();
+      // TODO(lazyboy): WebViewShowContextFunction doesn't do anything useful
+      // with |items|, implement.
+      WebView.showContextMenu(self.instanceId, requestId, items);
+    }
+  };
+  webViewEvent.menu = menu;
+  var webviewNode = this.webviewNode;
+  var defaultPrevented = !webviewNode.dispatchEvent(webViewEvent);
+  if (actionTaken) {
+    return;
+  }
+  if (!defaultPrevented) {
+    actionTaken = true;
+    // The default action is equivalent to just showing the context menu as is.
+    WebView.showContextMenu(self.instanceId, requestId, undefined);
+
+    // TODO(lazyboy): Figure out a way to show warning message only when
+    // listeners are registered for this event.
+  } //  else we will ignore showing the context menu completely.
+};
+
 /**
  * @private
  */

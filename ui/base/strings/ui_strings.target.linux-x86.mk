@@ -16,6 +16,7 @@ GYP_TARGET_DEPENDENCIES :=
 
 ### Rules for action "ui_strings":
 $(gyp_shared_intermediate_dir)/ui/ui_strings/grit/ui_strings.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/ui/ui_strings/grit/ui_strings.h: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/ui/ui_strings/grit/ui_strings.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/ui_strings/grit/ui_strings.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/ui_strings/grit/ui_strings.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -80,6 +81,7 @@ $(gyp_shared_intermediate_dir)/ui/ui_strings/ui_strings_zh-TW.pak: $(gyp_shared_
 
 ### Rules for action "app_locale_settings":
 $(gyp_shared_intermediate_dir)/ui/app_locale_settings/grit/app_locale_settings.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/ui/app_locale_settings/grit/app_locale_settings.h: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/ui/app_locale_settings/grit/app_locale_settings.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/app_locale_settings/grit/app_locale_settings.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/app_locale_settings/grit/app_locale_settings.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))

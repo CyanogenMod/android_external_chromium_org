@@ -16,6 +16,7 @@ GYP_TARGET_DEPENDENCIES :=
 
 ### Rules for action "generate_ashmem_shim_headers":
 $(gyp_shared_intermediate_dir)/shim_headers/ashmem/target/third_party/ashmem/ashmem.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/shim_headers/ashmem/target/third_party/ashmem/ashmem.h: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/shim_headers/ashmem/target/third_party/ashmem/ashmem.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/shim_headers/ashmem/target/third_party/ashmem/ashmem.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/shim_headers/ashmem/target/third_party/ashmem/ashmem.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))

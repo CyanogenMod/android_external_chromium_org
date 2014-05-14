@@ -7,9 +7,14 @@
 #include "base/lazy_instance.h"
 #include "base/stl_util.h"
 #include "base/threading/thread_local.h"
+#include "content/child/child_thread.h"
+#include "content/child/service_worker/service_worker_handle_reference.h"
+#include "content/child/service_worker/service_worker_provider_context.h"
 #include "content/child/service_worker/web_service_worker_impl.h"
 #include "content/child/thread_safe_sender.h"
+#include "content/child/webmessageportchannel_impl.h"
 #include "content/common/service_worker/service_worker_messages.h"
+#include "third_party/WebKit/public/platform/WebServiceWorkerProviderClient.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 
 using blink::WebServiceWorkerError;
@@ -39,13 +44,6 @@ ServiceWorkerDispatcher::ServiceWorkerDispatcher(
 }
 
 ServiceWorkerDispatcher::~ServiceWorkerDispatcher() {
-  for (ScriptClientMap::iterator it = script_clients_.begin();
-       it != script_clients_.end();
-       ++it) {
-    Send(new ServiceWorkerHostMsg_RemoveScriptClient(
-        CurrentWorkerId(), it->first));
-  }
-
   g_dispatcher_tls.Pointer()->Set(kHasBeenDeleted);
 }
 
@@ -61,6 +59,8 @@ void ServiceWorkerDispatcher::OnMessageReceived(const IPC::Message& msg) {
                         OnServiceWorkerStateChanged)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_SetCurrentServiceWorker,
                         OnSetCurrentServiceWorker)
+    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_MessageToDocument,
+                        OnPostMessage)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   DCHECK(handled) << "Unhandled message:" << msg.type();
@@ -91,23 +91,34 @@ void ServiceWorkerDispatcher::UnregisterServiceWorker(
       CurrentWorkerId(), request_id, provider_id, pattern));
 }
 
+void ServiceWorkerDispatcher::AddProviderContext(
+    ServiceWorkerProviderContext* provider_context) {
+  DCHECK(provider_context);
+  int provider_id = provider_context->provider_id();
+  DCHECK(!ContainsKey(provider_contexts_, provider_id));
+  provider_contexts_[provider_id] = provider_context;
+}
+
+void ServiceWorkerDispatcher::RemoveProviderContext(
+    ServiceWorkerProviderContext* provider_context) {
+  DCHECK(provider_context);
+  DCHECK(ContainsKey(provider_contexts_, provider_context->provider_id()));
+  provider_contexts_.erase(provider_context->provider_id());
+  worker_to_provider_.erase(provider_context->current_handle_id());
+}
+
 void ServiceWorkerDispatcher::AddScriptClient(
     int provider_id,
     blink::WebServiceWorkerProviderClient* client) {
   DCHECK(client);
   DCHECK(!ContainsKey(script_clients_, provider_id));
   script_clients_[provider_id] = client;
-  thread_safe_sender_->Send(new ServiceWorkerHostMsg_AddScriptClient(
-      CurrentWorkerId(), provider_id));
 }
 
 void ServiceWorkerDispatcher::RemoveScriptClient(int provider_id) {
   // This could be possibly called multiple times to ensure termination.
-  if (ContainsKey(script_clients_, provider_id)) {
+  if (ContainsKey(script_clients_, provider_id))
     script_clients_.erase(provider_id);
-    thread_safe_sender_->Send(new ServiceWorkerHostMsg_RemoveScriptClient(
-        CurrentWorkerId(), provider_id));
-  }
 }
 
 ServiceWorkerDispatcher*
@@ -195,27 +206,63 @@ void ServiceWorkerDispatcher::OnServiceWorkerStateChanged(
     int thread_id,
     int handle_id,
     blink::WebServiceWorkerState state) {
-  ServiceWorkerMap::iterator found = service_workers_.find(handle_id);
-  if (found == service_workers_.end())
-    return;
-  found->second->OnStateChanged(state);
+  WorkerObjectMap::iterator worker = service_workers_.find(handle_id);
+  if (worker != service_workers_.end())
+    worker->second->OnStateChanged(state);
+
+  WorkerToProviderMap::iterator provider = worker_to_provider_.find(handle_id);
+  if (provider != worker_to_provider_.end())
+    provider->second->OnServiceWorkerStateChanged(handle_id, state);
 }
 
 void ServiceWorkerDispatcher::OnSetCurrentServiceWorker(
     int thread_id,
     int provider_id,
     const ServiceWorkerObjectInfo& info) {
-  scoped_ptr<WebServiceWorkerImpl> worker(
-      new WebServiceWorkerImpl(info, thread_safe_sender_));
+  ProviderContextMap::iterator provider = provider_contexts_.find(provider_id);
+  if (provider != provider_contexts_.end()) {
+    provider->second->OnSetCurrentServiceWorker(provider_id, info);
+    worker_to_provider_[info.handle_id] = provider->second;
+  }
+
+  ScriptClientMap::iterator found = script_clients_.find(provider_id);
+  if (found != script_clients_.end()) {
+    // Populate the .current field with the new worker object.
+    scoped_ptr<ServiceWorkerHandleReference> handle_ref(
+        ServiceWorkerHandleReference::Create(info, thread_safe_sender_));
+    found->second->setCurrentServiceWorker(
+        new WebServiceWorkerImpl(handle_ref.Pass(), thread_safe_sender_));
+  }
+}
+
+void ServiceWorkerDispatcher::OnPostMessage(
+    int thread_id,
+    int provider_id,
+    const base::string16& message,
+    const std::vector<int>& sent_message_port_ids,
+    const std::vector<int>& new_routing_ids) {
+  // Make sure we're on the main document thread. (That must be the only
+  // thread we get this message)
+  DCHECK(ChildThread::current());
+
   ScriptClientMap::iterator found = script_clients_.find(provider_id);
   if (found == script_clients_.end()) {
-    // Note that |worker|'s destructor sends a ServiceWorkerObjectDestroyed
-    // message so the browser-side can clean up the ServiceWorkerHandle it
-    // created when sending us this message.
+    // For now we do no queueing for messages sent to nonexistent / unattached
+    // client.
     return;
   }
-  // TODO(falken): Call client->setCurrentServiceWorker(worker) when the Blink
-  // change to add that function rolls in.
+
+  std::vector<WebMessagePortChannelImpl*> ports;
+  if (!sent_message_port_ids.empty()) {
+    ports.resize(sent_message_port_ids.size());
+    for (size_t i = 0; i < sent_message_port_ids.size(); ++i) {
+      ports[i] = new WebMessagePortChannelImpl(
+          new_routing_ids[i], sent_message_port_ids[i],
+          base::MessageLoopProxy::current());
+    }
+  }
+
+  found->second->dispatchMessageEvent(message, ports);
 }
 
 void ServiceWorkerDispatcher::AddServiceWorker(

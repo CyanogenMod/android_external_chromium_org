@@ -20,6 +20,7 @@ const char kMCSSecurePortKey[] = "gcm_secure_port";
 const char kRegistrationURLKey[] = "gcm_registration_url";
 
 const int64 kDefaultCheckinInterval = 2 * 24 * 60 * 60;  // seconds = 2 days.
+const int64 kMinimumCheckinInterval = 12 * 60 * 60;      // seconds = 12 hours.
 const char kDefaultCheckinURL[] = "https://android.clients.google.com/checkin";
 const char kDefaultMCSHostname[] = "https://mtalk.google.com";
 const int kDefaultMCSSecurePort = 5228;
@@ -30,11 +31,18 @@ const char kDefaultRegistrationURL[] =
 
 namespace gcm {
 
-const int64 GServicesSettings::kMinimumCheckinInterval = 12 * 60 * 60;
+// static
+const base::TimeDelta GServicesSettings::MinimumCheckinInterval() {
+  return base::TimeDelta::FromSeconds(kMinimumCheckinInterval);
+}
 
-GServicesSettings::GServicesSettings(GCMStore* gcm_store)
-    : gcm_store_(gcm_store),
-      checkin_interval_(kDefaultCheckinInterval),
+// static
+const GURL GServicesSettings::DefaultCheckinURL() {
+  return GURL(kDefaultCheckinURL);
+}
+
+GServicesSettings::GServicesSettings()
+    : checkin_interval_(base::TimeDelta::FromSeconds(kDefaultCheckinInterval)),
       checkin_url_(kDefaultCheckinURL),
       mcs_hostname_(kDefaultMCSHostname),
       mcs_secure_port_(kDefaultMCSSecurePort),
@@ -44,12 +52,12 @@ GServicesSettings::GServicesSettings(GCMStore* gcm_store)
 
 GServicesSettings::~GServicesSettings() {}
 
-void GServicesSettings::UpdateFromCheckinResponse(
+bool GServicesSettings::UpdateFromCheckinResponse(
   const checkin_proto::AndroidCheckinResponse& checkin_response) {
   if (!checkin_response.has_digest() ||
       checkin_response.digest() == digest_) {
     // There are no changes as digest is the same or no settings provided.
-    return;
+    return false;
   }
 
   std::map<std::string, std::string> settings;
@@ -63,18 +71,27 @@ void GServicesSettings::UpdateFromCheckinResponse(
   // passed the verificaiton in update settings.
   if (UpdateSettings(settings)) {
     digest_ = checkin_response.digest();
-    gcm_store_->SetGServicesSettings(
-        settings,
-        digest_,
-        base::Bind(&GServicesSettings::SetGServicesSettingsCallback,
-                   weak_ptr_factory_.GetWeakPtr()));
+    return true;
   }
+
+  return false;
 }
 
 void GServicesSettings::UpdateFromLoadResult(
     const GCMStore::LoadResult& load_result) {
   if (UpdateSettings(load_result.gservices_settings))
     digest_ = load_result.gservices_digest;
+}
+
+std::map<std::string, std::string> GServicesSettings::GetSettingsMap() const {
+  std::map<std::string, std::string> settings;
+  settings[kCheckinIntervalKey] =
+      base::Int64ToString(checkin_interval_.InSeconds());
+  settings[kCheckinURLKey] = checkin_url_.spec();
+  settings[kMCSHostnameKey] = mcs_hostname_;
+  settings[kMCSSecurePortKey] = base::IntToString(mcs_secure_port_);
+  settings[kRegistrationURLKey] = registration_url_.spec();
+  return settings;
 }
 
 bool GServicesSettings::UpdateSettings(
@@ -94,6 +111,10 @@ bool GServicesSettings::UpdateSettings(
     LOG(ERROR) << "Checkin interval: " << new_checkin_interval
                << " is less than allowed minimum: " << kMinimumCheckinInterval;
     new_checkin_interval = kMinimumCheckinInterval;
+  }
+  if (new_checkin_interval == std::numeric_limits<int64>::max()) {
+    LOG(ERROR) << "Checkin interval is too big: " << new_checkin_interval;
+    return false;
   }
 
   std::string new_mcs_hostname;
@@ -123,41 +144,39 @@ bool GServicesSettings::UpdateSettings(
     return false;
   }
 
-  std::string new_checkin_url;
+  GURL new_checkin_url;
   iter = settings.find(kCheckinURLKey);
   if (iter == settings.end()) {
     LOG(ERROR) << "Setting not found: " << kCheckinURLKey;
     return false;
   }
-  new_checkin_url = iter->second;
-  if (new_checkin_url.empty()) {
-    LOG(ERROR) << "Empty checkin URL provided.";
+  new_checkin_url = GURL(iter->second);
+  if (!new_checkin_url.is_valid()) {
+    LOG(ERROR) << "Invalid checkin URL provided: "
+               << new_checkin_url.possibly_invalid_spec();
     return false;
   }
 
-  std::string new_registration_url;
+  GURL new_registration_url;
   iter = settings.find(kRegistrationURLKey);
   if (iter == settings.end()) {
     LOG(ERROR) << "Setting not found: " << kRegistrationURLKey;
     return false;
   }
-  new_registration_url = iter->second;
-  if (new_registration_url.empty()) {
-    LOG(ERROR) << "Empty registration URL provided.";
+  new_registration_url = GURL(iter->second);
+  if (!new_registration_url.is_valid()) {
+    LOG(ERROR) << "Invalid registration URL provided: "
+               << new_registration_url.possibly_invalid_spec();
     return false;
   }
 
   // We only update the settings once all of them are correct.
-  checkin_interval_ = new_checkin_interval;
+  checkin_interval_ = base::TimeDelta::FromSeconds(new_checkin_interval);
   mcs_hostname_ = new_mcs_hostname;
   mcs_secure_port_ = new_mcs_secure_port;
   checkin_url_ = new_checkin_url;
   registration_url_ = new_registration_url;
   return true;
-}
-
-void GServicesSettings::SetGServicesSettingsCallback(bool success) {
-  DCHECK(success);
 }
 
 }  // namespace gcm

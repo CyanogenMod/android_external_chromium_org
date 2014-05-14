@@ -46,6 +46,22 @@
         }
       },
       {
+        "id": "ContextMenuItem",
+        "type": "object",
+        "description": "An item in the context menu.",
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "label of the item",
+            "optional": true
+          },
+          "commandId": {
+            "type": "integer",
+            "description": "id of the input item"
+          }
+        }
+      },
+      {
         "id": "RemovalOptions",
         "type": "object",
         "description": "Options that determine exactly what data will be removed.",
@@ -626,6 +642,29 @@
                 "type": "boolean"
               }
             ]
+          }
+        ]
+      },
+      {
+        "name": "showContextMenu",
+        "type": "function",
+        "parameters": [
+          {
+            "type": "integer",
+            "name": "instanceId",
+            "description": "The instance ID of the guest &lt;webview&gt; process. This not exposed to developers through the API."
+          },
+          {
+            "type": "integer",
+            "name": "requestId",
+            "description": "The strictly increasing request counter that serves as ID for the context menu. This not exposed to developers through the API."
+          },
+          {
+            "type": "array",
+            "name": "itemsToShow",
+            "items": {"$ref": "ContextMenuItem"},
+            "description": "Items to be shown in the context menu. These are top level items as opposed to children items.",
+            "optional": true
           }
         ]
       },

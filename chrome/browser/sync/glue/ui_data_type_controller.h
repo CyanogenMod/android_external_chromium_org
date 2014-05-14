@@ -50,6 +50,7 @@ class UIDataTypeController : public DataTypeController {
   virtual void Stop() OVERRIDE;
   virtual syncer::ModelType type() const OVERRIDE;
   virtual syncer::ModelSafeGroup model_safe_group() const OVERRIDE;
+  virtual ChangeProcessor* GetChangeProcessor() const OVERRIDE;
   virtual std::string name() const OVERRIDE;
   virtual State state() const OVERRIDE;
 
@@ -57,6 +58,11 @@ class UIDataTypeController : public DataTypeController {
   virtual void OnSingleDatatypeUnrecoverableError(
       const tracked_objects::Location& from_here,
       const std::string& message) OVERRIDE;
+
+  // Used by tests to override the factory used to create
+  // GenericChangeProcessors.
+  void SetGenericChangeProcessorFactoryForTest(
+      scoped_ptr<GenericChangeProcessorFactory> factory);
 
  protected:
   // For testing only.
@@ -117,6 +123,8 @@ class UIDataTypeController : public DataTypeController {
   // two datatype controller implementations (for ui and non-ui thread
   // datatypes).
   scoped_refptr<SharedChangeProcessor> shared_change_processor_;
+
+  scoped_ptr<GenericChangeProcessorFactory> processor_factory_;
 
   // A weak pointer to the actual local syncable service, which performs all the
   // real work. We do not own the object.

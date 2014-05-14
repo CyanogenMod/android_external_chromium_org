@@ -40,7 +40,7 @@ class FileIO;
 namespace plugin {
 
 class ErrorInfo;
-class Manifest;
+class OpenManifestEntryAsyncCallback;
 class Plugin;
 class SrpcClient;
 class ServiceRuntime;
@@ -87,13 +87,19 @@ struct OpenManifestEntryResource {
  public:
   OpenManifestEntryResource(const std::string& target_url,
                             struct NaClFileInfo* finfo,
-                            bool* op_complete)
+                            bool* op_complete,
+                            OpenManifestEntryAsyncCallback* callback)
       : url(target_url),
         file_info(finfo),
-        op_complete_ptr(op_complete) {}
+        op_complete_ptr(op_complete),
+        callback(callback) {}
+  ~OpenManifestEntryResource();
+  void MaybeRunCallback(int32_t pp_error);
+
   std::string url;
   struct NaClFileInfo* file_info;
   bool* op_complete_ptr;
+  OpenManifestEntryAsyncCallback* callback;
 };
 
 struct CloseManifestEntryResource {
@@ -140,7 +146,7 @@ class PluginReverseInterface: public nacl::ReverseInterface {
  public:
   PluginReverseInterface(nacl::WeakRefAnchor* anchor,
                          Plugin* plugin,
-                         const Manifest* manifest,
+                         int32_t manifest_id,
                          ServiceRuntime* service_runtime,
                          pp::CompletionCallback init_done_cb,
                          pp::CompletionCallback crash_cb);
@@ -170,6 +176,15 @@ class PluginReverseInterface: public nacl::ReverseInterface {
                            const pp::FileIO& file_io);
   void AddTempQuotaManagedFile(const nacl::string& file_id);
 
+  // This is a sibling of OpenManifestEntry. While OpenManifestEntry is
+  // a sync function and must be called on a non-main thread,
+  // OpenManifestEntryAsync must be called on the main thread. Upon completion
+  // (even on error), callback will be invoked. The caller has responsibility
+  // to keep the memory passed to info until callback is invoked.
+  void OpenManifestEntryAsync(const nacl::string& key,
+                              struct NaClFileInfo* info,
+                              OpenManifestEntryAsyncCallback* callback);
+
  protected:
   virtual void PostMessage_MainThreadContinuation(PostMessageResource* p,
                                                   int32_t err);
@@ -190,7 +205,7 @@ class PluginReverseInterface: public nacl::ReverseInterface {
   nacl::WeakRefAnchor* anchor_;  // holds a ref
   Plugin* plugin_;  // value may be copied, but should be used only in
                     // main thread in WeakRef-protected callbacks.
-  const Manifest* manifest_;
+  int32_t manifest_id_;
   ServiceRuntime* service_runtime_;
   NaClMutex mu_;
   NaClCondVar cv_;
@@ -207,7 +222,7 @@ class ServiceRuntime {
   // TODO(sehr): This class should also implement factory methods, using the
   // Start method below.
   ServiceRuntime(Plugin* plugin,
-                 const Manifest* manifest,
+                 int32_t manifest_id,
                  bool main_service_runtime,
                  bool uses_nonsfi_mode,
                  pp::CompletionCallback init_done_cb,

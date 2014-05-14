@@ -97,11 +97,24 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   // sequencer's buffer.
   void MaybeSendWindowUpdate();
 
-  int num_frames_received();
+  int num_frames_received() const;
 
-  int num_duplicate_frames_received();
+  int num_duplicate_frames_received() const;
 
   QuicFlowController* flow_controller() { return &flow_controller_; }
+
+  // Called by the stream sequeuncer as bytes are added to the buffer.
+  void AddBytesBuffered(uint64 bytes);
+  // Called by the stream sequeuncer as bytes are removed from the buffer.
+  void RemoveBytesBuffered(uint64 bytes);
+  // Called when bytese are sent to the peer.
+  void AddBytesSent(uint64 bytes);
+  // Called by the stream sequeuncer as bytes are consumed from the buffer.
+  void AddBytesConsumed(uint64 bytes);
+
+  // Returns true if the stream is flow control blocked, by the stream flow
+  // control window or the connection flow control window.
+  bool IsFlowControlBlocked();
 
  protected:
   // Sends as much of 'data' to the connection as the connection will consume,
@@ -128,9 +141,9 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   // Close the write side of the socket.  Further writes will fail.
   void CloseWriteSide();
 
-  bool HasBufferedData();
+  bool HasBufferedData() const;
 
-  bool fin_buffered() { return fin_buffered_; }
+  bool fin_buffered() const { return fin_buffered_; }
 
   const QuicSession* session() const { return session_; }
   QuicSession* session() { return session_; }
@@ -163,6 +176,11 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
 
   // Calculates and returns total number of bytes this stream has received.
   uint64 TotalReceivedBytes() const;
+
+  // Calls MaybeSendBlocked on our flow controller, and connection level flow
+  // controller. If we are flow control blocked, marks this stream as write
+  // blocked.
+  void MaybeSendBlocked();
 
   std::list<PendingData> queued_data_;
 
@@ -198,6 +216,9 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   bool is_server_;
 
   QuicFlowController flow_controller_;
+
+  // The connection level flow controller. Not owned.
+  QuicFlowController* connection_flow_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(ReliableQuicStream);
 };

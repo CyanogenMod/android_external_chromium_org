@@ -18,6 +18,7 @@
 #include "ppapi/proxy/graphics_2d_resource.h"
 #include "ppapi/proxy/host_resolver_private_resource.h"
 #include "ppapi/proxy/host_resolver_resource.h"
+#include "ppapi/proxy/media_stream_video_track_resource.h"
 #include "ppapi/proxy/net_address_resource.h"
 #include "ppapi/proxy/network_monitor_resource.h"
 #include "ppapi/proxy/output_protection_resource.h"
@@ -290,6 +291,12 @@ PP_Resource ResourceCreationProxy::CreateImageDataSimple(
       format, *size, init_to_zero);
 }
 
+PP_Resource ResourceCreationProxy::CreateMediaStreamVideoTrack(
+    PP_Instance instance) {
+  return (new MediaStreamVideoTrackResource(GetConnection(),
+                                            instance))->GetReference();
+}
+
 PP_Resource ResourceCreationProxy::CreateNetAddressFromIPv4Address(
     PP_Instance instance,
     const PP_NetAddress_IPv4* ipv4_addr) {
@@ -458,7 +465,7 @@ PP_Resource ResourceCreationProxy::CreateVideoCapture(PP_Instance instance) {
       ->GetReference();
 }
 
-PP_Resource ResourceCreationProxy::CreateVideoDecoder(
+PP_Resource ResourceCreationProxy::CreateVideoDecoderDev(
     PP_Instance instance,
     PP_Resource context3d_id,
     PP_VideoDecoder_Profile profile) {

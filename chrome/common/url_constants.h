@@ -337,8 +337,9 @@ extern const char kAutoPasswordGenerationLearnMoreURL[];
 
 extern const char kPasswordManagerLearnMoreURL[];
 
-// "Learn more" URL for the Settings API bubble.
-extern const char kSettingsApiLearnMoreURL[];
+// "Learn more" URL for the Settings API, NTP bubble and other settings bubbles
+// showing which extension is controlling them.
+extern const char kExtensionControlledSettingLearnMoreURL[];
 
 // General help links for Chrome, opened using various actions.
 extern const char kChromeHelpViaKeyboardURL[];
@@ -424,9 +425,6 @@ extern const char kOutdatedPluginLearnMoreURL[];
 // The URL for the "Learn more" page for the blocked plugin infobar.
 extern const char kBlockedPluginLearnMoreURL[];
 
-// The URL for the "About Voice Recognition" menu item.
-extern const char kSpeechInputAboutURL[];
-
 // The URL for the "Learn more" page for hotword search voice trigger.
 extern const char kHotwordLearnMoreURL[];
 
@@ -465,6 +463,9 @@ extern const char kLearnMoreEnterpriseURL[];
 
 // The URL for the Learn More link of the non-CWS bubble.
 extern const char kRemoveNonCWSExtensionURL[];
+
+// The URL for the Learn More link for the corrupt extension message.
+extern const char kCorruptExtensionURL[];
 
 extern const char kNotificationsHelpURL[];
 

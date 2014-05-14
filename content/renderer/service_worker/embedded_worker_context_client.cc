@@ -11,6 +11,7 @@
 #include "content/child/request_extra_data.h"
 #include "content/child/service_worker/service_worker_network_provider.h"
 #include "content/child/thread_safe_sender.h"
+#include "content/child/webmessageportchannel_impl.h"
 #include "content/child/worker_task_runner.h"
 #include "content/child/worker_thread_task_runner.h"
 #include "content/common/devtools_messages.h"
@@ -131,6 +132,8 @@ void EmbeddedWorkerContextClient::workerContextFailedToStart() {
   DCHECK(main_thread_proxy_->RunsTasksOnCurrentThread());
   DCHECK(!script_context_);
 
+  Send(new EmbeddedWorkerHostMsg_WorkerScriptLoadFailed(embedded_worker_id_));
+
   RenderThreadImpl::current()->embedded_worker_dispatcher()->
       WorkerContextDestroyed(embedded_worker_id_);
 }
@@ -146,6 +149,8 @@ void EmbeddedWorkerContextClient::workerContextStarted(
   g_worker_client_tls.Pointer()->Set(this);
   script_context_.reset(new ServiceWorkerScriptContext(this, proxy));
 
+  Send(new EmbeddedWorkerHostMsg_WorkerScriptLoaded(embedded_worker_id_));
+
   // Schedule a task to send back WorkerStarted asynchronously,
   // so that at the time we send it we can be sure that the worker
   // script has been evaluated and worker run loop has been started.
@@ -160,10 +165,26 @@ void EmbeddedWorkerContextClient::willDestroyWorkerContext() {
   // worker_task_runner_->RunsTasksOnCurrentThread() returns false
   // (while we're still on the worker thread).
   script_context_.reset();
+
+#if !defined(HAS_SERVICE_WORKER_CONTEXT_DESTROYED)
+  // TODO(kinuko): Remove this after blink side is landed.
   main_thread_proxy_->PostTask(
       FROM_HERE,
       base::Bind(&CallWorkerContextDestroyedOnMainThread,
                  embedded_worker_id_));
+#endif
+}
+
+void EmbeddedWorkerContextClient::workerContextDestroyed() {
+  // TODO(kinuko): Remove this ifdef after blink side is landed.
+#ifdef HAS_SERVICE_WORKER_CONTEXT_DESTROYED
+  // Now we should be able to free the WebEmbeddedWorker container on the
+  // main thread.
+  main_thread_proxy_->PostTask(
+      FROM_HERE,
+      base::Bind(&CallWorkerContextDestroyedOnMainThread,
+                 embedded_worker_id_));
+#endif
 }
 
 void EmbeddedWorkerContextClient::reportException(
@@ -264,6 +285,16 @@ EmbeddedWorkerContextClient::createServiceWorkerNetworkProvider(
 
   // Blink is responsible for deleting the returned object.
   return new WebServiceWorkerNetworkProviderImpl();
+}
+
+void EmbeddedWorkerContextClient::postMessageToClient(
+    int client_id,
+    const blink::WebString& message,
+    blink::WebMessagePortChannelArray* channels) {
+  DCHECK(script_context_);
+  script_context_->PostMessageToDocument(
+      client_id, message,
+      WebMessagePortChannelImpl::ExtractMessagePortIDs(channels));
 }
 
 void EmbeddedWorkerContextClient::OnMessageToWorker(

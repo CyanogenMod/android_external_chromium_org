@@ -95,7 +95,7 @@ ExtensionUpdater* GetExtensionUpdater(Profile* profile) {
     return profile->GetExtensionService()->updater();
 }
 
-GURL GetImageURLFromData(std::string contents) {
+GURL GetImageURLFromData(const std::string& contents) {
   std::string contents_base64;
   base::Base64Encode(contents, &contents_base64);
 
@@ -595,7 +595,7 @@ ItemInspectViewList DeveloperPrivateGetItemsInfoFunction::
   return result;
 }
 
-bool DeveloperPrivateGetItemsInfoFunction::RunImpl() {
+bool DeveloperPrivateGetItemsInfoFunction::RunAsync() {
   scoped_ptr<developer::GetItemsInfo::Params> params(
       developer::GetItemsInfo::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get() != NULL);
@@ -834,7 +834,7 @@ bool DeveloperPrivateEnableFunction::RunSync() {
 }
 
 void DeveloperPrivateEnableFunction::OnRequirementsChecked(
-    std::string extension_id,
+    const std::string& extension_id,
     std::vector<std::string> requirements_errors) {
   if (requirements_errors.empty()) {
     ExtensionService* service = GetProfile()->GetExtensionService();
@@ -889,7 +889,7 @@ bool DeveloperPrivateInspectFunction::RunSync() {
 
 DeveloperPrivateInspectFunction::~DeveloperPrivateInspectFunction() {}
 
-bool DeveloperPrivateLoadUnpackedFunction::RunImpl() {
+bool DeveloperPrivateLoadUnpackedFunction::RunAsync() {
   base::string16 select_title =
       l10n_util::GetStringUTF16(IDS_EXTENSION_LOAD_FROM_DIRECTORY);
 
@@ -946,7 +946,9 @@ bool DeveloperPrivateChooseEntryFunction::ShowPicker(
   return true;
 }
 
-bool DeveloperPrivateChooseEntryFunction::RunImpl() { return false; }
+bool DeveloperPrivateChooseEntryFunction::RunAsync() {
+  return false;
+}
 
 DeveloperPrivateChooseEntryFunction::~DeveloperPrivateChooseEntryFunction() {}
 
@@ -980,7 +982,7 @@ void DeveloperPrivatePackDirectoryFunction::OnPackFailure(
   Release();
 }
 
-bool DeveloperPrivatePackDirectoryFunction::RunImpl() {
+bool DeveloperPrivatePackDirectoryFunction::RunAsync() {
   scoped_ptr<PackDirectory::Params> params(
       PackDirectory::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -1034,7 +1036,7 @@ DeveloperPrivatePackDirectoryFunction::~DeveloperPrivatePackDirectoryFunction()
 
 DeveloperPrivateLoadUnpackedFunction::~DeveloperPrivateLoadUnpackedFunction() {}
 
-bool DeveloperPrivateLoadDirectoryFunction::RunImpl() {
+bool DeveloperPrivateLoadDirectoryFunction::RunAsync() {
   // TODO(grv) : add unittests.
   std::string directory_url_str;
   std::string filesystem_name;
@@ -1241,7 +1243,7 @@ DeveloperPrivateLoadDirectoryFunction::DeveloperPrivateLoadDirectoryFunction()
 DeveloperPrivateLoadDirectoryFunction::~DeveloperPrivateLoadDirectoryFunction()
     {}
 
-bool DeveloperPrivateChoosePathFunction::RunImpl() {
+bool DeveloperPrivateChoosePathFunction::RunAsync() {
   scoped_ptr<developer::ChoosePath::Params> params(
       developer::ChoosePath::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get() != NULL);
@@ -1310,7 +1312,7 @@ DeveloperPrivateRequestFileSourceFunction::
 DeveloperPrivateRequestFileSourceFunction::
     ~DeveloperPrivateRequestFileSourceFunction() {}
 
-bool DeveloperPrivateRequestFileSourceFunction::RunImpl() {
+bool DeveloperPrivateRequestFileSourceFunction::RunAsync() {
   scoped_ptr<developer::RequestFileSource::Params> params(
       developer::RequestFileSource::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get() != NULL);
@@ -1334,13 +1336,13 @@ void DeveloperPrivateRequestFileSourceFunction::LaunchCallback(
     const base::DictionaryValue& results) {
   SetResult(results.DeepCopy());
   SendResponse(true);
-  Release();  // Balanced in RunImpl().
+  Release();  // Balanced in RunAsync().
 }
 
 DeveloperPrivateOpenDevToolsFunction::DeveloperPrivateOpenDevToolsFunction() {}
 DeveloperPrivateOpenDevToolsFunction::~DeveloperPrivateOpenDevToolsFunction() {}
 
-bool DeveloperPrivateOpenDevToolsFunction::RunImpl() {
+bool DeveloperPrivateOpenDevToolsFunction::RunAsync() {
   scoped_ptr<developer::OpenDevTools::Params> params(
       developer::OpenDevTools::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get() != NULL);

@@ -8,8 +8,8 @@
 #include "base/at_exit.h"
 #include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
-#include "mojo/examples/aura_demo/demo_screen.h"
-#include "mojo/examples/aura_demo/window_tree_host_mojo.h"
+#include "mojo/aura/screen_mojo.h"
+#include "mojo/aura/window_tree_host_mojo.h"
 #include "mojo/public/cpp/bindings/allocation_scope.h"
 #include "mojo/public/cpp/gles2/gles2.h"
 #include "mojo/public/cpp/shell/application.h"
@@ -114,7 +114,7 @@ class DemoWindowTreeClient : public aura::client::WindowTreeClient {
 class AuraDemo : public Application {
  public:
   explicit AuraDemo(MojoHandle shell_handle) : Application(shell_handle) {
-    screen_.reset(DemoScreen::Create());
+    screen_.reset(ScreenMojo::Create());
     gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, screen_.get());
 
     InterfacePipe<NativeViewport, AnyInterface> pipe;
@@ -159,7 +159,7 @@ class AuraDemo : public Application {
     window_tree_host_->Show();
   }
 
-  scoped_ptr<DemoScreen> screen_;
+  scoped_ptr<ScreenMojo> screen_;
 
   scoped_ptr<DemoWindowTreeClient> window_tree_client_;
 
@@ -187,7 +187,7 @@ extern "C" AURA_DEMO_EXPORT MojoResult CDECL MojoMain(
   // TODO(beng): This crashes in a DCHECK on X11 because this thread's
   //             MessageLoop is not of TYPE_UI. I think we need a way to build
   //             Aura that doesn't define platform-specific stuff.
-  aura::Env::CreateInstance();
+  aura::Env::CreateInstance(true);
   mojo::examples::AuraDemo app(shell_handle);
   loop.Run();
 

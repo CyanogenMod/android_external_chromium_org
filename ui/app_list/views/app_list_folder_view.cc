@@ -276,9 +276,10 @@ void AppListFolderView::DispatchDragEventForReparent(
 }
 
 void AppListFolderView::DispatchEndDragEventForReparent(
-    bool events_forwarded_to_drag_drop_host) {
-  container_view_->apps_grid_view()->
-      EndDragFromReparentItemInRootLevel(events_forwarded_to_drag_drop_host);
+    bool events_forwarded_to_drag_drop_host,
+    bool cancel_drag) {
+  container_view_->apps_grid_view()->EndDragFromReparentItemInRootLevel(
+      events_forwarded_to_drag_drop_host, cancel_drag);
 }
 
 void AppListFolderView::HideViewImmediately() {
@@ -300,6 +301,10 @@ void AppListFolderView::CloseFolderPage() {
 
 bool AppListFolderView::IsOEMFolder() const {
   return folder_item_->folder_type() == AppListFolderItem::FOLDER_TYPE_OEM;
+}
+
+void AppListFolderView::SetRootLevelDragViewVisible(bool visible) {
+  container_view_->apps_grid_view()->SetDragViewVisible(visible);
 }
 
 void AppListFolderView::GetAccessibleState(ui::AXViewState* state) {

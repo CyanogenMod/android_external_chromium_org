@@ -25,6 +25,7 @@
 #include "content/child/service_worker/service_worker_network_provider.h"
 #include "content/child/service_worker/web_service_worker_provider_impl.h"
 #include "content/child/web_socket_stream_handle_impl.h"
+#include "content/child/webmessageportchannel_impl.h"
 #include "content/common/clipboard_messages.h"
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
@@ -56,7 +57,14 @@
 #include "content/renderer/ime_event_guard.h"
 #include "content/renderer/internal_document_state_data.h"
 #include "content/renderer/java/java_bridge_dispatcher.h"
+#include "content/renderer/media/audio_renderer_mixer_manager.h"
+#include "content/renderer/media/media_stream_dispatcher.h"
+#include "content/renderer/media/media_stream_impl.h"
+#include "content/renderer/media/render_media_log.h"
 #include "content/renderer/media/webcontentdecryptionmodule_impl.h"
+#include "content/renderer/media/webmediaplayer_impl.h"
+#include "content/renderer/media/webmediaplayer_ms.h"
+#include "content/renderer/media/webmediaplayer_params.h"
 #include "content/renderer/notification_provider.h"
 #include "content/renderer/npapi/plugin_channel_host.h"
 #include "content/renderer/render_process.h"
@@ -68,6 +76,7 @@
 #include "content/renderer/shared_worker_repository.h"
 #include "content/renderer/v8_value_converter_impl.h"
 #include "content/renderer/websharedworker_proxy.h"
+#include "media/base/audio_renderer_mixer_input.h"
 #include "net/base/data_url.h"
 #include "net/base/net_errors.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
@@ -106,6 +115,15 @@
 #include "content/renderer/media/rtc_peer_connection_handler.h"
 #endif
 
+#if defined(OS_ANDROID)
+#include <cpu-features.h>
+
+#include "content/common/gpu/client/context_provider_command_buffer.h"
+#include "content/renderer/android/synchronous_compositor_factory.h"
+#include "content/renderer/media/android/stream_texture_factory_impl.h"
+#include "content/renderer/media/android/webmediaplayer_android.h"
+#endif
+
 using blink::WebContextMenuData;
 using blink::WebData;
 using blink::WebDataSource;
@@ -115,6 +133,8 @@ using blink::WebFrame;
 using blink::WebHistoryItem;
 using blink::WebHTTPBody;
 using blink::WebLocalFrame;
+using blink::WebMediaPlayer;
+using blink::WebMediaPlayerClient;
 using blink::WebNavigationPolicy;
 using blink::WebNavigationType;
 using blink::WebNode;
@@ -203,6 +223,25 @@ NOINLINE static void CrashIntentionally() {
   *zero = 0;
 }
 
+#if defined(SYZYASAN)
+NOINLINE static void CorruptMemoryBlock() {
+  // NOTE(sebmarchand): We intentionally corrupt a memory block here in order to
+  //     trigger an Address Sanitizer (ASAN) error report.
+  static const int kArraySize = 5;
+  int* array = new int[kArraySize];
+  // Encapsulate the invalid memory access into a try-catch statement to prevent
+  // this function from being instrumented. This way the underflow won't be
+  // detected but the corruption will (as the allocator will still be hooked).
+  __try {
+    int dummy = array[-1]--;
+    // Make sure the assignments to the dummy value aren't optimized away.
+    base::debug::Alias(&array);
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+  }
+  delete[] array;
+}
+#endif
+
 #if defined(ADDRESS_SANITIZER) || defined(SYZYASAN)
 NOINLINE static void MaybeTriggerAsanError(const GURL& url) {
   // NOTE(rogerm): We intentionally perform an invalid heap access here in
@@ -211,6 +250,9 @@ NOINLINE static void MaybeTriggerAsanError(const GURL& url) {
   static const char kHeapOverflow[] = "/heap-overflow";
   static const char kHeapUnderflow[] = "/heap-underflow";
   static const char kUseAfterFree[] = "/use-after-free";
+#if defined(SYZYASAN)
+  static const char kCorruptHeapBlock[] = "/corrupt-heap-block";
+#endif
   static const int kArraySize = 5;
 
   if (!url.DomainIs(kCrashDomain, sizeof(kCrashDomain) - 1))
@@ -230,6 +272,10 @@ NOINLINE static void MaybeTriggerAsanError(const GURL& url) {
     int* dangling = array.get();
     array.reset();
     dummy = dangling[kArraySize / 2];
+#if defined(SYZYASAN)
+  } else if (crash_type == kCorruptHeapBlock) {
+    CorruptMemoryBlock();
+#endif
   }
 
   // Make sure the assignments to the dummy value aren't optimized away.
@@ -276,7 +322,7 @@ static bool IsNonLocalTopLevelNavigation(const GURL& url,
   // 2. The origin of the url and the opener is the same in which case the
   //    opener relationship is maintained.
   // 3. Reloads/form submits/back forward navigations
-  if (!url.SchemeIs(kHttpScheme) && !url.SchemeIs(kHttpsScheme))
+  if (!url.SchemeIs(url::kHttpScheme) && !url.SchemeIs(url::kHttpsScheme))
     return false;
 
   if (type != blink::WebNavigationTypeReload &&
@@ -341,7 +387,10 @@ RenderFrameImpl::RenderFrameImpl(RenderViewImpl* render_view, int routing_id)
       selection_text_offset_(0),
       selection_range_(gfx::Range::InvalidRange()),
       handling_select_range_(false),
-      notification_provider_(NULL) {
+      notification_provider_(NULL),
+      media_stream_client_(NULL),
+      web_user_media_client_(NULL),
+      weak_factory_(this) {
   RenderThread::Get()->AddRoute(routing_id_, this);
 
 #if defined(OS_ANDROID)
@@ -567,6 +616,13 @@ void RenderFrameImpl::OnImeConfirmComposition(
 
 #endif  // ENABLE_PLUGINS
 
+void RenderFrameImpl::SetMediaStreamClientForTesting(
+    MediaStreamClient* media_stream_client) {
+  DCHECK(!media_stream_client_);
+  DCHECK(!web_user_media_client_);
+  media_stream_client_ = media_stream_client;
+}
+
 bool RenderFrameImpl::Send(IPC::Message* message) {
   if (is_detaching_ ||
       ((is_swapped_out_ || render_view_->is_swapped_out()) &&
@@ -579,6 +635,8 @@ bool RenderFrameImpl::Send(IPC::Message* message) {
 }
 
 bool RenderFrameImpl::OnMessageReceived(const IPC::Message& msg) {
+  GetContentClient()->SetActiveURL(frame_->document().url());
+
   ObserverListBase<RenderFrameObserver>::Iterator it(observers_);
   RenderFrameObserver* observer;
   while ((observer = it.GetNext()) != NULL) {
@@ -629,7 +687,8 @@ bool RenderFrameImpl::OnMessageReceived(const IPC::Message& msg) {
   if (!msg_is_ok) {
     // The message had a handler, but its deserialization failed.
     // Kill the renderer to avoid potential spoofing attacks.
-    CHECK(false) << "Unable to deserialize message in RenderFrameImpl.";
+    int id = msg.type();
+    CHECK(false) << "Unable to deserialize " << id << " in RenderFrameImpl.";
   }
 
   return handled;
@@ -1286,11 +1345,22 @@ blink::WebMediaPlayer* RenderFrameImpl::createMediaPlayer(
     blink::WebLocalFrame* frame,
     const blink::WebURL& url,
     blink::WebMediaPlayerClient* client) {
-  DCHECK(!frame_ || frame_ == frame);
-  // TODO(nasko): Moving the implementation here involves moving a few media
-  // related client objects here or referencing them in the RenderView. Needs
-  // more work to understand where the proper place for those objects is.
-  return render_view_->CreateMediaPlayer(this, frame, url, client);
+  WebMediaPlayer* player = CreateWebMediaPlayerForMediaStream(url, client);
+  if (player)
+    return player;
+
+#if defined(OS_ANDROID)
+  return CreateAndroidWebMediaPlayer(url, client);
+#else
+  WebMediaPlayerParams params(
+      base::Bind(&ContentRendererClient::DeferMediaLoad,
+                 base::Unretained(GetContentClient()->renderer()),
+                 static_cast<RenderFrame*>(this)),
+      RenderThreadImpl::current()->GetAudioRendererMixerManager()->CreateInput(
+          render_view_->routing_id_, routing_id_));
+  return new WebMediaPlayerImpl(frame, client, weak_factory_.GetWeakPtr(),
+                                params);
+#endif  // defined(OS_ANDROID)
 }
 
 blink::WebContentDecryptionModule*
@@ -1334,14 +1404,14 @@ blink::WebServiceWorkerProvider* RenderFrameImpl::createServiceWorkerProvider(
   DCHECK(!frame_ || frame_ == frame);
   // At this point we should have non-null data source.
   DCHECK(frame->dataSource());
+  if (!ChildThread::current())
+    return NULL;  // May be null in some tests.
   ServiceWorkerNetworkProvider* provider =
       ServiceWorkerNetworkProvider::FromDocumentState(
           DocumentState::FromDataSource(frame->dataSource()));
-  int provider_id = provider ?
-      provider->provider_id() :
-      kInvalidServiceWorkerProviderId;
   return new WebServiceWorkerProviderImpl(
-      ChildThread::current()->thread_safe_sender(), provider_id);
+      ChildThread::current()->thread_safe_sender(),
+      provider ? provider->context() : NULL);
 }
 
 void RenderFrameImpl::didAccessInitialDocument(blink::WebLocalFrame* frame) {
@@ -1395,7 +1465,15 @@ blink::WebFrame* RenderFrameImpl::createChildFrame(
 
 void RenderFrameImpl::didDisownOpener(blink::WebLocalFrame* frame) {
   DCHECK(!frame_ || frame_ == frame);
-  render_view_->didDisownOpener(frame);
+  // We only need to notify the browser if the active, top-level frame clears
+  // its opener.  We can ignore cases where a swapped out frame clears its
+  // opener after hearing about it from the browser, and the browser does not
+  // (yet) care about subframe openers.
+  if (render_view_->is_swapped_out_ || frame->parent())
+    return;
+
+  // Notify WebContents and all its swapped out RenderViews.
+  Send(new FrameHostMsg_DidDisownOpener(routing_id_));
 }
 
 void RenderFrameImpl::frameDetached(blink::WebFrame* frame) {
@@ -1541,7 +1619,11 @@ void RenderFrameImpl::loadURLExternally(
   if (policy == blink::WebNavigationPolicyDownload) {
     render_view_->Send(new ViewHostMsg_DownloadUrl(render_view_->GetRoutingID(),
                                                    request.url(), referrer,
-                                                   suggested_name));
+                                                   suggested_name, false));
+  } else if (policy == blink::WebNavigationPolicyDownloadTo) {
+    render_view_->Send(new ViewHostMsg_DownloadUrl(render_view_->GetRoutingID(),
+                                                   request.url(), referrer,
+                                                   suggested_name, true));
   } else {
     OpenURL(frame, request.url(), referrer, policy);
   }
@@ -1966,9 +2048,8 @@ void RenderFrameImpl::didFinishDocumentLoad(blink::WebLocalFrame* frame) {
 
 void RenderFrameImpl::didHandleOnloadEvents(blink::WebLocalFrame* frame) {
   DCHECK(!frame_ || frame_ == frame);
-  // TODO(nasko): Move implementation here. Needed state:
-  // * page_id_
-  render_view_->didHandleOnloadEvents(frame);
+  if (!frame->parent())
+    Send(new FrameHostMsg_DocumentOnLoadCompleted(routing_id_));
 }
 
 void RenderFrameImpl::didFailLoad(blink::WebLocalFrame* frame,
@@ -2513,7 +2594,17 @@ void RenderFrameImpl::willReleaseScriptContext(blink::WebLocalFrame* frame,
 void RenderFrameImpl::didFirstVisuallyNonEmptyLayout(
     blink::WebLocalFrame* frame) {
   DCHECK(!frame_ || frame_ == frame);
-  render_view_->didFirstVisuallyNonEmptyLayout(frame);
+  if (frame->parent())
+    return;
+
+  InternalDocumentStateData* data =
+      InternalDocumentStateData::FromDataSource(frame->dataSource());
+  data->set_did_first_visually_non_empty_layout(true);
+
+#if defined(OS_ANDROID)
+  GetRenderWidget()->DidChangeBodyBackgroundColor(
+      render_view_->webwidget_->backgroundColor());
+#endif
 }
 
 void RenderFrameImpl::didChangeContentsSize(blink::WebLocalFrame* frame,
@@ -2608,7 +2699,11 @@ void RenderFrameImpl::willStartUsingPeerConnectionHandler(
 }
 
 blink::WebUserMediaClient* RenderFrameImpl::userMediaClient() {
-  return render_view_->userMediaClient();
+  // This can happen in tests, in which case it's OK to return NULL.
+  if (!InitializeMediaStreamClient())
+    return NULL;
+
+  return web_user_media_client_;
 }
 
 blink::WebMIDIClient* RenderFrameImpl::webMIDIClient() {
@@ -2616,15 +2711,48 @@ blink::WebMIDIClient* RenderFrameImpl::webMIDIClient() {
 }
 
 bool RenderFrameImpl::willCheckAndDispatchMessageEvent(
-    blink::WebLocalFrame* sourceFrame,
-    blink::WebFrame* targetFrame,
-    blink::WebSecurityOrigin targetOrigin,
+    blink::WebLocalFrame* source_frame,
+    blink::WebFrame* target_frame,
+    blink::WebSecurityOrigin target_origin,
     blink::WebDOMMessageEvent event) {
-  DCHECK(!frame_ || frame_ == targetFrame);
-  // TODO(nasko): Move implementation here. Needed state:
-  // * is_swapped_out_
-  return render_view_->willCheckAndDispatchMessageEvent(
-      sourceFrame, targetFrame, targetOrigin, event);
+  DCHECK(!frame_ || frame_ == target_frame);
+
+  if (!render_view_->is_swapped_out_)
+    return false;
+
+  ViewMsg_PostMessage_Params params;
+  params.data = event.data().toString();
+  params.source_origin = event.origin();
+  if (!target_origin.isNull())
+    params.target_origin = target_origin.toString();
+
+  blink::WebMessagePortChannelArray channels = event.releaseChannels();
+  if (!channels.isEmpty()) {
+    std::vector<int> message_port_ids(channels.size());
+     // Extract the port IDs from the channel array.
+     for (size_t i = 0; i < channels.size(); ++i) {
+       WebMessagePortChannelImpl* webchannel =
+           static_cast<WebMessagePortChannelImpl*>(channels[i]);
+       message_port_ids[i] = webchannel->message_port_id();
+       webchannel->QueueMessages();
+       DCHECK_NE(message_port_ids[i], MSG_ROUTING_NONE);
+     }
+     params.message_port_ids = message_port_ids;
+  }
+
+  // Include the routing ID for the source frame (if one exists), which the
+  // browser process will translate into the routing ID for the equivalent
+  // frame in the target process.
+  params.source_routing_id = MSG_ROUTING_NONE;
+  if (source_frame) {
+    RenderViewImpl* source_view =
+        RenderViewImpl::FromWebView(source_frame->view());
+    if (source_view)
+      params.source_routing_id = source_view->routing_id();
+  }
+
+  Send(new ViewHostMsg_RouteMessageEvent(render_view_->routing_id_, params));
+  return true;
 }
 
 blink::WebString RenderFrameImpl::userAgentOverride(blink::WebLocalFrame* frame,
@@ -2691,6 +2819,21 @@ void RenderFrameImpl::initializeChildFrame(const blink::WebRect& frame_rect,
                                            float scale_factor) {
   Send(new FrameHostMsg_InitializeChildFrame(
       routing_id_, frame_rect, scale_factor));
+}
+
+void RenderFrameImpl::DidPlay(blink::WebMediaPlayer* player) {
+  Send(new FrameHostMsg_MediaPlayingNotification(
+      routing_id_, reinterpret_cast<int64>(player), player->hasVideo(),
+      player->hasAudio()));
+}
+
+void RenderFrameImpl::DidPause(blink::WebMediaPlayer* player) {
+  Send(new FrameHostMsg_MediaPausedNotification(
+      routing_id_, reinterpret_cast<int64>(player)));
+}
+
+void RenderFrameImpl::PlayerGone(blink::WebMediaPlayer* player) {
+  DidPause(player);
 }
 
 void RenderFrameImpl::AddObserver(RenderFrameObserver* observer) {
@@ -3224,5 +3367,100 @@ void RenderFrameImpl::SyncSelectionIfRequired() {
   }
   GetRenderWidget()->UpdateSelectionBounds();
 }
+
+bool RenderFrameImpl::InitializeMediaStreamClient() {
+  if (media_stream_client_)
+    return true;
+
+  if (!RenderThreadImpl::current())  // Will be NULL during unit tests.
+    return false;
+
+#if defined(OS_ANDROID)
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableWebRTC))
+    return false;
+#endif
+
+#if defined(ENABLE_WEBRTC)
+  if (!render_view_->media_stream_dispatcher_) {
+    render_view_->media_stream_dispatcher_ =
+        new MediaStreamDispatcher(render_view_.get());
+  }
+
+  MediaStreamImpl* media_stream_impl = new MediaStreamImpl(
+      render_view_.get(),
+      render_view_->media_stream_dispatcher_,
+      RenderThreadImpl::current()->GetMediaStreamDependencyFactory());
+  media_stream_client_ = media_stream_impl;
+  web_user_media_client_ = media_stream_impl;
+  return true;
+#else
+  return false;
+#endif
+}
+
+WebMediaPlayer* RenderFrameImpl::CreateWebMediaPlayerForMediaStream(
+    const blink::WebURL& url,
+    WebMediaPlayerClient* client) {
+#if defined(ENABLE_WEBRTC)
+  if (!InitializeMediaStreamClient()) {
+    LOG(ERROR) << "Failed to initialize MediaStreamClient";
+    return NULL;
+  }
+  if (media_stream_client_->IsMediaStream(url)) {
+#if defined(OS_ANDROID) && defined(ARCH_CPU_ARMEL)
+    bool found_neon =
+        (android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON) != 0;
+    UMA_HISTOGRAM_BOOLEAN("Platform.WebRtcNEONFound", found_neon);
+#endif  // defined(OS_ANDROID) && defined(ARCH_CPU_ARMEL)
+    return new WebMediaPlayerMS(frame_, client, weak_factory_.GetWeakPtr(),
+                                media_stream_client_, new RenderMediaLog());
+  }
+#endif  // defined(ENABLE_WEBRTC)
+  return NULL;
+}
+
+#if defined(OS_ANDROID)
+
+WebMediaPlayer* RenderFrameImpl::CreateAndroidWebMediaPlayer(
+      const blink::WebURL& url,
+      WebMediaPlayerClient* client) {
+  GpuChannelHost* gpu_channel_host =
+      RenderThreadImpl::current()->EstablishGpuChannelSync(
+          CAUSE_FOR_GPU_LAUNCH_VIDEODECODEACCELERATOR_INITIALIZE);
+  if (!gpu_channel_host) {
+    LOG(ERROR) << "Failed to establish GPU channel for media player";
+    return NULL;
+  }
+
+  scoped_refptr<StreamTextureFactory> stream_texture_factory;
+  if (GetRenderWidget()->UsingSynchronousRendererCompositor()) {
+    SynchronousCompositorFactory* factory =
+        SynchronousCompositorFactory::GetInstance();
+    stream_texture_factory = factory->CreateStreamTextureFactory(
+        render_view_->routing_id_);
+  } else {
+    scoped_refptr<webkit::gpu::ContextProviderWebContext> context_provider =
+        RenderThreadImpl::current()->SharedMainThreadContextProvider();
+
+    if (!context_provider.get()) {
+      LOG(ERROR) << "Failed to get context3d for media player";
+      return NULL;
+    }
+
+    stream_texture_factory = StreamTextureFactoryImpl::Create(
+        context_provider, gpu_channel_host, render_view_->routing_id_);
+  }
+
+  return new WebMediaPlayerAndroid(
+      frame_,
+      client,
+      weak_factory_.GetWeakPtr(),
+      render_view_->media_player_manager_,
+      stream_texture_factory,
+      RenderThreadImpl::current()->GetMediaThreadMessageLoopProxy(),
+      new RenderMediaLog());
+}
+
+#endif
 
 }  // namespace content

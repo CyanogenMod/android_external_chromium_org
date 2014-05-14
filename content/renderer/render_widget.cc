@@ -254,8 +254,11 @@ void RenderWidget::ScreenMetricsEmulator::Apply(
     const gfx::Size& visible_viewport_size,
     gfx::Rect resizer_rect,
     bool is_fullscreen) {
-  applied_widget_rect_.set_size(params_.viewSize.isEmpty() ?
-      original_size_ : gfx::Size(params_.viewSize));
+  applied_widget_rect_.set_size(gfx::Size(params_.viewSize));
+  if (!applied_widget_rect_.width())
+    applied_widget_rect_.set_width(original_size_.width());
+  if (!applied_widget_rect_.height())
+    applied_widget_rect_.set_height(original_size_.height());
 
   if (params_.fitToView) {
     DCHECK(!original_size_.IsEmpty());
@@ -383,7 +386,6 @@ RenderWidget::RenderWidget(blink::WebPopupType popup_type,
       pending_window_rect_count_(0),
       suppress_next_char_events_(false),
       is_accelerated_compositing_active_(false),
-      was_accelerated_compositing_ever_active_(false),
       animation_update_pending_(false),
       invalidation_task_posted_(false),
       screen_info_(screen_info),
@@ -393,6 +395,7 @@ RenderWidget::RenderWidget(blink::WebPopupType popup_type,
 #if defined(OS_ANDROID)
       text_field_is_dirty_(false),
       outstanding_ime_acks_(0),
+      body_background_color_(SK_ColorWHITE),
 #endif
 #if defined(OS_MACOSX)
       cached_has_main_frame_horizontal_scrollbar_(false),
@@ -499,7 +502,6 @@ void RenderWidget::CompleteInit() {
   }
   if (compositor_)
     StartCompositor();
-  DoDeferredUpdate();
 
   Send(new ViewHostMsg_RenderViewReady(routing_id_));
 }
@@ -750,11 +752,17 @@ void RenderWidget::OnResize(const ViewMsg_Resize_Params& params) {
     return;
   }
 
+  bool orientation_changed =
+      screen_info_.orientationAngle != params.screen_info.orientationAngle;
+
   screen_info_ = params.screen_info;
   SetDeviceScaleFactor(screen_info_.deviceScaleFactor);
   Resize(params.new_size, params.physical_backing_size,
          params.overdraw_bottom_height, params.visible_viewport_size,
          params.resizer_rect, params.is_fullscreen, SEND_RESIZE_ACK);
+
+  if (orientation_changed)
+    OnOrientationChange();
 }
 
 void RenderWidget::OnChangeResizeRect(const gfx::Rect& resizer_rect) {
@@ -1059,6 +1067,8 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
           kInputHandlingTimeThrottlingThresholdMicroseconds;
   }
 
+  TRACE_EVENT_SYNTHETIC_DELAY_END("blink.HandleInputEvent");
+
   if (!WebInputEventTraits::IgnoresAckDisposition(*input_event)) {
     scoped_ptr<IPC::Message> response(
         new InputHostMsg_HandleInputEvent_ACK(routing_id_,
@@ -1099,7 +1109,6 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
     UpdateTextInputState(SHOW_IME_IF_NEEDED, FROM_IME);
 #endif
 
-  TRACE_EVENT_SYNTHETIC_DELAY_END("blink.HandleInputEvent");
   handling_input_event_ = false;
 
   if (!prevent_default) {
@@ -1141,28 +1150,19 @@ void RenderWidget::AnimationCallback() {
     TRACE_EVENT0("renderer", "EarlyOut_NoAnimationUpdatePending");
     return;
   }
-  DoDeferredUpdateAndSendInputAck();
+  FlushPendingInputEventAck();
 }
 
 void RenderWidget::InvalidationCallback() {
   TRACE_EVENT0("renderer", "RenderWidget::InvalidationCallback");
   invalidation_task_posted_ = false;
-  DoDeferredUpdateAndSendInputAck();
+  FlushPendingInputEventAck();
 }
 
 void RenderWidget::FlushPendingInputEventAck() {
   if (pending_input_event_ack_)
     Send(pending_input_event_ack_.release());
   total_input_handling_time_this_frame_ = base::TimeDelta();
-}
-
-void RenderWidget::DoDeferredUpdateAndSendInputAck() {
-  DoDeferredUpdate();
-  FlushPendingInputEventAck();
-}
-
-// TODO(danakj): Remove this when everything is ForceCompositingMode.
-void RenderWidget::DoDeferredUpdate() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1278,11 +1278,7 @@ void RenderWidget::didActivateCompositor() {
   is_accelerated_compositing_active_ = true;
   Send(new ViewHostMsg_DidActivateAcceleratedCompositing(
       routing_id_, is_accelerated_compositing_active_));
-
-  if (!was_accelerated_compositing_ever_active_) {
-    was_accelerated_compositing_ever_active_ = true;
-    webwidget_->enterForceCompositingMode(true);
-  }
+  webwidget_->enterForceCompositingMode(true);
 }
 
 void RenderWidget::didDeactivateCompositor() {
@@ -1291,13 +1287,6 @@ void RenderWidget::didDeactivateCompositor() {
   is_accelerated_compositing_active_ = false;
   Send(new ViewHostMsg_DidActivateAcceleratedCompositing(
       routing_id_, is_accelerated_compositing_active_));
-
-  // In single-threaded mode, we exit force compositing mode and re-enter in
-  // DoDeferredUpdate() if appropriate. In threaded compositing mode,
-  // DoDeferredUpdate() is bypassed and WebKit is responsible for exiting and
-  // entering force compositing mode at the appropriate times.
-  if (!is_threaded_compositing_enabled_ && !ForceCompositingModeEnabled())
-    webwidget_->enterForceCompositingMode(false);
 }
 
 void RenderWidget::initializeLayerTreeView() {
@@ -1689,6 +1678,9 @@ void RenderWidget::SetDeviceScaleFactor(float device_scale_factor) {
   }
 }
 
+void RenderWidget::OnOrientationChange() {
+}
+
 gfx::Vector2d RenderWidget::GetScrollOffset() {
   // Bare RenderWidgets don't support scroll offset.
   return gfx::Vector2d();
@@ -1997,6 +1989,20 @@ bool RenderWidget::ShouldUpdateCompositionInfo(
       return true;
   }
   return false;
+}
+#endif
+
+#if defined(OS_ANDROID)
+void RenderWidget::DidChangeBodyBackgroundColor(SkColor bg_color) {
+  // If not initialized, default to white. Note that 0 is different from black
+  // as black still has alpha 0xFF.
+  if (!bg_color)
+    bg_color = SK_ColorWHITE;
+
+  if (bg_color != body_background_color_) {
+    body_background_color_ = bg_color;
+    Send(new ViewHostMsg_DidChangeBodyBackgroundColor(routing_id(), bg_color));
+  }
 }
 #endif
 

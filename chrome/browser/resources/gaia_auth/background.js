@@ -16,7 +16,7 @@
  *    a) A |pageLoaded| message is sent when the page has been loaded. This is
  *       forwarded to the main script as |onAuthPageLoaded|.
  *    b) If the SAML provider supports the credential passing API, the API calls
- *       are sent to this backgroudn script as |apiCall| messages. These
+ *       are sent to this background script as |apiCall| messages. These
  *       messages are forwarded unmodified to the main script.
  *    c) The injected script scrapes passwords. They are sent to this background
  *       script in |updatePassword| messages. The main script can request a list
@@ -40,7 +40,7 @@ BackgroundBridgeManager.prototype = {
     chrome.webRequest.onBeforeRequest.addListener(
         function(details) {
           if (this.bridges_[details.tabId])
-            return this.bridges_[details.tabId].onInsecureRequest();
+            return this.bridges_[details.tabId].onInsecureRequest(details.url);
         }.bind(this),
         {urls: ['http://*/*', 'file://*/*', 'ftp://*/*']},
         ['blocking']);
@@ -163,6 +163,8 @@ BackgroundBridge.prototype = {
     this.channelMain_.registerMessage(
         'getScrapedPasswords',
         this.onGetScrapedPasswords_.bind(this));
+    this.channelMain_.registerMessage(
+        'apiResponse', this.onAPIResponse_.bind(this));
 
     this.channelMain_.send({
       'name': 'channelConnected'
@@ -245,12 +247,13 @@ BackgroundBridge.prototype = {
    * Handler for webRequest.onBeforeRequest, invoked when content served over an
    * unencrypted connection is detected. Determines whether the request should
    * be blocked and if so, signals that an error message needs to be shown.
+   * @param {string} url The URL that was blocked.
    * @return {!Object} Decision whether to block the request.
    */
-  onInsecureRequest: function() {
+  onInsecureRequest: function(url) {
     if (!this.blockInsecureContent_)
       return {};
-    this.channelMain_.send({name: 'onInsecureContentBlocked'});
+    this.channelMain_.send({name: 'onInsecureContentBlocked', url: url});
     return {cancel: true};
   },
 
@@ -339,6 +342,14 @@ BackgroundBridge.prototype = {
       passwords[this.passwordStore_[property]] = true;
     }
     return Object.keys(passwords);
+  },
+
+  /**
+   * Handler for 'apiResponse' signal sent from the main script. Passes on the
+   * |msg| to the injected script.
+   */
+  onAPIResponse_: function(msg) {
+    this.channelInjected_.send(msg);
   },
 
   onAPICall_: function(msg) {

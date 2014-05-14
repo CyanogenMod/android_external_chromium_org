@@ -334,6 +334,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/GrClipMaskCache.cpp \
 	third_party/skia/src/gpu/GrClipMaskManager.cpp \
 	third_party/skia/src/gpu/GrGpu.cpp \
+	third_party/skia/src/gpu/GrGpuObject.cpp \
 	third_party/skia/src/gpu/GrGpuFactory.cpp \
 	third_party/skia/src/gpu/GrInOrderDrawBuffer.cpp \
 	third_party/skia/src/gpu/GrLayerCache.cpp \
@@ -349,7 +350,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/GrRectanizer_skyline.cpp \
 	third_party/skia/src/gpu/GrRenderTarget.cpp \
 	third_party/skia/src/gpu/GrReducedClip.cpp \
-	third_party/skia/src/gpu/GrResource.cpp \
 	third_party/skia/src/gpu/GrResourceCache.cpp \
 	third_party/skia/src/gpu/GrStencil.cpp \
 	third_party/skia/src/gpu/GrStencilAndCoverPathRenderer.cpp \
@@ -471,11 +471,6 @@ MY_DEFS_Debug := \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
-	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
-	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
 	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
@@ -611,11 +606,6 @@ MY_DEFS_Release := \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
-	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
-	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
 	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \

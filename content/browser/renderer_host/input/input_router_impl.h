@@ -40,10 +40,17 @@ class CONTENT_EXPORT InputRouterImpl
       public NON_EXPORTED_BASE(TouchEventQueueClient),
       public NON_EXPORTED_BASE(TouchpadTapSuppressionControllerClient) {
  public:
+  struct CONTENT_EXPORT Config {
+    Config();
+    GestureEventQueue::Config gesture_config;
+    TouchEventQueue::Config touch_config;
+  };
+
   InputRouterImpl(IPC::Sender* sender,
                   InputRouterClient* client,
                   InputAckHandler* ack_handler,
-                  int routing_id);
+                  int routing_id,
+                  const Config& config);
   virtual ~InputRouterImpl();
 
   // InputRouter
@@ -118,6 +125,26 @@ private:
                        const ui::LatencyInfo& latency_info,
                        bool is_keyboard_shortcut);
 
+  // A data structure that attaches some metadata to a WebMouseWheelEvent
+  // and its latency info.
+  struct QueuedWheelEvent {
+    QueuedWheelEvent();
+    QueuedWheelEvent(const MouseWheelEventWithLatencyInfo& event,
+                     bool synthesized_from_pinch);
+    ~QueuedWheelEvent();
+
+    MouseWheelEventWithLatencyInfo event;
+    bool synthesized_from_pinch;
+  };
+
+  // Enqueue or send a mouse wheel event.
+  void SendWheelEvent(const QueuedWheelEvent& wheel_event);
+
+  // Given a Touchpad GesturePinchUpdate event, create and send a synthetic
+  // wheel event for it.
+  void SendSyntheticWheelEventForPinch(
+      const GestureEventWithLatencyInfo& pinch_event);
+
   // IPC message handlers
   void OnInputEventAck(blink::WebInputEvent::Type event_type,
                        InputEventAckState ack_result,
@@ -173,8 +200,9 @@ private:
 
   // Called when a touch timeout-affecting bit has changed, in turn toggling the
   // touch ack timeout feature of the |touch_event_queue_| as appropriate. Input
-  // to that determination includes current view properties, the allowed touch
-  // action and the command-line configured |touch_ack_timeout_supported_|.
+  // to that determination includes current view properties and the allowed
+  // touch action. Note that this will only affect platforms that have a
+  // non-zero touch timeout configuration.
   void UpdateTouchAckTimeoutEnabled();
 
   // If a flush has been requested, signals a completed flush to the client if
@@ -216,7 +244,7 @@ private:
   // (Similar to |mouse_move_pending_|.) True if a mouse wheel event was sent
   // and we are waiting for a corresponding ack.
   bool mouse_wheel_pending_;
-  MouseWheelEventWithLatencyInfo current_wheel_event_;
+  QueuedWheelEvent current_wheel_event_;
 
   // (Similar to |next_mouse_move_|.) The next mouse wheel events to send.
   // Unlike mouse moves, mouse wheel events received while one is pending are
@@ -225,7 +253,7 @@ private:
   // high rate; not waiting for the ack results in jankiness, and using the same
   // mechanism as for mouse moves (just dropping old events when multiple ones
   // would be queued) results in very slow scrolling.
-  typedef std::deque<MouseWheelEventWithLatencyInfo> WheelEventQueue;
+  typedef std::deque<QueuedWheelEvent> WheelEventQueue;
   WheelEventQueue coalesced_mouse_wheel_events_;
 
   // A queue of keyboard events. We can't trust data from the renderer so we
@@ -236,10 +264,6 @@ private:
 
   // The time when an input event was sent to the client.
   base::TimeTicks input_event_start_time_;
-
-  // Whether touch ack timeout handling has been enabled via the command line.
-  bool touch_ack_timeout_supported_;
-  base::TimeDelta touch_ack_timeout_delay_;
 
   // Cached flags from |OnViewUpdated()|, defaults to 0.
   int current_view_flags_;

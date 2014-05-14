@@ -10,6 +10,7 @@
 #include "chrome/browser/sync/glue/shared_change_processor_ref.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "components/sync_driver/generic_change_processor_factory.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/api/sync_error.h"
 #include "sync/api/syncable_service.h"
@@ -35,7 +36,8 @@ NonUIDataTypeController::NonUIDataTypeController(
       profile_sync_factory_(profile_sync_factory),
       profile_(profile),
       sync_service_(sync_service),
-      state_(NOT_RUNNING) {
+      state_(NOT_RUNNING),
+      user_share_(NULL) {
 }
 
 void NonUIDataTypeController::LoadModels(
@@ -57,7 +59,7 @@ void NonUIDataTypeController::LoadModels(
   DCHECK(!shared_change_processor_.get());
   shared_change_processor_ = CreateSharedChangeProcessor();
   DCHECK(shared_change_processor_.get());
-
+  user_share_ = sync_service_->GetUserShare();
   model_load_callback_ = model_load_callback;
   if (!StartModels()) {
     // If we are waiting for some external service to load before associating
@@ -311,6 +313,11 @@ bool NonUIDataTypeController::StartAssociationAsync() {
           shared_change_processor_));
 }
 
+ChangeProcessor* NonUIDataTypeController::GetChangeProcessor() const {
+  DCHECK_EQ(state_, RUNNING);
+  return shared_change_processor_->generic_change_processor();
+}
+
 // This method can execute after we've already stopped (and possibly even
 // destroyed) both the Syncer and the SyncableService. As a result, all actions
 // must either have no side effects outside of the DTC or must be protected
@@ -331,9 +338,11 @@ void NonUIDataTypeController::
   // Note that it's possible the shared_change_processor has already been
   // disconnected at this point, so all our accesses to the syncer from this
   // point on are through it.
+  GenericChangeProcessorFactory factory;
   local_service_ = shared_change_processor->Connect(
       profile_sync_factory_,
-      sync_service_,
+      &factory,
+      user_share_,
       this,
       type(),
       weak_ptr_factory.GetWeakPtr());
@@ -410,13 +419,6 @@ void NonUIDataTypeController::
   syncer_merge_result.set_num_items_after_association(
       shared_change_processor->GetSyncCount());
 
-  // If we've been disconnected, sync_service_ may return an invalid
-  // pointer, but |shared_change_processor| protects us from attempting to
-  // access it.
-  // Note: This must be done on the datatype's thread to ensure local_service_
-  // doesn't start trying to push changes from its thread before we activate
-  // the datatype.
-  shared_change_processor->ActivateDataType(model_safe_group());
   StartDone(!sync_has_nodes ? OK_FIRST_RUN : OK,
             local_merge_result,
             syncer_merge_result);

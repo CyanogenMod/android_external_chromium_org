@@ -26,16 +26,17 @@
 #include "chrome/common/extensions/api/url_handlers/url_handlers_parser.h"
 #include "chrome/common/extensions/manifest_handlers/app_isolation_info.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
+#include "chrome/common/extensions/manifest_handlers/automation.h"
 #include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
-#include "chrome/common/extensions/manifest_handlers/externally_connectable.h"
+#include "chrome/common/extensions/manifest_handlers/mime_types_handler.h"
 #include "chrome/common/extensions/manifest_handlers/minimum_chrome_version_checker.h"
 #include "chrome/common/extensions/manifest_handlers/nacl_modules_handler.h"
 #include "chrome/common/extensions/manifest_handlers/settings_overrides_handler.h"
 #include "chrome/common/extensions/manifest_handlers/theme_handler.h"
 #include "chrome/common/extensions/manifest_handlers/ui_overrides_handler.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
-#include "chrome/common/extensions/mime_types_handler.h"
 #include "extensions/common/api/sockets/sockets_manifest_handler.h"
+#include "extensions/common/manifest_handlers/externally_connectable.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
 #include "extensions/common/manifest_handlers/requirements_info.h"
 
@@ -46,6 +47,7 @@ void RegisterChromeManifestHandlers() {
 #if defined(ENABLE_EXTENSIONS)
   (new AppIsolationHandler)->Register();
   (new AppLaunchManifestHandler)->Register();
+  (new AutomationHandler)->Register();
   (new BluetoothManifestHandler)->Register();
   (new BrowserActionHandler)->Register();
   (new CommandsHandler)->Register();

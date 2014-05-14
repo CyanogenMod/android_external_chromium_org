@@ -70,7 +70,6 @@
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/frame_navigate_params.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/renderer_preferences.h"
@@ -205,7 +204,7 @@ class TransferHttpsRedirectsContentBrowserClient
       content::ResourceContext* resource_context,
       const GURL& current_url,
       const GURL& new_url) OVERRIDE {
-    return new_url.SchemeIs(content::kHttpsScheme);
+    return new_url.SchemeIs(url::kHttpsScheme);
   }
 };
 
@@ -313,7 +312,7 @@ class RenderViewSizeObserver : public content::WebContentsObserver {
     render_view_sizes_[rvh].rwhv_commit_size =
         web_contents()->GetRenderWidgetHostView()->GetViewBounds().size();
     render_view_sizes_[rvh].wcv_commit_size =
-        web_contents()->GetView()->GetContainerSize();
+        web_contents()->GetContainerBounds().size();
   }
 
  private:
@@ -632,7 +631,7 @@ class RedirectObserver : public content::WebContentsObserver {
     params_ = params;
   }
 
-  virtual void WebContentsDestroyed(WebContents* contents) OVERRIDE {
+  virtual void WebContentsDestroyed() OVERRIDE {
     // Make sure we don't close the tab while the observer is in scope.
     // See http://crbug.com/314036.
     FAIL() << "WebContents closed during navigation (http://crbug.com/314036).";
@@ -1120,7 +1119,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, CommandCreateAppShortcutHttp) {
 
   ASSERT_TRUE(test_server()->Start());
   GURL http_url(test_server()->GetURL(std::string()));
-  ASSERT_TRUE(http_url.SchemeIs(content::kHttpScheme));
+  ASSERT_TRUE(http_url.SchemeIs(url::kHttpScheme));
   ui_test_utils::NavigateToURL(browser(), http_url);
   EXPECT_TRUE(command_updater->IsCommandEnabled(IDC_CREATE_SHORTCUTS));
 }
@@ -1134,7 +1133,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, CommandCreateAppShortcutHttps) {
                                      base::FilePath(kDocRoot));
   ASSERT_TRUE(test_server.Start());
   GURL https_url(test_server.GetURL("/"));
-  ASSERT_TRUE(https_url.SchemeIs(content::kHttpsScheme));
+  ASSERT_TRUE(https_url.SchemeIs(url::kHttpsScheme));
   ui_test_utils::NavigateToURL(browser(), https_url);
   EXPECT_TRUE(command_updater->IsCommandEnabled(IDC_CREATE_SHORTCUTS));
 }
@@ -1180,7 +1179,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, CommandCreateAppShortcutInvalid) {
 IN_PROC_BROWSER_TEST_F(BrowserTest, DISABLED_ConvertTabToAppShortcut) {
   ASSERT_TRUE(test_server()->Start());
   GURL http_url(test_server()->GetURL(std::string()));
-  ASSERT_TRUE(http_url.SchemeIs(content::kHttpScheme));
+  ASSERT_TRUE(http_url.SchemeIs(url::kHttpScheme));
 
   ASSERT_EQ(1, browser()->tab_strip_model()->count());
   WebContents* initial_tab = browser()->tab_strip_model()->GetWebContentsAt(0);
@@ -2602,7 +2601,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, GetSizeForNewRenderView) {
   const int height_inset =
       browser()->window()->GetRenderViewHeightInsetWithDetachedBookmarkBar();
   const gfx::Size initial_wcv_size =
-      web_contents->GetView()->GetContainerSize();
+      web_contents->GetContainerBounds().size();
   RenderViewSizeObserver observer(web_contents, browser()->window());
 
   // Navigate to a non-NTP page, without resizing WebContentsView.
@@ -2638,9 +2637,9 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, GetSizeForNewRenderView) {
 #if defined(OS_MACOSX)
   EXPECT_EQ(gfx::Size(wcv_commit_size0.width(),
                       wcv_commit_size0.height() + height_inset),
-            web_contents->GetView()->GetContainerSize());
+            web_contents->GetContainerBounds().size());
 #else
-  EXPECT_EQ(wcv_commit_size0, web_contents->GetView()->GetContainerSize());
+  EXPECT_EQ(wcv_commit_size0, web_contents->GetContainerBounds().size());
 #endif
 
   // Navigate to another non-NTP page, without resizing WebContentsView.
@@ -2657,7 +2656,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, GetSizeForNewRenderView) {
   EXPECT_EQ(rwhv_create_size1, rwhv_commit_size1);
   EXPECT_EQ(rwhv_commit_size1,
             web_contents->GetRenderWidgetHostView()->GetViewBounds().size());
-  EXPECT_EQ(wcv_commit_size1, web_contents->GetView()->GetContainerSize());
+  EXPECT_EQ(wcv_commit_size1, web_contents->GetContainerBounds().size());
 
   // Navigate from NTP to a non-NTP page, resizing WebContentsView while
   // navigation entry is pending.
@@ -2707,5 +2706,5 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, GetSizeForNewRenderView) {
                          wcv_resize_insets.height() + height_inset);
   EXPECT_EQ(exp_final_size,
             web_contents->GetRenderWidgetHostView()->GetViewBounds().size());
-  EXPECT_EQ(exp_final_size, web_contents->GetView()->GetContainerSize());
+  EXPECT_EQ(exp_final_size, web_contents->GetContainerBounds().size());
 }

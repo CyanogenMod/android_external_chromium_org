@@ -6,7 +6,7 @@
 #define ASH_FRAME_CAPTION_BUTTONS_FRAME_CAPTION_BUTTON_CONTAINER_VIEW_H_
 
 #include "ash/ash_export.h"
-#include "ash/frame/caption_buttons/alternate_frame_size_button_delegate.h"
+#include "ash/frame/caption_buttons/frame_size_button_delegate.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/view.h"
 
@@ -15,15 +15,13 @@ class Widget;
 }
 
 namespace ash {
-class FrameCaptionButton;
-class FrameMaximizeButton;
 
 // Container view for the frame caption buttons. It performs the appropriate
 // action when a caption button is clicked.
 class ASH_EXPORT FrameCaptionButtonContainerView
     : public views::View,
       public views::ButtonListener,
-      public AlternateFrameSizeButtonDelegate {
+      public FrameSizeButtonDelegate {
  public:
   static const char kViewClassName[];
 
@@ -65,10 +63,6 @@ class ASH_EXPORT FrameCaptionButtonContainerView
 
     DISALLOW_COPY_AND_ASSIGN(TestApi);
   };
-
-  // Returns the size button if using the old caption button style, returns NULL
-  // otherwise.
-  FrameMaximizeButton* GetOldStyleSizeButton();
 
   // Sets the resource ids of the images to paint the button for |icon|. The
   // FrameCaptionButtonContainerView will keep track of the images to use for
@@ -130,7 +124,7 @@ class ASH_EXPORT FrameCaptionButtonContainerView
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
 
-  // AlternateFrameSizeButtonDelegate:
+  // FrameSizeButtonDelegate:
   virtual bool IsMinimizeButtonVisible() const OVERRIDE;
   virtual void SetButtonsToNormal(Animate animate) OVERRIDE;
   virtual void SetButtonIcons(CaptionButtonIcon minimize_button_icon,

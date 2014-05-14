@@ -50,7 +50,6 @@ MY_CFLAGS_Debug := \
 	-Wno-unused-local-typedefs \
 	-m64 \
 	-march=x86-64 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \
@@ -146,7 +145,6 @@ MY_CFLAGS_Release := \
 	-Wno-unused-local-typedefs \
 	-m64 \
 	-march=x86-64 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \

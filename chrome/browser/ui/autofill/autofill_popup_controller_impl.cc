@@ -147,7 +147,7 @@ void AutofillPopupControllerImpl::Show(
 
     int available_width = popup_width - RowWidthWithoutText(i);
 
-    // Each field recieves space in proportion to its length.
+    // Each field receives space in proportion to its length.
     int name_size = available_width * name_width / total_text_length;
     names_[i] = gfx::ElideText(names_[i],
                                GetNameFontListForRow(i),
@@ -177,8 +177,8 @@ void AutofillPopupControllerImpl::Show(
     UpdateBoundsAndRedrawPopup();
   }
 
-  delegate_->OnPopupShown();
   controller_common_->RegisterKeyPressCallback();
+  delegate_->OnPopupShown();
 }
 
 void AutofillPopupControllerImpl::UpdateDataListValues(

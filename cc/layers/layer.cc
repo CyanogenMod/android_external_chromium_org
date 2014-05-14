@@ -1043,6 +1043,10 @@ bool Layer::NeedMoreUpdates() {
   return false;
 }
 
+bool Layer::IsSuitableForGpuRasterization() const {
+  return true;
+}
+
 scoped_refptr<base::debug::ConvertableToTraceFormat> Layer::TakeDebugInfo() {
   if (client_)
     return client_->TakeDebugInfo();
@@ -1082,7 +1086,10 @@ void Layer::OnOpacityAnimated(float opacity) {
 }
 
 void Layer::OnTransformAnimated(const gfx::Transform& transform) {
+  if (transform_ == transform)
+    return;
   transform_ = transform;
+  transform_is_invertible_ = transform.IsInvertible();
 }
 
 void Layer::OnScrollOffsetAnimated(const gfx::Vector2dF& scroll_offset) {

@@ -396,6 +396,9 @@ void RenderThreadImpl::Init() {
 
   AddFilter((new EmbeddedWorkerContextMessageFilter())->GetFilter());
 
+  gamepad_shared_memory_reader_.reset(new GamepadSharedMemoryReader());
+  AddObserver(gamepad_shared_memory_reader_.get());
+
   GetContentClient()->renderer()->RenderThreadStarted();
 
   InitSkiaEventTracer();
@@ -430,6 +433,14 @@ void RenderThreadImpl::Init() {
       command_line.HasSwitch(switches::kEnableGpuRasterization);
   is_gpu_rasterization_forced_ =
       command_line.HasSwitch(switches::kForceGpuRasterization);
+
+  if (command_line.HasSwitch(switches::kDisableDistanceFieldText)) {
+    is_distance_field_text_enabled_ = false;
+  } else if (command_line.HasSwitch(switches::kEnableDistanceFieldText)) {
+    is_distance_field_text_enabled_ = true;
+  } else {
+    is_distance_field_text_enabled_ = false;
+  }
 
   is_low_res_tiling_enabled_ = true;
   if (command_line.HasSwitch(switches::kDisableLowResTiling) &&
@@ -1135,7 +1146,8 @@ void RenderThreadImpl::DeleteImage(int32 image_id, int32 sync_point) {
 scoped_ptr<gfx::GpuMemoryBuffer> RenderThreadImpl::AllocateGpuMemoryBuffer(
     size_t width,
     size_t height,
-    unsigned internalformat) {
+    unsigned internalformat,
+    unsigned usage) {
   DCHECK(allocate_gpu_memory_buffer_thread_checker_.CalledOnValidThread());
 
   if (!GpuMemoryBufferImpl::IsFormatValid(internalformat))
@@ -1143,11 +1155,8 @@ scoped_ptr<gfx::GpuMemoryBuffer> RenderThreadImpl::AllocateGpuMemoryBuffer(
 
   gfx::GpuMemoryBufferHandle handle;
   bool success;
-  IPC::Message* message =
-      new ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer(width,
-                                                          height,
-                                                          internalformat,
-                                                          &handle);
+  IPC::Message* message = new ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer(
+      width, height, internalformat, usage, &handle);
 
   // Allow calling this from the compositor thread.
   if (base::MessageLoop::current() == message_loop())
@@ -1158,10 +1167,9 @@ scoped_ptr<gfx::GpuMemoryBuffer> RenderThreadImpl::AllocateGpuMemoryBuffer(
   if (!success)
     return scoped_ptr<gfx::GpuMemoryBuffer>();
 
-  return GpuMemoryBufferImpl::Create(
-      handle,
-      gfx::Size(width, height),
-      internalformat).PassAs<gfx::GpuMemoryBuffer>();
+  return GpuMemoryBufferImpl::CreateFromHandle(
+             handle, gfx::Size(width, height), internalformat)
+      .PassAs<gfx::GpuMemoryBuffer>();
 }
 
 void RenderThreadImpl::AcceptConnection(
@@ -1458,9 +1466,11 @@ void RenderThreadImpl::SetFlingCurveParameters(
 }
 
 void RenderThreadImpl::SampleGamepads(blink::WebGamepads* data) {
-  if (!gamepad_shared_memory_reader_)
-    gamepad_shared_memory_reader_.reset(new GamepadSharedMemoryReader);
   gamepad_shared_memory_reader_->SampleGamepads(*data);
+}
+
+void RenderThreadImpl::SetGamepadListener(blink::WebGamepadListener* listener) {
+  gamepad_shared_memory_reader_->SetGamepadListener(listener);
 }
 
 void RenderThreadImpl::WidgetCreated() {

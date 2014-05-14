@@ -44,14 +44,20 @@ class APP_LIST_EXPORT AppsGridViewFolderDelegate {
   // view for reparenting a folder item.
   // |events_forwarded_to_drag_drop_host|: True if the dragged item is dropped
   // to the drag_drop_host, eg. dropped on shelf.
+  // |cancel_drag|: True if the drag is ending because it has been canceled.
   virtual void DispatchEndDragEventForReparent(
-      bool events_forwarded_to_drag_drop_host) = 0;
+      bool events_forwarded_to_drag_drop_host,
+      bool cancel_drag) = 0;
 
   // Returns true if |point| falls outside of the folder container ink bubble.
   virtual bool IsPointOutsideOfFolderBoundary(const gfx::Point& point) = 0;
 
   // Returns true if the associated folder item is an OEM folder.
   virtual bool IsOEMFolder() const = 0;
+
+  // Hides or show the root level's grid view. This is needed so that the
+  // synchronous drag has an icon for reparenting while it loads.
+  virtual void SetRootLevelDragViewVisible(bool visible) = 0;
 
  protected:
   virtual ~AppsGridViewFolderDelegate() {}

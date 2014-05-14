@@ -4,10 +4,13 @@
 
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
 
+#include "base/file_util.h"
 #include "base/format_macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
+#include "chrome/common/chrome_paths.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "third_party/skia/include/core/SkPaint.h"
@@ -17,6 +20,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/canvas_image_source.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia_operations.h"
 
 // Helper methods for transforming and drawing avatar icons.
@@ -25,7 +29,6 @@ namespace {
 // Determine what the scaled height of the avatar icon should be for a
 // specified width, to preserve the aspect ratio.
 int GetScaledAvatarHeightForWidth(int width, const gfx::ImageSkia& avatar) {
-
   // Multiply the width by the inverted aspect ratio (height over
   // width), and then add 0.5 to ensure the int truncation rounds nicely.
   int scaled_height = width *
@@ -76,9 +79,8 @@ AvatarImageSource::AvatarImageSource(gfx::ImageSkia avatar,
                                      AvatarBorder border)
     : gfx::CanvasImageSource(canvas_size, false),
       canvas_size_(canvas_size),
-      width_(width - profiles::kAvatarIconPadding),
-      height_(GetScaledAvatarHeightForWidth(width, avatar) -
-          profiles::kAvatarIconPadding),
+      width_(width),
+      height_(GetScaledAvatarHeightForWidth(width, avatar)),
       position_(position),
       border_(border) {
   avatar_ = gfx::ImageSkiaOperations::CreateResizedImage(
@@ -183,7 +185,6 @@ struct IconResourceInfo {
 
 const int kAvatarIconWidth = 38;
 const int kAvatarIconHeight = 38;
-const int kAvatarIconPadding = 2;
 const SkColor kAvatarTutorialBackgroundColor = SkColorSetRGB(0x42, 0x85, 0xf4);
 const SkColor kAvatarTutorialContentTextColor = SkColorSetRGB(0xc6, 0xda, 0xfc);
 const SkColor kAvatarBubbleAccountsBackgroundColor =
@@ -327,6 +328,14 @@ const char* GetNoHighResAvatarFileName() {
   return kNoHighResAvatar;
 }
 
+base::FilePath GetPathOfHighResAvatarAtIndex(size_t index) {
+  std::string file_name = GetDefaultAvatarIconResourceInfo(index)->filename;
+  base::FilePath user_data_dir;
+  PathService::Get(chrome::DIR_USER_DATA, &user_data_dir);
+  return user_data_dir.AppendASCII(
+      kHighResAvatarFolderName).AppendASCII(file_name);
+}
+
 std::string GetDefaultAvatarIconUrl(size_t index) {
   DCHECK(IsDefaultAvatarIconIndex(index));
   return base::StringPrintf("%s%" PRIuS, kDefaultUrlPrefix, index);
@@ -336,8 +345,7 @@ bool IsDefaultAvatarIconIndex(size_t index) {
   return index < kDefaultAvatarIconsCount;
 }
 
-bool IsDefaultAvatarIconUrl(const std::string& url,
-                                              size_t* icon_index) {
+bool IsDefaultAvatarIconUrl(const std::string& url, size_t* icon_index) {
   DCHECK(icon_index);
   if (url.find(kDefaultUrlPrefix) != 0)
     return false;

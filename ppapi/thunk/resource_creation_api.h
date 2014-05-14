@@ -141,6 +141,7 @@ class ResourceCreationAPI {
                                             PP_ImageDataFormat format,
                                             const PP_Size* size,
                                             PP_Bool init_to_zero) = 0;
+  virtual PP_Resource CreateMediaStreamVideoTrack(PP_Instance instance) = 0;
   virtual PP_Resource CreateNetAddressFromIPv4Address(
       PP_Instance instance,
       const PP_NetAddress_IPv4* ipv4_addr) = 0;
@@ -184,7 +185,7 @@ class ResourceCreationAPI {
                                       PP_Bool vertical) = 0;
   virtual PP_Resource CreateTalk(PP_Instance instance) = 0;
   virtual PP_Resource CreateVideoCapture(PP_Instance instance) = 0;
-  virtual PP_Resource CreateVideoDecoder(
+  virtual PP_Resource CreateVideoDecoderDev(
       PP_Instance instance,
       PP_Resource context3d_id,
       PP_VideoDecoder_Profile profile) = 0;

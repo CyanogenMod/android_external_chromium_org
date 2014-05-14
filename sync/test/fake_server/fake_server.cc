@@ -4,6 +4,7 @@
 
 #include "sync/test/fake_server/fake_server.h"
 
+#include <algorithm>
 #include <limits>
 #include <string>
 #include <vector>
@@ -29,7 +30,6 @@
 using std::string;
 using std::vector;
 
-using base::AutoLock;
 using syncer::GetModelType;
 using syncer::ModelType;
 using syncer::ModelTypeSet;
@@ -97,21 +97,6 @@ class UpdateSieve {
     return min_version_;
   }
 
-  // Returns the data type IDs of types being synced for the first time.
-  vector<ModelType> GetFirstTimeTypes(
-      ModelTypeSet created_permanent_entity_types) const {
-    vector<ModelType> types;
-
-    ModelTypeToVersionMap::const_iterator it;
-    for (it = request_from_version_.begin(); it != request_from_version_.end();
-         ++it) {
-      if (it->second == 0 && !created_permanent_entity_types.Has(it->first))
-        types.push_back(it->first);
-    }
-
-    return types;
-  }
-
  private:
   typedef std::map<ModelType, int64> ModelTypeToVersionMap;
 
@@ -162,26 +147,17 @@ scoped_ptr<UpdateSieve> UpdateSieve::Create(
 
 FakeServer::FakeServer() : version_(0), birthday_(kDefaultBirthday) {
   keystore_keys_.push_back(kDefaultKeystoreKey);
+  CHECK(CreateDefaultPermanentItems());
 }
 
 FakeServer::~FakeServer() {
   STLDeleteContainerPairSecondPointers(entities_.begin(), entities_.end());
 }
 
-bool FakeServer::CreateDefaultPermanentItems(
-    const vector<ModelType>& first_time_types) {
-  for (vector<ModelType>::const_iterator it = first_time_types.begin();
-       it != first_time_types.end(); ++it) {
-    if (!ModelTypeSet::All().Has(*it)) {
-      NOTREACHED() << "An unexpected ModelType was encountered.";
-    }
-
-    ModelType model_type = *it;
-    if (created_permanent_entity_types_.Has(model_type)) {
-      // Do not create an entity for the type if it has already been created.
-      continue;
-    }
-
+bool FakeServer::CreateDefaultPermanentItems() {
+  ModelTypeSet all_types = syncer::ProtocolTypes();
+  for (ModelTypeSet::Iterator it = all_types.First(); it.Good(); it.Inc()) {
+    ModelType model_type = it.Get();
     FakeServerEntity* top_level_entity =
         PermanentEntity::CreateTopLevel(model_type);
     if (top_level_entity == NULL) {
@@ -210,8 +186,6 @@ bool FakeServer::CreateDefaultPermanentItems(
       }
       SaveEntity(other_bookmarks_entity);
     }
-
-    created_permanent_entity_types_.Put(model_type);
   }
 
   return true;
@@ -238,11 +212,8 @@ void FakeServer::SaveEntity(FakeServerEntity* entity) {
   entities_[entity->GetId()] = entity;
 }
 
-int FakeServer::HandleCommand(const string& request,
-                              int* response_code,
-                              string* response) {
-  AutoLock lock(lock_);
-
+void FakeServer::HandleCommand(const string& request,
+                               const HandleCommandCallback& callback) {
   sync_pb::ClientToServerMessage message;
   bool parsed = message.ParseFromString(request);
   DCHECK(parsed);
@@ -259,20 +230,20 @@ int FakeServer::HandleCommand(const string& request,
                                     response_proto.mutable_commit());
       break;
     default:
-      return net::ERR_NOT_IMPLEMENTED;
+      callback.Run(net::ERR_NOT_IMPLEMENTED, 0, string());;
+      return;
   }
 
   if (!success) {
     // TODO(pvalenzuela): Add logging here so that tests have more info about
     // the failure.
-    return net::HTTP_BAD_REQUEST;
+    callback.Run(net::ERR_FAILED, 0, string());
+    return;
   }
 
   response_proto.set_error_code(sync_pb::SyncEnums::SUCCESS);
   response_proto.set_store_birthday(birthday_);
-  *response_code = net::HTTP_OK;
-  *response = response_proto.SerializeAsString();
-  return 0;
+  callback.Run(0, net::HTTP_OK, response_proto.SerializeAsString());
 }
 
 bool FakeServer::HandleGetUpdatesRequest(
@@ -283,11 +254,7 @@ bool FakeServer::HandleGetUpdatesRequest(
   response->set_changes_remaining(0);
 
   scoped_ptr<UpdateSieve> sieve = UpdateSieve::Create(get_updates);
-  vector<ModelType> first_time_types = sieve->GetFirstTimeTypes(
-      created_permanent_entity_types_);
-  if (!CreateDefaultPermanentItems(first_time_types)) {
-    return false;
-  }
+
   if (get_updates.create_mobile_bookmarks_folder() &&
       !CreateMobileBookmarksPermanentItem()) {
     return false;
@@ -324,13 +291,13 @@ bool FakeServer::HandleGetUpdatesRequest(
   return true;
 }
 
-bool FakeServer::CommitEntity(
+string FakeServer::CommitEntity(
     const sync_pb::SyncEntity& client_entity,
     sync_pb::CommitResponse_EntryResponse* entry_response,
     string client_guid,
-    std::map<string, string>* client_to_server_ids) {
+    string parent_id) {
   if (client_entity.version() == 0 && client_entity.deleted()) {
-    return false;
+    return string();
   }
 
   FakeServerEntity* entity;
@@ -339,7 +306,7 @@ bool FakeServer::CommitEntity(
     // TODO(pvalenzuela): Change the behavior of DeleteChilden so that it does
     // not modify server data if it fails.
     if (!DeleteChildren(client_entity.id_string())) {
-      return false;
+      return string();
     }
   } else if (GetModelType(client_entity) == syncer::NIGORI) {
     // NIGORI is the only permanent item type that should be updated by the
@@ -356,11 +323,6 @@ bool FakeServer::CommitEntity(
       entity = UniqueClientEntity::CreateNew(client_entity);
     }
   } else {
-    string parent_id = client_entity.parent_id_string();
-    if (client_to_server_ids->find(parent_id) !=
-        client_to_server_ids->end()) {
-      parent_id = (*client_to_server_ids)[parent_id];
-    }
     // TODO(pvalenzuela): Validate entity's parent ID.
     if (entities_.find(client_entity.id_string()) != entities_.end()) {
       entity = BookmarkEntity::CreateUpdatedVersion(
@@ -375,17 +337,12 @@ bool FakeServer::CommitEntity(
   if (entity == NULL) {
     // TODO(pvalenzuela): Add logging so that it is easier to determine why
     // creation failed.
-    return false;
-  }
-
-  // Record the ID if it was renamed.
-  if (client_entity.id_string() != entity->GetId()) {
-    (*client_to_server_ids)[client_entity.id_string()] = entity->GetId();
+    return string();
   }
 
   SaveEntity(entity);
   BuildEntryResponseForSuccessfulCommit(entry_response, entity);
-  return true;
+  return entity->GetId();
 }
 
 void FakeServer::BuildEntryResponseForSuccessfulCommit(
@@ -442,6 +399,7 @@ bool FakeServer::HandleCommitRequest(
     sync_pb::CommitResponse* response) {
   std::map<string, string> client_to_server_ids;
   string guid = commit.cache_guid();
+  ModelTypeSet committed_model_types;
 
   // TODO(pvalenzuela): Add validation of CommitMessage.entries.
   ::google::protobuf::RepeatedPtrField<sync_pb::SyncEntity>::const_iterator it;
@@ -449,11 +407,30 @@ bool FakeServer::HandleCommitRequest(
     sync_pb::CommitResponse_EntryResponse* entry_response =
         response->add_entryresponse();
 
-    if (!CommitEntity(*it, entry_response, guid, &client_to_server_ids)) {
+    sync_pb::SyncEntity client_entity = *it;
+    string parent_id = client_entity.parent_id_string();
+    if (client_to_server_ids.find(parent_id) !=
+        client_to_server_ids.end()) {
+      parent_id = client_to_server_ids[parent_id];
+    }
+
+    string entity_id = CommitEntity(client_entity,
+                                    entry_response,
+                                    guid,
+                                    parent_id);
+    if (entity_id.empty()) {
       return false;
     }
+
+    // Record the ID if it was renamed.
+    if (entity_id != client_entity.id_string()) {
+      client_to_server_ids[client_entity.id_string()] = entity_id;
+    }
+    FakeServerEntity* entity = entities_[entity_id];
+    committed_model_types.Put(entity->GetModelType());
   }
 
+  FOR_EACH_OBSERVER(Observer, observers_, OnCommit(committed_model_types));
   return true;
 }
 
@@ -487,6 +464,18 @@ scoped_ptr<base::DictionaryValue> FakeServer::GetEntitiesAsDictionaryValue() {
   }
 
   return dictionary.Pass();
+}
+
+void FakeServer::InjectEntity(scoped_ptr<FakeServerEntity> entity) {
+  SaveEntity(entity.release());
+}
+
+void FakeServer::AddObserver(Observer* observer) {
+  observers_.AddObserver(observer);
+}
+
+void FakeServer::RemoveObserver(Observer* observer) {
+  observers_.RemoveObserver(observer);
 }
 
 }  // namespace fake_server

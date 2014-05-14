@@ -6,6 +6,7 @@
 #define MOJO_SERVICES_PUBLIC_CPP_VIEW_MANAGER_LIB_VIEW_MANAGER_PRIVATE_H_
 
 #include "base/basictypes.h"
+#include "mojo/services/public/cpp/view_manager/lib/view_manager_synchronizer.h"
 #include "mojo/services/public/cpp/view_manager/view_manager.h"
 
 namespace mojo {
@@ -23,6 +24,11 @@ class ViewManagerPrivate {
     return manager_->synchronizer_.get();
   }
   Shell* shell() { return manager_->shell_; }
+
+  void SetRoot(ViewTreeNode* root);
+
+  // Returns true if the ViewManager's synchronizer is connected to the service.
+  bool connected() { return manager_->synchronizer_->connected(); }
 
  private:
   ViewManager* manager_;

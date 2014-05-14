@@ -12,12 +12,14 @@
 
 using namespace blink;
 
+namespace content {
+
 namespace {
 
-class DidStartSessionTask : public WebTestRunner::WebMethodTask<WebTestRunner::MockWebMIDIAccessor> {
+class DidStartSessionTask : public WebMethodTask<MockWebMIDIAccessor> {
 public:
-    DidStartSessionTask(WebTestRunner::MockWebMIDIAccessor* object, blink::WebMIDIAccessorClient* client, bool result)
-        : WebMethodTask<WebTestRunner::MockWebMIDIAccessor>(object)
+    DidStartSessionTask(MockWebMIDIAccessor* object, blink::WebMIDIAccessorClient* client, bool result)
+        : WebMethodTask<MockWebMIDIAccessor>(object)
         , m_client(client)
         , m_result(result)
     {
@@ -25,7 +27,7 @@ public:
 
     virtual void runIfValid() OVERRIDE
     {
-        m_client->didStartSession(m_result);
+        m_client->didStartSession(m_result, "InvalidStateError", "");
     }
 
 private:
@@ -33,9 +35,7 @@ private:
     bool m_result;
 };
 
-} // namespace
-
-namespace WebTestRunner {
+}  // namespace
 
 MockWebMIDIAccessor::MockWebMIDIAccessor(blink::WebMIDIAccessorClient* client, TestInterfaces* interfaces)
     : m_client(client)
@@ -55,4 +55,4 @@ void MockWebMIDIAccessor::startSession()
     m_interfaces->delegate()->postTask(new DidStartSessionTask(this, m_client, m_interfaces->testRunner()->midiAccessorResult()));
 }
 
-} // namespace WebTestRunner
+}  // namespace content

@@ -3665,32 +3665,24 @@ TEST_F(SourceBufferStreamTest, Audio_SpliceFrame_NoExactSplices) {
   CheckNoNextBuffer();
 }
 
-TEST_F(SourceBufferStreamTest, Audio_SpliceFrame_DoubleSpliceEarlierOverlap) {
+// Do not allow splices on top of splices.
+TEST_F(SourceBufferStreamTest, Audio_SpliceFrame_NoDoubleSplice) {
   SetAudioStream();
   Seek(0);
   NewSegmentAppend("0K 2K 4K 6K 8K 10K 12K");
   NewSegmentAppend("11K 13K 15K 17K");
 
+  // Verify the splice was created.
+  CheckExpectedBuffers("0K 2K 4K 6K 8K 10K 12K C 11K 13K 15K 17K");
+  CheckNoNextBuffer();
+  Seek(0);
+
   // Create a splice before the first splice which would include it.
   NewSegmentAppend("9K");
 
-  // TODO(dalecurtis/wolenetz): Technically 15K and 17K should be included here,
-  // but since the range merge algorithm doesn't use exact durations, they're
-  // currently dropped.
-  CheckExpectedBuffers("0K 2K 4K 6K 8K 10K 11K 13K C 9K");
-  CheckNoNextBuffer();
-}
-
-TEST_F(SourceBufferStreamTest, Audio_SpliceFrame_DoubleSpliceLaterOverlap) {
-  SetAudioStream();
-  Seek(0);
-  NewSegmentAppend("0K 2K 4K 6K 8K 10K 12K");
-  NewSegmentAppend("10K 13K 15K 17K");
-
-  // Create a splice after the first splice which would include it.
-  NewSegmentAppend("11K");
-
-  CheckExpectedBuffers("0K 2K 4K 6K 8K 10K 13K 15K C 11K");
+  // A splice on top of a splice should result in a discard of the original
+  // splice and no new splice frame being generated.
+  CheckExpectedBuffers("0K 2K 4K 6K 8K 9K 13K 15K 17K");
   CheckNoNextBuffer();
 }
 
@@ -3737,6 +3729,23 @@ TEST_F(SourceBufferStreamTest, Audio_SpliceFrame_ConfigChange) {
   NewSegmentAppend("5K 8K 12K");
   CheckExpectedBuffers("0K 2K 4K 6K C 5K 8K 12K");
   CheckAudioConfig(new_config);
+  CheckNoNextBuffer();
+}
+
+// Ensure splices are not created if there are not enough frames to crossfade.
+TEST_F(SourceBufferStreamTest, Audio_SpliceFrame_NoTinySplices) {
+  SetAudioStream();
+  Seek(0);
+
+  // Overlap the range [0, 2) with [1, 3).  Since each frame has a duration of
+  // 2ms this results in an overlap of 1ms between the ranges.  A splice frame
+  // should not be generated since it requires at least 2 frames, or 2ms in this
+  // case, of data to crossfade.
+  NewSegmentAppend("0K");
+  CheckExpectedRangesByTimestamp("{ [0,2) }");
+  NewSegmentAppend("1K");
+  CheckExpectedRangesByTimestamp("{ [0,3) }");
+  CheckExpectedBuffers("0K 1K");
   CheckNoNextBuffer();
 }
 

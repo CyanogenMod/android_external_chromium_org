@@ -48,6 +48,7 @@
       'webapp/clipboard.js',
       'webapp/media_source_renderer.js',
       'webapp/session_connector.js',
+      'webapp/smart_reconnector.js',
     ],
     # Remoting core JavaScript files.
     'remoting_webapp_js_core_files': [
@@ -119,6 +120,10 @@
     'remoting_webapp_js_gnubby_auth_files': [
       'webapp/gnubby_auth_handler.js',
     ],
+    # browser test JavaScript files.
+    'remoting_webapp_js_browser_test_files': [
+      'webapp/browser_test/browser_test.js',
+    ],
     # The JavaScript files required by main.html.
     'remoting_webapp_main_html_js_files': [
       # Include the core files first as it is required by the other files.
@@ -134,6 +139,9 @@
       '<@(remoting_webapp_js_ui_host_control_files)',
       '<@(remoting_webapp_js_ui_host_display_files)',
       '<@(remoting_webapp_js_wcs_container_files)',
+      # Uncomment this line to include browser test files in the web app
+      # to expedite debugging or local development.
+      # '<@(remoting_webapp_js_browser_test_files)'
     ],
 
     # The JavaScript files required by wcs_sandbox.html.

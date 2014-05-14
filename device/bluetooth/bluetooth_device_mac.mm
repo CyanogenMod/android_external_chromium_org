@@ -10,12 +10,14 @@
 #include "base/hash.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
 #include "device/bluetooth/bluetooth_out_of_band_pairing_data.h"
 #include "device/bluetooth/bluetooth_profile_mac.h"
 #include "device/bluetooth/bluetooth_service_record_mac.h"
 #include "device/bluetooth/bluetooth_socket_mac.h"
+#include "device/bluetooth/bluetooth_uuid.h"
 
 // Replicate specific 10.7 SDK declarations for building with prior SDKs.
 #if !defined(MAC_OS_X_VERSION_10_7) || \
@@ -70,7 +72,7 @@ std::string BluetoothDeviceMac::GetDeviceName() const {
 }
 
 std::string BluetoothDeviceMac::GetAddress() const {
-  return base::SysNSStringToUTF8([device_ addressString]);
+  return GetDeviceAddress(device_);
 }
 
 BluetoothDevice::VendorIDSource BluetoothDeviceMac::GetVendorIDSource() const {
@@ -199,6 +201,14 @@ void BluetoothDeviceMac::ConnectToProfile(
       ->Connect(device_, callback, error_callback);
 }
 
+void BluetoothDeviceMac::ConnectToService(
+    const BluetoothUUID& uuid,
+    const ConnectToServiceCallback& callback,
+    const ConnectToServiceErrorCallback& error_callback) {
+  // TODO(keybuk): implement
+  NOTIMPLEMENTED();
+}
+
 void BluetoothDeviceMac::SetOutOfBandPairingData(
     const BluetoothOutOfBandPairingData& data,
     const base::Closure& callback,
@@ -232,6 +242,19 @@ int BluetoothDeviceMac::GetHostTransmitPower(
     return kUnknownPower;
 
   return power_level;
+}
+
+// static
+std::string BluetoothDeviceMac::GetDeviceAddress(IOBluetoothDevice* device) {
+  return NormalizeAddress(base::SysNSStringToUTF8([device addressString]));
+}
+
+// static
+std::string BluetoothDeviceMac::NormalizeAddress(const std::string& address) {
+  std::string normalized;
+  base::ReplaceChars(address, "-", ":", &normalized);
+  StringToUpperASCII(&normalized);
+  return normalized;
 }
 
 }  // namespace device

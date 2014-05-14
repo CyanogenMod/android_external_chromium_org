@@ -18,6 +18,7 @@ GYP_TARGET_DEPENDENCIES :=
 ### Generated for rule "components_components_gyp_navigation_interception_jni_headers_target_generate_jni_headers":
 # "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/navigation_interception/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['navigation_interception/android/java/src/org/chromium/components/navigation_interception/InterceptNavigationDelegate.java', 'navigation_interception/android/java/src/org/chromium/components/navigation_interception/NavigationParams.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/navigation_interception/jni', '--includes', 'base/android/jni_generator/jni_generator_helper.h', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt', '--ptr_type', 'long'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/navigation_interception/jni/InterceptNavigationDelegate_jni.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/navigation_interception/jni/InterceptNavigationDelegate_jni.h: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/navigation_interception/jni/InterceptNavigationDelegate_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/navigation_interception/jni/InterceptNavigationDelegate_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/navigation_interception/jni/InterceptNavigationDelegate_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -26,6 +27,7 @@ $(gyp_shared_intermediate_dir)/navigation_interception/jni/InterceptNavigationDe
 
 
 $(gyp_shared_intermediate_dir)/navigation_interception/jni/NavigationParams_jni.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/navigation_interception/jni/NavigationParams_jni.h: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/navigation_interception/jni/NavigationParams_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/navigation_interception/jni/NavigationParams_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/navigation_interception/jni/NavigationParams_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -66,7 +68,6 @@ MY_CFLAGS_Debug := \
 	-mfpmath=sse \
 	-mmmx \
 	-m32 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \
@@ -150,7 +151,6 @@ MY_CFLAGS_Release := \
 	-mfpmath=sse \
 	-mmmx \
 	-m32 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \

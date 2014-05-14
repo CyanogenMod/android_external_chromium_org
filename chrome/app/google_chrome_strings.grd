@@ -268,9 +268,6 @@ name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presente
       <message name="IDS_BROWSER_HUNGBROWSER_MESSAGE" desc="Content of the dialog box shown when the browser is hung">
         Google Chrome is unresponsive. Relaunch now?
       </message>
-      <message name="IDS_IMPORT_PROGRESS_INFO" desc="Explanatory text for the importing progress dialog">
-        Google Chrome is now importing the following items from <ph name="BROWSER_COMPONENT">$1<ex>History</ex></ph>:
-      </message>
       <message name="IDS_IMPORT_FIND_YOUR_BOOKMARKS" desc="Helpful reminder for where to find imported bookmarks">
         Find your bookmarks in the Chrome menu or on the bookmarks bar.
       </message>
@@ -327,12 +324,11 @@ name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presente
         </message>
       </if>
       <!-- Strings used to warn that an OS is not supported -->
-      <message name="IDS_UNSUPPORTED_OS_PRE_WIN_XP" desc="The text used to warn the user that Windows pre-XP is not supported">
-        Google Chrome requires Windows XP or later. Some features may not work.
-      </message>
-      <message name="IDS_UNSUPPORTED_OS" desc="The text used to warn the user that current OS is not supported">
-        Google Chrome does not support <ph name="OS_NAME">$1<ex>Windows 2000</ex></ph>.
-      </message>
+      <if expr="is_win">
+        <message name="IDS_UNSUPPORTED_OS_PRE_WIN_XP" desc="The text used to warn the user that Windows pre-XP is not supported">
+          Google Chrome requires Windows XP or later. Some features may not work.
+        </message>
+      </if>
       <if expr="not chromeos">
         <message name="IDS_OPTIONS_RELAUNCH_REQUIRED" desc="The message displayed for an option that requires a relaunch to take effect. This appears in a message box if an option is changed that requires a relaunch.">
           Please close all Google Chrome windows and relaunch it for this change to take effect.
@@ -391,6 +387,9 @@ Google Chrome is unable to recover your settings.
       </message>
       <message name="IDS_CRASH_RECOVERY_CONTENT" desc="Text content telling the user the browser has crashed.">
         Whoa! Google Chrome has crashed. Relaunch now?
+      </message>
+      <message name="IDS_PASSWORD_GENERATION_SUGGESTION" desc="Text shown next to a generated password describing it as a suggestion.">
+        Suggested by Chrome
       </message>
       <if expr="not is_android">
         <message name="IDS_PASSWORD_MANAGER_SAVE_PASSWORD_PROMPT" desc="Info bar message to save a password">
@@ -460,9 +459,6 @@ Google Chrome is unable to recover your settings.
       <!-- Options Dialog -->
       <message name="IDS_OPTIONS_IMPROVE_BROWSING_EXPERIENCE" desc="The text in the options panel that describes how we use web services to improve browsing experience.">
         Google Chrome may use web services to improve your browsing experience.
-      </message>
-      <message name="IDS_IMPORT_BOOKMARKS" desc="Explanatory text for the importing progress dialog when importing a bookmarks.html file from the bookmark manager">
-        Google Chrome is now importing Favorites/Bookmarks.
       </message>
       <message name="IDS_OEM_MAIN_SHORTCUT_NAME" desc="Name of the desktop shortcut to start the application for OEM pre-installations.">
         Internet Browser
@@ -697,7 +693,7 @@ For Google Chrome, processes used to display diagnostics information (such as th
       </message>
 
       <if expr="enable_extensions">
-        <message name="IDS_EXTENSIONS_SUSPICIOUS_DISABLED_BODY" desc="Body of the dialog shown when suspicious extensions have been disabled">
+        <message name="IDS_EXTENSIONS_UNSUPPORTED_DISABLED_BODY" desc="Body of the dialog shown when unsupported extensions have been disabled">
           To make Chrome safer, we disabled some extensions that aren't listed in the <ph name="IDS_EXTENSION_WEB_STORE_TITLE">$1<ex>Chrome Web Store</ex></ph> and may have been added without your knowledge.
         </message>
       </if>
@@ -765,7 +761,7 @@ For Google Chrome, processes used to display diagnostics information (such as th
 
       <!-- Account removal view in the avatar menu bubble -->
       <message name="IDS_PROFILES_ACCOUNT_REMOVAL_TEXT" desc="Main text of the account removal view when removing a secondary account.">
-        To remove your account, Chrome needs to restart. Make sure you've saved any open work before continuing.
+        After removing your account from Chrome, you may need to reload your open tabs to take effect.
       </message>
       <message name="IDS_PROFILES_PRIMARY_ACCOUNT_REMOVAL_TEXT" desc="Main text of the account removal view when removing a primary account.">
         You're using <ph name="PROFILE_EMAIL">$1<ex>jessica@gmail.com</ex></ph> to sync your Chrome stuff. To update your sync preference or to use Chrome without a Google account, visit <ph name="SETTINGS_LINK">$2<ex>settings</ex></ph>.
@@ -866,13 +862,15 @@ Signing in anyway will merge Chrome information like bookmarks, history, and oth
         </message>
       </if>
 
-      <message name="IDS_OPTIONS_PASSWORDS_MAC_WARNING" desc="The warning for OS X that passwords are shared across profiles in the keychain.">
-        On Mac, passwords are saved to your Keychain and may be accessed or synced by other Chrome users sharing this OS X account.
-      </message>
+      <if expr="is_macosx">
+        <message name="IDS_OPTIONS_PASSWORDS_MAC_WARNING" desc="The warning for OS X that passwords are shared across profiles in the keychain.">
+          On Mac, passwords are saved to your Keychain and may be accessed or synced by other Chrome users sharing this OS X account.
+        </message>
+        <message name="IDS_AUTOFILL_ADDRESS_BOOK_PROMPT_DESCRIPTION" desc="Text to show in dialog requesting permission to access the user's Address Book contents.">
+          Details from your contacts can help you fill out forms more quickly in Chrome.
+        </message>
+      </if>
 
-      <message name="IDS_AUTOFILL_ADDRESS_BOOK_PROMPT_DESCRIPTION" desc="Text to show in dialog requesting permission to access the user's Address Book contents.">
-        Details from your contacts can help you fill out forms more quickly in Chrome.
-      </message>
       <message name="IDS_AUTOFILL_CC_INFOBAR_TEXT" desc="Text to show in the Autofill credit card request infobar.">
         Do you want Chrome to save this credit card information for completing web forms?
       </message>
@@ -1126,16 +1124,6 @@ Signing in anyway will merge Chrome information like bookmarks, history, and oth
       <message name="IDS_UPGRADE_BUBBLE_REENABLE_TEXT" desc="Text for the upgrade bubble view full description.">
         Chrome could not update itself to the latest version, so you are missing out on awesome new features and security fixes. You need to update Chrome.
       </message>
-
-      <!-- chrome://ntp -->
-      <if expr="not is_android">
-        <message name="IDS_NEW_TAB_OTR_EXTENSIONS_MESSAGE"
-                 desc="Explanation in a new OTR window that extensions have been disabled while in OTR.">
-          Because Google Chrome does not control how extensions handle your personal data, all extensions have been disabled for incognito windows. You can reenable them individually in the
-          <ph name="BEGIN_LINK">&lt;a href="$1"&gt;</ph>extensions manager<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
-        </message>
-      </if>
-
     </messages>
   </release>
 </grit>

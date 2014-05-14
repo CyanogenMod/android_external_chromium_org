@@ -4,10 +4,15 @@
 
 #include "components/nacl/renderer/ppb_nacl_private_impl.h"
 
+#include <numeric>
+#include <string>
+#include <vector>
+
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/containers/scoped_ptr_hash_map.h"
+#include "base/cpu.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/rand_util.h"
@@ -15,6 +20,9 @@
 #include "components/nacl/common/nacl_messages.h"
 #include "components/nacl/common/nacl_switches.h"
 #include "components/nacl/common/nacl_types.h"
+#include "components/nacl/renderer/histogram.h"
+#include "components/nacl/renderer/json_manifest.h"
+#include "components/nacl/renderer/manifest_downloader.h"
 #include "components/nacl/renderer/manifest_service_channel.h"
 #include "components/nacl/renderer/nexe_load_manager.h"
 #include "components/nacl/renderer/pnacl_translation_resource_host.h"
@@ -28,6 +36,7 @@
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
 #include "net/base/data_url.h"
+#include "net/base/net_errors.h"
 #include "net/http/http_util.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/private/pp_file_handle.h"
@@ -37,10 +46,15 @@
 #include "ppapi/shared_impl/ppapi_preferences.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/enter.h"
+#include "third_party/WebKit/public/platform/WebURLLoader.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
+#include "third_party/WebKit/public/web/WebURLLoaderOptions.h"
+#include "third_party/jsoncpp/source/include/json/reader.h"
+#include "third_party/jsoncpp/source/include/json/value.h"
 
 namespace nacl {
 namespace {
@@ -81,7 +95,20 @@ typedef base::ScopedPtrHashMap<PP_Instance, NexeLoadManager>
 base::LazyInstance<NexeLoadManagerMap> g_load_manager_map =
     LAZY_INSTANCE_INITIALIZER;
 
-NexeLoadManager* GetNexeLoadManager(PP_Instance instance) {
+typedef base::ScopedPtrHashMap<int32_t, nacl::JsonManifest> JsonManifestMap;
+
+base::LazyInstance<JsonManifestMap> g_manifest_map =
+    LAZY_INSTANCE_INITIALIZER;
+
+base::LazyInstance<int32_t> g_next_manifest_id =
+    LAZY_INSTANCE_INITIALIZER;
+
+// We have to define a method here since we can't use a static initializer.
+int32_t GetPNaClManifestId() {
+  return std::numeric_limits<int32_t>::max();
+}
+
+nacl::NexeLoadManager* GetNexeLoadManager(PP_Instance instance) {
   NexeLoadManagerMap& map = g_load_manager_map.Get();
   NexeLoadManagerMap::iterator iter = map.find(instance);
   if (iter != map.end())
@@ -158,13 +185,13 @@ class ChannelConnectedCallback {
   DISALLOW_COPY_AND_ASSIGN(ChannelConnectedCallback);
 };
 
-// Thin adapter from PP_ManifestService to ManifestServiceChannel::Delegate.
+// Thin adapter from PPP_ManifestService to ManifestServiceChannel::Delegate.
 // Note that user_data is managed by the caller of LaunchSelLdr. Please see
 // also PP_ManifestService's comment for more details about resource
 // management.
 class ManifestServiceProxy : public ManifestServiceChannel::Delegate {
  public:
-  ManifestServiceProxy(const PP_ManifestService* manifest_service,
+  ManifestServiceProxy(const PPP_ManifestService* manifest_service,
                        void* user_data)
       : manifest_service_(*manifest_service),
         user_data_(user_data) {
@@ -184,7 +211,30 @@ class ManifestServiceProxy : public ManifestServiceChannel::Delegate {
     }
   }
 
+  virtual void OpenResource(
+      const std::string& key,
+      const ManifestServiceChannel::OpenResourceCallback& callback) OVERRIDE {
+    if (!user_data_)
+      return;
+
+    // The allocated callback will be freed in DidOpenResource, which is always
+    // called regardless whether OpenResource() succeeds or fails.
+    if (!PP_ToBool(manifest_service_.OpenResource(
+            user_data_,
+            key.c_str(),
+            DidOpenResource,
+            new ManifestServiceChannel::OpenResourceCallback(callback)))) {
+      user_data_ = NULL;
+    }
+  }
+
  private:
+  static void DidOpenResource(void* user_data, PP_FileHandle file_handle) {
+    scoped_ptr<ManifestServiceChannel::OpenResourceCallback> callback(
+        static_cast<ManifestServiceChannel::OpenResourceCallback*>(user_data));
+    callback->Run(file_handle);
+  }
+
   void Quit() {
     if (!user_data_)
       return;
@@ -194,7 +244,7 @@ class ManifestServiceProxy : public ManifestServiceChannel::Delegate {
     user_data_ = NULL;
   }
 
-  PP_ManifestService manifest_service_;
+  PPP_ManifestService manifest_service_;
   void* user_data_;
   DISALLOW_COPY_AND_ASSIGN(ManifestServiceProxy);
 };
@@ -209,7 +259,7 @@ void LaunchSelLdr(PP_Instance instance,
                   PP_Bool enable_dyncode_syscalls,
                   PP_Bool enable_exception_handling,
                   PP_Bool enable_crash_throttling,
-                  const PP_ManifestService* manifest_service_interface,
+                  const PPP_ManifestService* manifest_service_interface,
                   void* manifest_service_user_data,
                   void* imc_handle,
                   struct PP_Var* error_message,
@@ -321,7 +371,14 @@ void LaunchSelLdr(PP_Instance instance,
   }
 
   // Stash the manifest service handle as well.
+  // For security hardening, disable the IPCs for open_resource() when they
+  // aren't needed.  PNaCl doesn't expose open_resource(), and the new
+  // open_resource() IPCs are currently only used for Non-SFI NaCl so far,
+  // not SFI NaCl. Note that enable_dyncode_syscalls is true if and only if
+  // the plugin is a non-PNaCl plugin.
   if (load_manager &&
+      enable_dyncode_syscalls &&
+      uses_nonsfi_mode &&
       IsValidChannelHandle(
           launch_result.manifest_service_ipc_channel_handle)) {
     scoped_ptr<ManifestServiceChannel> manifest_service_channel(
@@ -851,6 +908,330 @@ PP_Bool DevInterfacesEnabled(PP_Instance instance) {
   return PP_FALSE;
 }
 
+void DownloadManifestToBufferCompletion(PP_Instance instance,
+                                        struct PP_CompletionCallback callback,
+                                        struct PP_Var* out_data,
+                                        base::Time start_time,
+                                        PP_NaClError pp_nacl_error,
+                                        const std::string& data);
+
+void DownloadManifestToBuffer(PP_Instance instance,
+                              struct PP_Var* out_data,
+                              struct PP_CompletionCallback callback) {
+  nacl::NexeLoadManager* load_manager = GetNexeLoadManager(instance);
+  DCHECK(load_manager);
+  if (!load_manager) {
+    ppapi::PpapiGlobals::Get()->GetMainThreadMessageLoop()->PostTask(
+        FROM_HERE,
+        base::Bind(callback.func, callback.user_data,
+                   static_cast<int32_t>(PP_ERROR_FAILED)));
+  }
+
+  const GURL& gurl = load_manager->manifest_base_url();
+
+  content::PepperPluginInstance* plugin_instance =
+      content::PepperPluginInstance::Get(instance);
+  blink::WebURLLoaderOptions options;
+  options.untrustedHTTP = true;
+
+  blink::WebSecurityOrigin security_origin =
+      plugin_instance->GetContainer()->element().document().securityOrigin();
+  // Options settings here follow the original behavior in the trusted
+  // plugin and PepperURLLoaderHost.
+  if (security_origin.canRequest(gurl)) {
+    options.allowCredentials = true;
+  } else {
+    // Allow CORS.
+    options.crossOriginRequestPolicy =
+        blink::WebURLLoaderOptions::CrossOriginRequestPolicyUseAccessControl;
+  }
+
+  blink::WebFrame* frame =
+      plugin_instance->GetContainer()->element().document().frame();
+  blink::WebURLLoader* url_loader = frame->createAssociatedURLLoader(options);
+  blink::WebURLRequest request;
+  request.initialize();
+  request.setURL(gurl);
+  request.setFirstPartyForCookies(frame->document().firstPartyForCookies());
+
+  // ManifestDownloader deletes itself after invoking the callback.
+  ManifestDownloader* client = new ManifestDownloader(
+      load_manager->is_installed(),
+      base::Bind(DownloadManifestToBufferCompletion,
+                 instance, callback, out_data, base::Time::Now()));
+  url_loader->loadAsynchronously(request, client);
+}
+
+void DownloadManifestToBufferCompletion(PP_Instance instance,
+                                        struct PP_CompletionCallback callback,
+                                        struct PP_Var* out_data,
+                                        base::Time start_time,
+                                        PP_NaClError pp_nacl_error,
+                                        const std::string& data) {
+  base::TimeDelta download_time = base::Time::Now() - start_time;
+  HistogramTimeSmall("NaCl.Perf.StartupTime.ManifestDownload",
+                     download_time.InMilliseconds());
+
+  nacl::NexeLoadManager* load_manager = GetNexeLoadManager(instance);
+  if (!load_manager) {
+    callback.func(callback.user_data, PP_ERROR_ABORTED);
+    return;
+  }
+
+  int32_t pp_error;
+  switch (pp_nacl_error) {
+    case PP_NACL_ERROR_LOAD_SUCCESS:
+      pp_error = PP_OK;
+      break;
+    case PP_NACL_ERROR_MANIFEST_LOAD_URL:
+      pp_error = PP_ERROR_FAILED;
+      load_manager->ReportLoadError(PP_NACL_ERROR_MANIFEST_LOAD_URL,
+                                    "could not load manifest url.");
+      break;
+    case PP_NACL_ERROR_MANIFEST_TOO_LARGE:
+      pp_error = PP_ERROR_FILETOOBIG;
+      load_manager->ReportLoadError(PP_NACL_ERROR_MANIFEST_TOO_LARGE,
+                                    "manifest file too large.");
+      break;
+    case PP_NACL_ERROR_MANIFEST_NOACCESS_URL:
+      pp_error = PP_ERROR_NOACCESS;
+      load_manager->ReportLoadError(PP_NACL_ERROR_MANIFEST_NOACCESS_URL,
+                                    "access to manifest url was denied.");
+      break;
+    default:
+      NOTREACHED();
+      pp_error = PP_ERROR_FAILED;
+      load_manager->ReportLoadError(PP_NACL_ERROR_MANIFEST_LOAD_URL,
+                                    "could not load manifest url.");
+  }
+
+  if (pp_error == PP_OK) {
+    std::string contents;
+    *out_data = ppapi::StringVar::StringToPPVar(data);
+  }
+  callback.func(callback.user_data, pp_error);
+}
+
+int32_t CreatePNaClManifest(PP_Instance /* instance */) {
+  return GetPNaClManifestId();
+}
+
+int32_t CreateJsonManifest(PP_Instance instance,
+                           const char* manifest_url,
+                           const char* isa_type,
+                           const char* manifest_data) {
+  int32_t manifest_id = g_next_manifest_id.Get();
+  g_next_manifest_id.Get()++;
+
+  scoped_ptr<nacl::JsonManifest> j(
+      new nacl::JsonManifest(
+          manifest_url,
+          isa_type,
+          PP_ToBool(IsNonSFIModeEnabled()),
+          PP_ToBool(NaClDebugEnabledForURL(manifest_url))));
+  JsonManifest::ErrorInfo error_info;
+  if (j->Init(manifest_data, &error_info)) {
+    g_manifest_map.Get().add(manifest_id, j.Pass());
+    return manifest_id;
+  }
+  nacl::NexeLoadManager* load_manager = GetNexeLoadManager(instance);
+  if (load_manager)
+    load_manager->ReportLoadError(error_info.error, error_info.string);
+  return -1;
+}
+
+void DestroyManifest(PP_Instance /* instance */,
+                     int32_t manifest_id) {
+  if (manifest_id == GetPNaClManifestId())
+    return;
+  g_manifest_map.Get().erase(manifest_id);
+}
+
+PP_Bool ManifestGetProgramURL(PP_Instance instance,
+                              int32_t manifest_id,
+                              PP_Var* pp_full_url,
+                              PP_PNaClOptions* pnacl_options,
+                              PP_Bool* pp_uses_nonsfi_mode) {
+  nacl::NexeLoadManager* load_manager = GetNexeLoadManager(instance);
+  if (manifest_id == GetPNaClManifestId()) {
+    if (load_manager) {
+      load_manager->ReportLoadError(
+          PP_NACL_ERROR_MANIFEST_GET_NEXE_URL,
+          "pnacl manifest does not contain a program.");
+    }
+    return PP_FALSE;
+  }
+
+  JsonManifestMap::iterator it = g_manifest_map.Get().find(manifest_id);
+  if (it == g_manifest_map.Get().end())
+    return PP_FALSE;
+
+  bool uses_nonsfi_mode;
+  std::string full_url;
+  JsonManifest::ErrorInfo error_info;
+  if (it->second->GetProgramURL(&full_url, pnacl_options, &uses_nonsfi_mode,
+                                &error_info)) {
+    *pp_full_url = ppapi::StringVar::StringToPPVar(full_url);
+    *pp_uses_nonsfi_mode = PP_FromBool(uses_nonsfi_mode);
+    return PP_TRUE;
+  }
+
+  if (load_manager)
+    load_manager->ReportLoadError(error_info.error, error_info.string);
+  return PP_FALSE;
+}
+
+PP_Bool ManifestResolveKey(PP_Instance instance,
+                           int32_t manifest_id,
+                           const char* key,
+                           PP_Var* pp_full_url,
+                           PP_PNaClOptions* pnacl_options) {
+  if (manifest_id == GetPNaClManifestId()) {
+    pnacl_options->translate = PP_FALSE;
+    // We can only resolve keys in the files/ namespace.
+    const std::string kFilesPrefix = "files/";
+    std::string key_string(key);
+    if (key_string.find(kFilesPrefix) == std::string::npos) {
+      nacl::NexeLoadManager* load_manager = GetNexeLoadManager(instance);
+      if (load_manager)
+        load_manager->ReportLoadError(PP_NACL_ERROR_MANIFEST_RESOLVE_URL,
+                                      "key did not start with files/");
+      return PP_FALSE;
+    }
+    std::string key_basename = key_string.substr(kFilesPrefix.length());
+    std::string pnacl_url =
+        std::string("chrome://pnacl-translator/") + GetSandboxArch() + "/" +
+        key_basename;
+    *pp_full_url = ppapi::StringVar::StringToPPVar(pnacl_url);
+    return PP_TRUE;
+  }
+
+  JsonManifestMap::iterator it = g_manifest_map.Get().find(manifest_id);
+  if (it == g_manifest_map.Get().end())
+    return PP_FALSE;
+
+  std::string full_url;
+  bool ok = it->second->ResolveKey(key, &full_url, pnacl_options);
+  if (ok)
+    *pp_full_url = ppapi::StringVar::StringToPPVar(full_url);
+  return PP_FromBool(ok);
+}
+
+PP_Bool GetPNaClResourceInfo(PP_Instance instance,
+                             const char* filename,
+                             PP_Var* llc_tool_name,
+                             PP_Var* ld_tool_name) {
+  NexeLoadManager* load_manager = GetNexeLoadManager(instance);
+  DCHECK(load_manager);
+  if (!load_manager)
+    return PP_FALSE;
+
+  base::PlatformFile file = GetReadonlyPnaclFD(filename);
+  if (file == base::kInvalidPlatformFileValue) {
+    load_manager->ReportLoadError(
+        PP_NACL_ERROR_PNACL_RESOURCE_FETCH,
+        "The Portable Native Client (pnacl) component is not "
+        "installed. Please consult chrome://components for more "
+        "information.");
+    return PP_FALSE;
+  }
+
+  const int kBufferSize = 1 << 20;
+  scoped_ptr<char[]> buffer(new char[kBufferSize]);
+  if (base::ReadPlatformFile(file, 0, buffer.get(), kBufferSize) < 0) {
+    load_manager->ReportLoadError(
+        PP_NACL_ERROR_PNACL_RESOURCE_FETCH,
+        std::string("PnaclResources::ReadResourceInfo reading failed for: ") +
+            filename);
+    return PP_FALSE;
+  }
+
+  // Expect the JSON file to contain a top-level object (dictionary).
+  Json::Reader json_reader;
+  Json::Value json_data;
+  if (!json_reader.parse(buffer.get(), json_data)) {
+    load_manager->ReportLoadError(
+        PP_NACL_ERROR_PNACL_RESOURCE_FETCH,
+        std::string("Parsing resource info failed: JSON parse error: ") +
+            json_reader.getFormattedErrorMessages());
+    return PP_FALSE;
+  }
+
+  if (!json_data.isObject()) {
+    load_manager->ReportLoadError(
+        PP_NACL_ERROR_PNACL_RESOURCE_FETCH,
+        "Parsing resource info failed: Malformed JSON dictionary");
+    return PP_FALSE;
+  }
+
+  if (json_data.isMember("pnacl-llc-name")) {
+    Json::Value json_name = json_data["pnacl-llc-name"];
+    if (json_name.isString()) {
+      std::string llc_tool_name_str = json_name.asString();
+      *llc_tool_name = ppapi::StringVar::StringToPPVar(llc_tool_name_str);
+    }
+  }
+
+  if (json_data.isMember("pnacl-ld-name")) {
+    Json::Value json_name = json_data["pnacl-ld-name"];
+    if (json_name.isString()) {
+      std::string ld_tool_name_str = json_name.asString();
+      *ld_tool_name = ppapi::StringVar::StringToPPVar(ld_tool_name_str);
+    }
+  }
+  return PP_TRUE;
+}
+
+// Helper to std::accumulate that creates a comma-separated list from the input.
+std::string CommaAccumulator(const std::string &lhs, const std::string &rhs) {
+  if (lhs.empty())
+    return rhs;
+  return lhs + "," + rhs;
+}
+
+PP_Var GetCpuFeatureAttrs() {
+  // PNaCl's translator from pexe to nexe can be told exactly what
+  // capabilities the user's machine has because the pexe to nexe
+  // translation is specific to the machine, and CPU information goes
+  // into the translation cache. This allows the translator to generate
+  // faster code.
+  //
+  // Care must be taken to avoid instructions which aren't supported by
+  // the NaCl sandbox. Ideally the translator would do this, but there's
+  // no point in not doing the whitelist here.
+  //
+  // TODO(jfb) Some features are missing, either because the NaCl
+  //           sandbox doesn't support them, because base::CPU doesn't
+  //           detect them, or because they don't help vector shuffles
+  //           (and we omit them because it simplifies testing). Add the
+  //           other features.
+  //
+  // TODO(jfb) The following is x86-specific. The base::CPU class
+  //           doesn't handle other architectures very well, and we
+  //           should at least detect the presence of ARM's integer
+  //           divide.
+  std::vector<std::string> attrs;
+  base::CPU cpu;
+
+  // On x86, SSE features are ordered: the most recent one implies the
+  // others. Care is taken here to only specify the latest SSE version,
+  // whereas non-SSE features don't follow this model: POPCNT is
+  // effectively always implied by SSE4.2 but has to be specified
+  // separately.
+  //
+  // TODO: AVX2, AVX, SSE 4.2.
+  if (cpu.has_sse41()) attrs.push_back("+sse4.1");
+  // TODO: SSE 4A, SSE 4.
+  else if (cpu.has_ssse3()) attrs.push_back("+ssse3");
+  // TODO: SSE 3
+  else if (cpu.has_sse2()) attrs.push_back("+sse2");
+
+  // TODO: AES, POPCNT, LZCNT, ...
+
+  return ppapi::StringVar::StringToPPVar(std::accumulate(
+      attrs.begin(), attrs.end(), std::string(), CommaAccumulator));
+}
+
 const PPB_NaCl_Private nacl_interface = {
   &LaunchSelLdr,
   &StartPpapiProxy,
@@ -889,7 +1270,15 @@ const PPB_NaCl_Private nacl_interface = {
   &ProcessNaClManifest,
   &GetManifestURLArgument,
   &IsPNaCl,
-  &DevInterfacesEnabled
+  &DevInterfacesEnabled,
+  &DownloadManifestToBuffer,
+  &CreatePNaClManifest,
+  &CreateJsonManifest,
+  &DestroyManifest,
+  &ManifestGetProgramURL,
+  &ManifestResolveKey,
+  &GetPNaClResourceInfo,
+  &GetCpuFeatureAttrs
 };
 
 }  // namespace

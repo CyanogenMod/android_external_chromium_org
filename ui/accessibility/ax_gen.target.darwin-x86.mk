@@ -15,6 +15,7 @@ GYP_TARGET_DEPENDENCIES :=
 
 ### Rules for action "genapi_bundle":
 $(gyp_shared_intermediate_dir)/ui/accessibility/generated_api.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/ui/accessibility/generated_api.h: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/ui/accessibility/generated_api.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/accessibility/generated_api.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/accessibility/generated_api.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -31,6 +32,7 @@ $(gyp_shared_intermediate_dir)/ui/accessibility/generated_schemas.cc: $(gyp_shar
 ### Generated for rule "ui_accessibility_accessibility_gyp_ax_gen_target_genapi_idl":
 # "{'inputs': ['../../tools/json_schema_compiler/cc_generator.py', '../../tools/json_schema_compiler/code.py', '../../tools/json_schema_compiler/compiler.py', '../../tools/json_schema_compiler/cpp_generator.py', '../../tools/json_schema_compiler/cpp_type_generator.py', '../../tools/json_schema_compiler/cpp_util.py', '../../tools/json_schema_compiler/h_generator.py', '../../tools/json_schema_compiler/idl_schema.py', '../../tools/json_schema_compiler/model.py', '../../tools/json_schema_compiler/util.cc', '../../tools/json_schema_compiler/util.h', '../../tools/json_schema_compiler/util_cc_helper.py'], 'process_outputs_as_sources': '1', 'extension': 'idl', 'msvs_external_rule': '1', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/accessibility/%(INPUT_ROOT)s.cc', '$(gyp_shared_intermediate_dir)/ui/accessibility/%(INPUT_ROOT)s.h'], 'rule_name': 'genapi_idl', 'rule_sources': ['ax_enums.idl'], 'action': ['python', '../../tools/json_schema_compiler/compiler.py', '$(RULE_SOURCES)', '--root=../..', '--destdir=$(gyp_shared_intermediate_dir)', '--namespace=', '--generator=cpp', '--impl-dir=chrome/browser/extensions/api'], 'message': 'Generating C++ code from $(RULE_SOURCES) IDL files'}":
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/accessibility/ax_enums.cc: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -88,7 +90,6 @@ MY_CFLAGS_Debug := \
 	-mfpmath=sse \
 	-mmmx \
 	-m32 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \
@@ -175,7 +176,6 @@ MY_CFLAGS_Release := \
 	-mfpmath=sse \
 	-mmmx \
 	-m32 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \

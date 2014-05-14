@@ -8,18 +8,18 @@ from telemetry.page import page_set as page_set_module
 
 
 class GmailAltThreadlistConversationPage(
-  page_module.PageWithDefaultRunNavigate):
+  page_module.Page):
 
   """ Why: Alternate between Inbox and the first email conversation. """
 
   def __init__(self, page_set):
     super(GmailAltThreadlistConversationPage, self).__init__(
       url='https://mail.google.com/mail/',
-      page_set=page_set)
+      page_set=page_set,
+      name='gmail_alt_threadlist_conversation')
     self.credentials_path = 'data/credentials.json'
     self.user_agent_type = 'desktop'
     self.archive_data_file = 'data/gmail_alt_threadlist_conversation.json'
-    self.name = 'gmail_alt_threadlist_conversation'
     self.credentials = 'google'
 
   def RunNavigateSteps(self, action_runner):

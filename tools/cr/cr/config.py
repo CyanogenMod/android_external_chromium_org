@@ -66,7 +66,7 @@ class _Tracer(object):
     return value
 
 
-class Config(cr.visitor.Node):
+class Config(cr.visitor.Node, cr.loader.AutoExport):
   """The main variable holding class.
 
   This holds a set of unresolved key value pairs, and the set of child Config
@@ -142,7 +142,7 @@ class Config(cr.visitor.Node):
 
     Raw values can be callable, simple values, or contain format strings.
     Args:
-      visitor: The vistior asking to resolve a value.
+      visitor: The visitor asking to resolve a value.
       key: The key being visited.
       value: The unresolved value associated with the key.
     Returns:
@@ -164,6 +164,11 @@ class Config(cr.visitor.Node):
     for hook in self.fixup_hooks:
       value = hook(self, key, value)
     return value
+
+  def Missing(self, key):
+    for hook in self.fixup_hooks:
+      hook(self, key, None)
+    raise KeyError(key)
 
   @staticmethod
   def ParseValue(value):
@@ -237,4 +242,3 @@ class Config(cr.visitor.Node):
 
   def __contains__(self, key):
     return self.Find(key) is not None
-

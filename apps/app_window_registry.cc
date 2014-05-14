@@ -35,7 +35,7 @@ std::string GetWindowKeyForRenderViewHost(
   if (app_window->window_key().empty())
     return app_window->web_contents()->GetURL().possibly_invalid_spec();
 
-  std::string key = app_window->extension()->id();
+  std::string key = app_window->extension_id();
   key += ':';
   key += app_window->window_key();
   return key;
@@ -44,6 +44,25 @@ std::string GetWindowKeyForRenderViewHost(
 }  // namespace
 
 namespace apps {
+
+void AppWindowRegistry::Observer::OnAppWindowAdded(AppWindow* app_window) {
+}
+
+void AppWindowRegistry::Observer::OnAppWindowIconChanged(
+    AppWindow* app_window) {
+}
+
+void AppWindowRegistry::Observer::OnAppWindowRemoved(AppWindow* app_window) {
+}
+
+void AppWindowRegistry::Observer::OnAppWindowHidden(AppWindow* app_window) {
+}
+
+void AppWindowRegistry::Observer::OnAppWindowShown(AppWindow* app_window) {
+}
+
+AppWindowRegistry::Observer::~Observer() {
+}
 
 AppWindowRegistry::AppWindowRegistry(content::BrowserContext* context)
     : context_(context),
@@ -75,6 +94,14 @@ void AppWindowRegistry::AppWindowIconChanged(AppWindow* app_window) {
 
 void AppWindowRegistry::AppWindowActivated(AppWindow* app_window) {
   BringToFront(app_window);
+}
+
+void AppWindowRegistry::AppWindowHidden(AppWindow* app_window) {
+  FOR_EACH_OBSERVER(Observer, observers_, OnAppWindowHidden(app_window));
+}
+
+void AppWindowRegistry::AppWindowShown(AppWindow* app_window) {
+  FOR_EACH_OBSERVER(Observer, observers_, OnAppWindowShown(app_window));
 }
 
 void AppWindowRegistry::RemoveAppWindow(AppWindow* app_window) {
@@ -144,7 +171,7 @@ AppWindow* AppWindowRegistry::GetCurrentAppWindowForApp(
   for (AppWindowList::const_iterator i = app_windows_.begin();
        i != app_windows_.end();
        ++i) {
-    if ((*i)->extension()->id() == app_id) {
+    if ((*i)->extension_id() == app_id) {
       result = *i;
       if (result->GetBaseWindow()->IsActive())
         return result;
@@ -161,7 +188,7 @@ AppWindow* AppWindowRegistry::GetAppWindowForAppAndKey(
   for (AppWindowList::const_iterator i = app_windows_.begin();
        i != app_windows_.end();
        ++i) {
-    if ((*i)->extension()->id() == app_id && (*i)->window_key() == window_key) {
+    if ((*i)->extension_id() == app_id && (*i)->window_key() == window_key) {
       result = *i;
       if (result->GetBaseWindow()->IsActive())
         return result;

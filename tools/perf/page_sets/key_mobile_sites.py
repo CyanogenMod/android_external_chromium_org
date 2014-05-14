@@ -7,10 +7,11 @@ from telemetry.page import page as page_module
 from telemetry.page import page_set as page_set_module
 
 
-class KeyMobileSitesPage(page_module.PageWithDefaultRunNavigate):
+class KeyMobileSitesPage(page_module.Page):
 
-  def __init__(self, url, page_set):
-    super(KeyMobileSitesPage, self).__init__(url=url, page_set=page_set)
+  def __init__(self, url, page_set, name=''):
+    super(KeyMobileSitesPage, self).__init__(url=url, page_set=page_set,
+                                             name=name)
     self.credentials_path = 'data/credentials.json'
     self.user_agent_type = 'mobile'
     self.archive_data_file = 'data/key_mobile_sites.json'
@@ -165,9 +166,8 @@ class Page9(KeyMobileSitesPage):
   def __init__(self, page_set):
     super(Page9, self).__init__(
       url='http://googlewebmastercentral.blogspot.com/',
-      page_set=page_set)
-
-    self.name = 'Blogger'
+      page_set=page_set,
+      name='Blogger')
 
 
 class Page10(KeyMobileSitesPage):
@@ -178,9 +178,8 @@ class Page10(KeyMobileSitesPage):
     super(Page10, self).__init__(
       # pylint: disable=C0301
       url='http://en.blog.wordpress.com/2012/09/04/freshly-pressed-editors-picks-for-august-2012/',
-      page_set=page_set)
-
-    self.name = 'Wordpress'
+      page_set=page_set,
+      name='Wordpress')
 
 
 class Page11(KeyMobileSitesPage):
@@ -190,9 +189,8 @@ class Page11(KeyMobileSitesPage):
   def __init__(self, page_set):
     super(Page11, self).__init__(
       url='https://www.linkedin.com/in/linustorvalds',
-      page_set=page_set)
-
-    self.name = 'LinkedIn'
+      page_set=page_set,
+      name='LinkedIn')
 
   def RunNavigateSteps(self, action_runner):
     action_runner.RunAction(NavigateAction())
@@ -210,9 +208,8 @@ class Page12(KeyMobileSitesPage):
   def __init__(self, page_set):
     super(Page12, self).__init__(
       url='http://en.wikipedia.org/wiki/Wikipedia',
-      page_set=page_set)
-
-    self.name = 'Wikipedia (1 tab)'
+      page_set=page_set,
+      name='Wikipedia (1 tab)')
 
 
 class Page13(KeyMobileSitesPage):
@@ -222,9 +219,8 @@ class Page13(KeyMobileSitesPage):
   def __init__(self, page_set):
     super(Page13, self).__init__(
       url='http://twitter.com/katyperry',
-      page_set=page_set)
-
-    self.name = 'Twitter'
+      page_set=page_set,
+      name='Twitter')
     self.disabled = 'Forbidden (Rate Limit Exceeded)'
 
 
@@ -235,9 +231,8 @@ class Page14(KeyMobileSitesPage):
   def __init__(self, page_set):
     super(Page14, self).__init__(
       url='http://pinterest.com',
-      page_set=page_set)
-
-    self.name = 'Pinterest'
+      page_set=page_set,
+      name='Pinterest')
 
 
 class Page15(KeyMobileSitesPage):
@@ -247,9 +242,8 @@ class Page15(KeyMobileSitesPage):
   def __init__(self, page_set):
     super(Page15, self).__init__(
       url='http://espn.go.com',
-      page_set=page_set)
-
-    self.name = 'ESPN'
+      page_set=page_set,
+      name='ESPN')
     self.disabled = 'Fails often; crbug.com/249722'
 
 
@@ -479,10 +473,35 @@ class Page25(KeyMobileSitesPage):
           function(callback) {
             callback(document.getElementById(':5'));
           }''',
-        'remaining_scroll_distance_function': '''
+        'scroll_distance_function': '''
           function() {
             return Math.max(0, 2500 +
               document.getElementById(':h').getBoundingClientRect().top);
+          }'''
+      }))
+
+
+class Page26(KeyMobileSitesPage):
+
+  """
+  Why: #1 world commerce website by visits; #3 commerce in the US by time spent
+  """
+
+  def __init__(self, page_set):
+    super(Page26, self).__init__(
+      url='http://www.amazon.com/gp/aw/s/ref=is_box_?k=nicolas+cage',
+      page_set=page_set)
+
+  def RunSmoothness(self, action_runner):
+    action_runner.RunAction(ScrollAction(
+      {
+        'scrollable_element_function': '''
+          function(callback) {
+            callback(document.getElementById('search'));
+          }''',
+        'scroll_distance_function': '''
+          function() {
+            return document.body.scrollHeight - window.innerHeight;
           }'''
       }))
 
@@ -522,6 +541,7 @@ class KeyMobileSitesPageSet(page_set_module.PageSet):
 #    self.AddPage(Page23(self))
     self.AddPage(Page24(self))
     self.AddPage(Page25(self))
+    self.AddPage(Page26(self))
 
     urls_list = [
       # Why: crbug.com/242544
@@ -540,9 +560,6 @@ class KeyMobileSitesPageSet(page_set_module.PageSet):
       'http://news.yahoo.com',
       # Why: #2 news worldwide
       'http://www.cnn.com',
-      # Why: #1 world commerce website by visits; #3 commerce in the US by time
-      # spent
-      'http://www.amazon.com/gp/aw/s/ref=is_box_?k=nicolas+cage',
       # Why: #1 commerce website by time spent by users in US
       'http://shop.mobileweb.ebay.com/searchresults?kw=viking+helmet',
       # Why: #1 Alexa recreation

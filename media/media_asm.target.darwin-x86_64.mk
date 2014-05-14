@@ -18,6 +18,7 @@ GYP_TARGET_DEPENDENCIES := \
 ### Generated for rule "media_media_gyp_media_asm_target_assemble":
 # "{'inputs': ['$(gyp_shared_intermediate_dir)/yasm', '../third_party/x86inc/x86inc.asm', 'base/simd/convert_rgb_to_yuv_ssse3.inc', 'base/simd/convert_yuv_to_rgb_mmx.inc', 'base/simd/convert_yuva_to_argb_mmx.inc', 'base/simd/linear_scale_yuv_to_rgb_mmx.inc', 'base/simd/media_export.asm', 'base/simd/scale_yuv_to_rgb_mmx.inc'], 'extension': 'asm', 'process_outputs_as_sources': '1', 'outputs': ['$(gyp_shared_intermediate_dir)/media/%(INPUT_ROOT)s.o'], 'rule_name': 'assemble', 'rule_sources': ['base/simd/convert_rgb_to_yuv_ssse3.asm', 'base/simd/convert_yuv_to_rgb_mmx.asm', 'base/simd/convert_yuv_to_rgb_sse.asm', 'base/simd/convert_yuva_to_argb_mmx.asm', 'base/simd/empty_register_state_mmx.asm', 'base/simd/linear_scale_yuv_to_rgb_mmx.asm', 'base/simd/linear_scale_yuv_to_rgb_sse.asm', 'base/simd/scale_yuv_to_rgb_mmx.asm', 'base/simd/scale_yuv_to_rgb_sse.asm', 'base/simd/linear_scale_yuv_to_rgb_mmx_x64.asm', 'base/simd/scale_yuv_to_rgb_sse2_x64.asm'], 'action': ['$(gyp_shared_intermediate_dir)/yasm', '-DCHROMIUM', '-I..', '-DPIC', '-felf64', '-m', 'amd64', '-DARCH_X86_64', '-DARCH_X86_64', '-DELF', '-DPIC', '-o', '$(gyp_shared_intermediate_dir)/media/%(INPUT_ROOT)s.o', '$(RULE_SOURCES)'], 'message': 'Compile assembly $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -26,6 +27,7 @@ $(gyp_shared_intermediate_dir)/media/convert_rgb_to_yuv_ssse3.o: $(LOCAL_PATH)/m
 
 
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_mmx.o: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_mmx.o: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_mmx.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_mmx.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_mmx.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -34,6 +36,7 @@ $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_mmx.o: $(LOCAL_PATH)/med
 
 
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_sse.o: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_sse.o: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_sse.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_sse.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_sse.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -42,6 +45,7 @@ $(gyp_shared_intermediate_dir)/media/convert_yuv_to_rgb_sse.o: $(LOCAL_PATH)/med
 
 
 $(gyp_shared_intermediate_dir)/media/convert_yuva_to_argb_mmx.o: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/media/convert_yuva_to_argb_mmx.o: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/media/convert_yuva_to_argb_mmx.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/convert_yuva_to_argb_mmx.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/convert_yuva_to_argb_mmx.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -50,6 +54,7 @@ $(gyp_shared_intermediate_dir)/media/convert_yuva_to_argb_mmx.o: $(LOCAL_PATH)/m
 
 
 $(gyp_shared_intermediate_dir)/media/empty_register_state_mmx.o: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/media/empty_register_state_mmx.o: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/media/empty_register_state_mmx.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/empty_register_state_mmx.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/empty_register_state_mmx.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -58,6 +63,7 @@ $(gyp_shared_intermediate_dir)/media/empty_register_state_mmx.o: $(LOCAL_PATH)/m
 
 
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx.o: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx.o: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -66,6 +72,7 @@ $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx.o: $(LOCAL_PATH
 
 
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_sse.o: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_sse.o: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_sse.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_sse.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_sse.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -74,6 +81,7 @@ $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_sse.o: $(LOCAL_PATH
 
 
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -82,6 +90,7 @@ $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_mmx.o: $(LOCAL_PATH)/media
 
 
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -90,6 +99,7 @@ $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse.o: $(LOCAL_PATH)/media
 
 
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx_x64.o: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx_x64.o: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx_x64.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx_x64.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx_x64.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -98,6 +108,7 @@ $(gyp_shared_intermediate_dir)/media/linear_scale_yuv_to_rgb_mmx_x64.o: $(LOCAL_
 
 
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse2_x64.o: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse2_x64.o: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse2_x64.o: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse2_x64.o: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/media/scale_yuv_to_rgb_sse2_x64.o: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -156,7 +167,6 @@ MY_CFLAGS_Debug := \
 	-Wno-unused-local-typedefs \
 	-m64 \
 	-march=x86-64 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \
@@ -240,7 +250,6 @@ MY_CFLAGS_Release := \
 	-Wno-unused-local-typedefs \
 	-m64 \
 	-march=x86-64 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \

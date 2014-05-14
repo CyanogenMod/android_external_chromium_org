@@ -8,10 +8,10 @@
 
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/test_bookmark_client.h"
 #include "components/bookmarks/core/browser/base_bookmark_model_observer.h"
 #include "components/bookmarks/core/browser/bookmark_model.h"
 #include "components/bookmarks/core/browser/bookmark_node_data.h"
+#include "components/bookmarks/core/test/test_bookmark_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
@@ -30,9 +30,12 @@ class BookmarkUtilsTest : public testing::Test,
         grouped_changes_ended_count_(0) {}
   virtual ~BookmarkUtilsTest() {}
 
+// Copy and paste is not yet supported on iOS. http://crbug.com/228147
+#if !defined(OS_IOS)
   virtual void TearDown() OVERRIDE {
     ui::Clipboard::DestroyClipboardForCurrentThread();
   }
+#endif  // !defined(OS_IOS)
 
   // Certain user actions require multiple changes to the bookmark model,
   // however these modifications need to be atomic for the undo framework. The
@@ -252,6 +255,8 @@ TEST_F(BookmarkUtilsTest, GetBookmarksMatchingPropertiesConjunction) {
   }
 }
 
+// Copy and paste is not yet supported on iOS. http://crbug.com/228147
+#if !defined(OS_IOS)
 TEST_F(BookmarkUtilsTest, CopyPaste) {
   test::TestBookmarkClient client;
   scoped_ptr<BookmarkModel> model(client.CreateModel(false));
@@ -305,6 +310,7 @@ TEST_F(BookmarkUtilsTest, CutToClipboard) {
   // And make sure we can paste from the clipboard.
   EXPECT_TRUE(CanPasteFromClipboard(model->other_node()));
 }
+#endif  // !defined(OS_IOS)
 
 TEST_F(BookmarkUtilsTest, GetParentForNewNodes) {
   test::TestBookmarkClient client;

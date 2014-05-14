@@ -8,6 +8,10 @@
 
 namespace content {
 
+WebContents* BrowserPluginGuestDelegate::GetOpener() const {
+  return NULL;
+}
+
 bool BrowserPluginGuestDelegate::HandleKeyboardEvent(
     const NativeWebKeyboardEvent& event) {
   return false;
@@ -43,6 +47,11 @@ void BrowserPluginGuestDelegate::CanDownload(
 JavaScriptDialogManager*
 BrowserPluginGuestDelegate::GetJavaScriptDialogManager() {
   return NULL;
+}
+
+bool BrowserPluginGuestDelegate::HandleContextMenu(
+    const ContextMenuParams& params) {
+  return false;
 }
 
 }  // namespace content

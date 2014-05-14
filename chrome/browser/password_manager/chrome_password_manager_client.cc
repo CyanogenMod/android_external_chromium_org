@@ -15,7 +15,7 @@
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/autofill/password_generation_popup_controller_impl.h"
-#include "chrome/browser/ui/passwords/manage_passwords_bubble_ui_controller.h"
+#include "chrome/browser/ui/passwords/manage_passwords_ui_controller.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "components/autofill/content/common/autofill_messages.h"
@@ -28,8 +28,6 @@
 #include "components/password_manager/core/common/password_manager_switches.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
-#include "ipc/ipc_message_macros.h"
 
 #if defined(OS_ANDROID)
 #include "chrome/browser/android/password_authentication_manager.h"
@@ -88,10 +86,10 @@ bool ChromePasswordManagerClient::IsAutomaticPasswordSavingEnabled() const {
 void ChromePasswordManagerClient::PromptUserToSavePassword(
     password_manager::PasswordFormManager* form_to_save) {
   if (IsTheHotNewBubbleUIEnabled()) {
-    ManagePasswordsBubbleUIController* manage_passwords_bubble_ui_controller =
-        ManagePasswordsBubbleUIController::FromWebContents(web_contents());
-    if (manage_passwords_bubble_ui_controller) {
-      manage_passwords_bubble_ui_controller->OnPasswordSubmitted(form_to_save);
+    ManagePasswordsUIController* manage_passwords_ui_controller =
+        ManagePasswordsUIController::FromWebContents(web_contents());
+    if (manage_passwords_ui_controller) {
+      manage_passwords_ui_controller->OnPasswordSubmitted(form_to_save);
     } else {
       delete form_to_save;
     }
@@ -107,17 +105,18 @@ void ChromePasswordManagerClient::PromptUserToSavePassword(
 
 void ChromePasswordManagerClient::PasswordWasAutofilled(
     const autofill::PasswordFormMap& best_matches) const {
-  ManagePasswordsBubbleUIController* manage_passwords_bubble_ui_controller =
-      ManagePasswordsBubbleUIController::FromWebContents(web_contents());
-  if (manage_passwords_bubble_ui_controller && IsTheHotNewBubbleUIEnabled())
-    manage_passwords_bubble_ui_controller->OnPasswordAutofilled(best_matches);
+  ManagePasswordsUIController* manage_passwords_ui_controller =
+      ManagePasswordsUIController::FromWebContents(web_contents());
+  if (manage_passwords_ui_controller && IsTheHotNewBubbleUIEnabled())
+    manage_passwords_ui_controller->OnPasswordAutofilled(best_matches);
 }
 
-void ChromePasswordManagerClient::PasswordAutofillWasBlocked() const {
-  ManagePasswordsBubbleUIController* manage_passwords_bubble_ui_controller =
-      ManagePasswordsBubbleUIController::FromWebContents(web_contents());
-  if (manage_passwords_bubble_ui_controller && IsTheHotNewBubbleUIEnabled())
-    manage_passwords_bubble_ui_controller->OnBlacklistBlockedAutofill();
+void ChromePasswordManagerClient::PasswordAutofillWasBlocked(
+    const autofill::PasswordFormMap& best_matches) const {
+  ManagePasswordsUIController* controller =
+      ManagePasswordsUIController::FromWebContents(web_contents());
+  if (controller && IsTheHotNewBubbleUIEnabled())
+    controller->OnBlacklistBlockedAutofill(best_matches);
 }
 
 void ChromePasswordManagerClient::AuthenticateAutofillAndFillForm(
@@ -263,8 +262,7 @@ bool ChromePasswordManagerClient::OnMessageReceived(
 
 gfx::RectF ChromePasswordManagerClient::GetBoundsInScreenSpace(
     const gfx::RectF& bounds) {
-  gfx::Rect client_area;
-  web_contents()->GetView()->GetContainerBounds(&client_area);
+  gfx::Rect client_area = web_contents()->GetContainerBounds();
   return bounds + client_area.OffsetFromOrigin();
 }
 
@@ -287,7 +285,7 @@ void ChromePasswordManagerClient::ShowPasswordGenerationPopup(
           driver_.GetPasswordManager(),
           observer_,
           web_contents(),
-          web_contents()->GetView()->GetNativeView());
+          web_contents()->GetNativeView());
   popup_controller_->Show(true /* display_password */);
 #endif  // #if defined(USE_AURA)
 }
@@ -308,7 +306,7 @@ void ChromePasswordManagerClient::ShowPasswordEditingPopup(
           driver_.GetPasswordManager(),
           observer_,
           web_contents(),
-          web_contents()->GetView()->GetNativeView());
+          web_contents()->GetNativeView());
   popup_controller_->Show(false /* display_password */);
 #endif  // #if defined(USE_AURA)
 }

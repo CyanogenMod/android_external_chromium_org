@@ -261,6 +261,10 @@ class CONTENT_EXPORT RenderWidget
                                        bool has_vertical_scrollbar);
 #endif  // defined(OS_MACOSX)
 
+#if defined(OS_ANDROID)
+  void DidChangeBodyBackgroundColor(SkColor bg_color);
+#endif
+
  protected:
   // Friend RefCounted so that the dtor can be non-public. Using this class
   // without ref-counting is an error.
@@ -302,8 +306,6 @@ class CONTENT_EXPORT RenderWidget
   void AnimationCallback();
   void InvalidationCallback();
   void FlushPendingInputEventAck();
-  void DoDeferredUpdateAndSendInputAck();
-  void DoDeferredUpdate();
   void DoDeferredClose();
   void DoDeferredSetWindowRect(const blink::WebRect& pos);
 
@@ -385,6 +387,8 @@ class CONTENT_EXPORT RenderWidget
   void AutoResizeCompositor();
 
   virtual void SetDeviceScaleFactor(float device_scale_factor);
+
+  virtual void OnOrientationChange();
 
   // Override points to notify derived classes that a paint has happened.
   // DidInitiatePaint happens when that has completed, and subsequent rendering
@@ -655,11 +659,6 @@ class CONTENT_EXPORT RenderWidget
   // compositor.
   bool is_accelerated_compositing_active_;
 
-  // Set to true if compositing has ever been active for this widget. Once a
-  // widget has used compositing, it will act as though force compositing mode
-  // is on for the remainder of the widget's lifetime.
-  bool was_accelerated_compositing_ever_active_;
-
   base::OneShotTimer<RenderWidget> animation_timer_;
   bool animation_update_pending_;
   bool invalidation_task_posted_;
@@ -694,6 +693,11 @@ class CONTENT_EXPORT RenderWidget
   // browser regarding IME-type events that have not been acknowledged by the
   // browser. If this value is not 0 IME events will be dropped.
   int outstanding_ime_acks_;
+
+  // The background color of the document body element. This is used as the
+  // default background color for filling the screen areas for which we don't
+  // have the actual content.
+  SkColor body_background_color_;
 #endif
 
 #if defined(OS_MACOSX)

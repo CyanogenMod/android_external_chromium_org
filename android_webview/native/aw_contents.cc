@@ -24,6 +24,8 @@
 #include "android_webview/native/aw_picture.h"
 #include "android_webview/native/aw_web_contents_delegate.h"
 #include "android_webview/native/java_browser_view_renderer_helper.h"
+#include "android_webview/native/permission/aw_permission_request.h"
+#include "android_webview/native/permission/permission_request_handler.h"
 #include "android_webview/native/state_serializer.h"
 #include "android_webview/public/browser/draw_gl.h"
 #include "base/android/jni_android.h"
@@ -41,6 +43,7 @@
 #include "components/autofill/content/browser/content_autofill_driver.h"
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
 #include "components/navigation_interception/intercept_navigation_delegate.h"
 #include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/browser_thread.h"
@@ -54,7 +57,7 @@
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/ssl_status.h"
 #include "jni/AwContents_jni.h"
-#include "net/cert/cert_database.h"
+#include "net/base/auth.h"
 #include "net/cert/x509_certificate.h"
 #include "third_party/skia/include/core/SkPicture.h"
 #include "ui/base/l10n/l10n_util_android.h"
@@ -75,6 +78,7 @@ using base::android::ConvertUTF8ToJavaString;
 using base::android::JavaRef;
 using base::android::ScopedJavaGlobalRef;
 using base::android::ScopedJavaLocalRef;
+using data_reduction_proxy::DataReductionProxySettings;
 using navigation_interception::InterceptNavigationDelegate;
 using content::BrowserThread;
 using content::ContentViewCore;
@@ -125,11 +129,6 @@ void OnIoThreadClientReady(content::RenderFrameHost* rfh) {
       render_process_id, render_frame_id);
 }
 
-void NotifyClientCertificatesChanged() {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  net::CertDatabase::GetInstance()->OnAndroidKeyStoreChanged();
-}
-
 }  // namespace
 
 // static
@@ -169,8 +168,11 @@ AwContents::AwContents(scoped_ptr<WebContents> web_contents)
   render_view_host_ext_.reset(
       new AwRenderViewHostExt(this, web_contents_.get()));
 
+  permission_request_handler_.reset(new PermissionRequestHandler(this));
+
   AwAutofillManagerDelegate* autofill_manager_delegate =
       AwAutofillManagerDelegate::FromWebContents(web_contents_.get());
+  InitDataReductionProxyIfNecessary();
   if (autofill_manager_delegate)
     InitAutofillIfNecessary(autofill_manager_delegate->GetSaveFormData());
 }
@@ -217,6 +219,12 @@ void AwContents::SetSaveFormData(bool enabled) {
     AwAutofillManagerDelegate::FromWebContents(web_contents_.get())->
         SetSaveFormData(enabled);
   }
+}
+
+void AwContents::InitDataReductionProxyIfNecessary() {
+  AwBrowserContext* browser_context =
+      AwBrowserContext::FromWebContents(web_contents_.get());
+  browser_context->CreateUserPrefServiceIfNecessary();
 }
 
 void AwContents::InitAutofillIfNecessary(bool enabled) {
@@ -518,6 +526,30 @@ void AwContents::HideGeolocationPrompt(const GURL& origin) {
   }
 }
 
+void AwContents::OnPermissionRequest(AwPermissionRequest* request) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> j_request = request->CreateJavaPeer();
+  ScopedJavaLocalRef<jobject> j_ref = java_ref_.get(env);
+  if (j_request.is_null() || j_ref.is_null()) {
+    permission_request_handler_->CancelRequest(
+        request->GetOrigin(), request->GetResources());
+    return;
+  }
+
+  Java_AwContents_onPermissionRequest(env, j_ref.obj(), j_request.obj());
+}
+
+void AwContents::OnPermissionRequestCanceled(AwPermissionRequest* request) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> j_request = request->GetJavaObject();
+  if (j_request.is_null())
+    return;
+
+  ScopedJavaLocalRef<jobject> j_ref = java_ref_.get(env);
+  Java_AwContents_onPermissionRequestCanceled(
+      env, j_ref.obj(), j_request.obj());
+}
+
 void AwContents::FindAllAsync(JNIEnv* env, jobject obj, jstring search_string) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   GetFindHelper()->FindAllAsync(ConvertJavaStringToUTF16(env, search_string));
@@ -762,10 +794,11 @@ void AwContents::OnDetachedFromWindow(JNIEnv* env, jobject obj) {
 }
 
 void AwContents::ReleaseHardwareDrawOnRenderThread() {
-  DCHECK(hardware_renderer_);
-  DCHECK(shared_renderer_state_.IsHardwareInitialized());
   // No point in running any other commands if we released hardware already.
   shared_renderer_state_.ClearClosureQueue();
+  if (!shared_renderer_state_.IsHardwareInitialized())
+    return;
+
   hardware_renderer_.reset();
   shared_renderer_state_.SetHardwareInitialized(false);
 }
@@ -1012,13 +1045,6 @@ void AwContents::SetExtraHeadersForUrl(JNIEnv* env, jobject obj,
                                     extra_headers);
 }
 
-void AwContents::ClearClientCertPreferences(JNIEnv* env, jobject obj) {
-  content::BrowserThread::PostTask(
-      BrowserThread::IO,
-      FROM_HERE,
-      base::Bind(&NotifyClientCertificatesChanged));
-}
-
 void AwContents::SetJsOnlineProperty(JNIEnv* env,
                                      jobject obj,
                                      jboolean network_up) {
@@ -1030,28 +1056,12 @@ void AwContents::TrimMemory(JNIEnv* env,
                             jobject obj,
                             jint level,
                             jboolean visible) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
   if (!shared_renderer_state_.IsHardwareInitialized())
     return;
 
-  shared_renderer_state_.AppendClosure(
-      base::Bind(&AwContents::TrimMemoryOnRenderThread,
-                 base::Unretained(this),
-                 level,
-                 visible));
-  RequestDrawGL(NULL, true);
-}
-
-void AwContents::TrimMemoryOnRenderThread(int level, bool visible) {
-  if (hardware_renderer_ && hardware_renderer_->TrimMemory(level, visible)) {
-    content::BrowserThread::PostTask(
-        content::BrowserThread::UI,
-        FROM_HERE,
-        base::Bind(&AwContents::ForceFakeComposite, ui_thread_weak_ptr_));
-  }
-}
-
-void AwContents::ForceFakeComposite() {
-  browser_view_renderer_.ForceFakeCompositeSW();
+  browser_view_renderer_.TrimMemory(level, visible);
 }
 
 void SetShouldDownloadFavicons(JNIEnv* env, jclass jclazz) {

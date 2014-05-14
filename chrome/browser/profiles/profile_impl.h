@@ -28,7 +28,9 @@ class SSLConfigServiceManager;
 
 #if defined(OS_CHROMEOS)
 namespace chromeos {
+class KioskTest;
 class LocaleChangeGuard;
+class ManagedUserTestBase;
 class Preferences;
 }
 #endif
@@ -99,6 +101,8 @@ class ProfileImpl : public Profile {
   virtual content::ResourceContext* GetResourceContext() OVERRIDE;
   virtual content::GeolocationPermissionContext*
       GetGeolocationPermissionContext() OVERRIDE;
+  virtual content::BrowserPluginGuestManagerDelegate*
+      GetGuestManagerDelegate() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
 
   // Profile implementation:
@@ -155,6 +159,10 @@ class ProfileImpl : public Profile {
   virtual PrefProxyConfigTracker* GetProxyConfigTracker() OVERRIDE;
 
  private:
+#if defined(OS_CHROMEOS)
+  friend class chromeos::KioskTest;
+  friend class chromeos::ManagedUserTestBase;
+#endif
   friend class Profile;
   friend class BetterSessionRestoreCrashTest;
   FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorTest,

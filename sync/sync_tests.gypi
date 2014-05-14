@@ -113,6 +113,12 @@
       'sources': [
         'test/fake_server/bookmark_entity.cc',
         'test/fake_server/bookmark_entity.h',
+        'test/fake_server/bookmark_entity_builder.cc',
+        'test/fake_server/bookmark_entity_builder.h',
+        'test/fake_server/entity_builder.cc',
+        'test/fake_server/entity_builder.h',
+        'test/fake_server/entity_builder_factory.cc',
+        'test/fake_server/entity_builder_factory.h',
         'test/fake_server/fake_server.cc',
         'test/fake_server/fake_server.h',
         'test/fake_server/fake_server_entity.cc',
@@ -476,6 +482,7 @@
           'api/attachments/attachment_id_unittest.cc',
           'api/attachments/attachment_service_proxy_unittest.cc',
           'api/attachments/fake_attachment_store_unittest.cc',
+          'api/attachments/fake_attachment_uploader_unittest.cc',
           'api/sync_change_unittest.cc',
           'api/sync_data_unittest.cc',
           'api/sync_error_unittest.cc',
@@ -504,8 +511,7 @@
         # TODO(akalin): This is needed because histogram.cc uses
         # leak_annotations.h, which pulls this in.  Make 'base'
         # propagate this dependency.
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
+        ['OS=="linux" and use_allocator!="none"', {
           'dependencies': [
             '../base/allocator/allocator.gyp:allocator',
           ],
@@ -595,27 +601,6 @@
           ],
           'sources': [
             'tools/testserver/run_sync_testserver.cc',
-          ],
-        },
-
-        # A standalone executable that runs a Sync FakeServer instance.
-        {
-          'target_name': 'run_sync_fake_server',
-          'type': 'executable',
-          'dependencies': [
-            '../base/base.gyp:base',
-            '../base/base.gyp:test_support_base',
-            '../net/net.gyp:http_server',
-            '../net/net.gyp:net',
-            '../net/net.gyp:net_test_support',
-            '../testing/gtest.gyp:gtest',
-            '../url/url.gyp:url_lib',
-            'test_support_sync_fake_server',
-          ],
-          'sources': [
-            'test/fake_server/run_sync_fake_server.cc',
-            'test/fake_server/fake_sync_server_http_handler.cc',
-            'test/fake_server/fake_sync_server_http_handler.h',
           ],
         },
 

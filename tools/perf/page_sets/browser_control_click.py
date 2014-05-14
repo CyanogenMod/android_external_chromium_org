@@ -7,7 +7,7 @@ from telemetry.page import page as page_module
 from telemetry.page import page_set as page_set_module
 
 
-class BrowserControlClickPage(page_module.PageWithDefaultRunNavigate):
+class BrowserControlClickPage(page_module.Page):
 
   """ Why: Use a JavaScript .click() call to attach and detach a DOM tree
   from a basic document.
@@ -16,9 +16,9 @@ class BrowserControlClickPage(page_module.PageWithDefaultRunNavigate):
   def __init__(self, page_set):
     super(BrowserControlClickPage, self).__init__(
       url='file://endure/browser_control_click.html',
-      page_set=page_set)
+      page_set=page_set,
+     name='browser_control_click')
     self.user_agent_type = 'desktop'
-    self.name = 'browser_control_click'
 
   def RunNavigateSteps(self, action_runner):
     action_runner.RunAction(NavigateAction())

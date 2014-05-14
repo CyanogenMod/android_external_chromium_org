@@ -44,6 +44,7 @@ html:not(.focus-outline-visible)
 #apps-developer-tools-promo {
   -webkit-margin-before: 15px;
   -webkit-padding-before: 5px;
+  -webkit-padding-end: 3px;
   align-items: center;
   border-top: 1px solid #eee;
   display: flex;
@@ -54,8 +55,7 @@ html:not(.focus-outline-visible)
   content: url(apps_developer_tools_promo_48.png);
 }
 
-#apps-developer-tools-promo-text,
-#apps-developer-tools-promo-link {
+#apps-developer-tools-promo-text {
   -webkit-margin-start: 5px;
 }
 
@@ -67,6 +67,7 @@ html:not(.focus-outline-visible)
 
 #apps-developer-tools-promo .close-button {
   background: url(chrome://theme/IDR_CLOSE_DIALOG) no-repeat center center;
+  border: 0;
   height: 14px;
   width: 14px;
   z-index: 1;

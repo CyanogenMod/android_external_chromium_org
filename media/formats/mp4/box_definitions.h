@@ -150,6 +150,13 @@ struct MEDIA_EXPORT HandlerReference : Box {
 struct MEDIA_EXPORT AVCDecoderConfigurationRecord : Box {
   DECLARE_BOX_METHODS(AVCDecoderConfigurationRecord);
 
+  // Parses AVCDecoderConfigurationRecord data encoded in |data|.
+  // Note: This method is intended to parse data outside the MP4StreamParser
+  //       context and therefore the box header is not expected to be present
+  //       in |data|.
+  // Returns true if |data| was successfully parsed.
+  bool Parse(const uint8* data, int data_size);
+
   uint8 version;
   uint8 profile_indication;
   uint8 profile_compatibility;
@@ -161,6 +168,9 @@ struct MEDIA_EXPORT AVCDecoderConfigurationRecord : Box {
 
   std::vector<SPS> sps_list;
   std::vector<PPS> pps_list;
+
+ private:
+  bool ParseInternal(BufferReader* reader, const LogCB& log_cb);
 };
 
 struct MEDIA_EXPORT PixelAspectRatioBox : Box {
@@ -355,6 +365,40 @@ class MEDIA_EXPORT IndependentAndDisposableSamples : public Box {
   std::vector<SampleDependsOn> sample_depends_on_;
 };
 
+struct MEDIA_EXPORT CencSampleEncryptionInfoEntry {
+  CencSampleEncryptionInfoEntry();
+  ~CencSampleEncryptionInfoEntry();
+
+  bool is_encrypted;
+  uint8 iv_size;
+  std::vector<uint8> key_id;
+};
+
+struct MEDIA_EXPORT SampleGroupDescription : Box {  // 'sgpd'.
+  DECLARE_BOX_METHODS(SampleGroupDescription);
+
+  uint32 grouping_type;
+  std::vector<CencSampleEncryptionInfoEntry> entries;
+};
+
+struct MEDIA_EXPORT SampleToGroupEntry {
+  enum GroupDescriptionIndexBase {
+    kTrackGroupDescriptionIndexBase = 0,
+    kFragmentGroupDescriptionIndexBase = 0x10000,
+  };
+
+  uint32 sample_count;
+  uint32 group_description_index;
+};
+
+struct MEDIA_EXPORT SampleToGroup : Box {  // 'sbgp'.
+  DECLARE_BOX_METHODS(SampleToGroup);
+
+  uint32 grouping_type;
+  uint32 grouping_type_parameter;  // Version 1 only.
+  std::vector<SampleToGroupEntry> entries;
+};
+
 struct MEDIA_EXPORT TrackFragment : Box {
   DECLARE_BOX_METHODS(TrackFragment);
 
@@ -364,6 +408,8 @@ struct MEDIA_EXPORT TrackFragment : Box {
   SampleAuxiliaryInformationOffset auxiliary_offset;
   SampleAuxiliaryInformationSize auxiliary_size;
   IndependentAndDisposableSamples sdtp;
+  SampleGroupDescription sample_group_description;
+  SampleToGroup sample_to_group;
 };
 
 struct MEDIA_EXPORT MovieFragment : Box {

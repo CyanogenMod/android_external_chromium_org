@@ -60,6 +60,7 @@ void LogSandboxStarted(const std::string& sandbox_name) {
 #endif
 }
 
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
 bool AddResourceLimit(int resource, rlim_t limit) {
   struct rlimit old_rlimit;
   if (getrlimit(resource, &old_rlimit))
@@ -72,6 +73,7 @@ bool AddResourceLimit(int resource, rlim_t limit) {
   int rc = setrlimit(resource, &new_rlimit);
   return rc == 0;
 }
+#endif
 
 bool IsRunningTSAN() {
 #if defined(THREAD_SANITIZER)
@@ -122,16 +124,18 @@ LinuxSandbox* LinuxSandbox::GetInstance() {
   return instance;
 }
 
-#if defined(ADDRESS_SANITIZER) && defined(OS_LINUX)
-// ASan API call to notify the tool the sandbox is going to be turned on.
+#if (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+     defined(LEAK_SANITIZER))  && defined(OS_LINUX)
+// Sanitizer API call to notify the tool the sandbox is going to be turned on.
 extern "C" void __sanitizer_sandbox_on_notify(void *reserved);
 #endif
 
 void LinuxSandbox::PreinitializeSandbox() {
   CHECK(!pre_initialized_);
   seccomp_bpf_supported_ = false;
-#if defined(ADDRESS_SANITIZER) && defined(OS_LINUX)
-  // ASan needs to open some resources before the sandbox is enabled.
+#if (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+     defined(LEAK_SANITIZER))  && defined(OS_LINUX)
+  // Sanitizers need to open some resources before the sandbox is enabled.
   // This should not fork, not launch threads, not open a directory.
   __sanitizer_sandbox_on_notify(/*reserved*/ NULL);
 #endif
@@ -328,7 +332,7 @@ bool LinuxSandbox::seccomp_bpf_supported() const {
 
 bool LinuxSandbox::LimitAddressSpace(const std::string& process_type) {
   (void) process_type;
-#if !defined(ADDRESS_SANITIZER)
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kNoSandbox)) {
     return false;
@@ -368,7 +372,7 @@ bool LinuxSandbox::LimitAddressSpace(const std::string& process_type) {
 #else
   base::SysInfo::AmountOfVirtualMemory();
   return false;
-#endif  // !defined(ADDRESS_SANITIZER)
+#endif  // !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
 }
 
 bool LinuxSandbox::HasOpenDirectories() const {

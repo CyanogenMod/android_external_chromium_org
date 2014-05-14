@@ -34,7 +34,9 @@ class MultipleArgumentsResponseValue
     } else {
       function->SetResultList(make_scoped_ptr(result));
     }
-    DCHECK_EQ("", function->GetError());
+    // It would be nice to DCHECK(error.empty()) but some legacy extension
+    // function implementations... I'm looking at chrome.input.ime... do this
+    // for some reason.
   }
 
   virtual ~MultipleArgumentsResponseValue() {}
@@ -45,7 +47,8 @@ class MultipleArgumentsResponseValue
 class ErrorResponseValue : public ExtensionFunction::ResponseValueObject {
  public:
   ErrorResponseValue(ExtensionFunction* function, const std::string& error) {
-    DCHECK_NE("", error);
+    // It would be nice to DCHECK(!error.empty()) but too many legacy extension
+    // function implementations don't set error but signal failure.
     function->SetError(error);
   }
 
@@ -224,32 +227,22 @@ ExtensionFunction::ResponseValue ExtensionFunction::BadMessage() {
 
 ExtensionFunction::ResponseAction ExtensionFunction::RespondNow(
     ResponseValue result) {
-  return scoped_ptr<ResponseActionObject>(new RespondNowAction(
+  return ResponseAction(new RespondNowAction(
       result.Pass(), base::Bind(&ExtensionFunction::SendResponse, this)));
 }
 
 ExtensionFunction::ResponseAction ExtensionFunction::RespondLater() {
-  return scoped_ptr<ResponseActionObject>(new RespondLaterAction());
+  return ResponseAction(new RespondLaterAction());
 }
 
-void ExtensionFunction::Run() {
-  if (!RunImpl())
-    SendResponse(false);
+// static
+ExtensionFunction::ResponseAction ExtensionFunction::ValidationFailure(
+    ExtensionFunction* function) {
+  return function->RespondNow(function->BadMessage());
 }
 
-bool ExtensionFunction::RunImpl() {
-  RunImplTypesafe()->Execute();
-  return true;
-}
-
-ExtensionFunction::ResponseAction ExtensionFunction::RunImplTypesafe() {
-  NOTREACHED()
-      << "ExtensionFunctions must override either RunImpl or RunImplTypesafe";
-  return RespondNow(NoArguments());
-}
-
-void ExtensionFunction::SendResponseTypesafe(ResponseValue response) {
-  SendResponse(response->Apply());
+void ExtensionFunction::Respond(ResponseValue result) {
+  SendResponse(result->Apply());
 }
 
 bool ExtensionFunction::ShouldSkipQuotaLimiting() const {
@@ -275,6 +268,10 @@ void ExtensionFunction::SendResponseImpl(bool success) {
     results_.reset(new base::ListValue());
 
   response_callback_.Run(type, *results_, GetError());
+}
+
+void ExtensionFunction::OnRespondingLater(ResponseValue value) {
+  SendResponse(value->Apply());
 }
 
 UIThreadExtensionFunction::UIThreadExtensionFunction()
@@ -369,15 +366,30 @@ AsyncExtensionFunction::AsyncExtensionFunction() {
 AsyncExtensionFunction::~AsyncExtensionFunction() {
 }
 
+ExtensionFunction::ResponseAction AsyncExtensionFunction::Run() {
+  return RunAsync() ? RespondLater() : RespondNow(Error(error_));
+}
+
+// static
+bool AsyncExtensionFunction::ValidationFailure(
+    AsyncExtensionFunction* function) {
+  return false;
+}
+
 SyncExtensionFunction::SyncExtensionFunction() {
 }
 
 SyncExtensionFunction::~SyncExtensionFunction() {
 }
 
-bool SyncExtensionFunction::RunImpl() {
-  SendResponse(RunSync());
-  return true;
+ExtensionFunction::ResponseAction SyncExtensionFunction::Run() {
+  return RespondNow(RunSync() ? MultipleArguments(results_.get())
+                              : Error(error_));
+}
+
+// static
+bool SyncExtensionFunction::ValidationFailure(SyncExtensionFunction* function) {
+  return false;
 }
 
 SyncIOThreadExtensionFunction::SyncIOThreadExtensionFunction() {
@@ -386,7 +398,13 @@ SyncIOThreadExtensionFunction::SyncIOThreadExtensionFunction() {
 SyncIOThreadExtensionFunction::~SyncIOThreadExtensionFunction() {
 }
 
-bool SyncIOThreadExtensionFunction::RunImpl() {
-  SendResponse(RunSync());
-  return true;
+ExtensionFunction::ResponseAction SyncIOThreadExtensionFunction::Run() {
+  return RespondNow(RunSync() ? MultipleArguments(results_.get())
+                              : Error(error_));
+}
+
+// static
+bool SyncIOThreadExtensionFunction::ValidationFailure(
+    SyncIOThreadExtensionFunction* function) {
+  return false;
 }

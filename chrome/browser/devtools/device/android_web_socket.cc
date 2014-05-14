@@ -4,12 +4,12 @@
 
 #include "base/message_loop/message_loop.h"
 #include "base/rand_util.h"
-#include "base/strings/stringprintf.h"
 #include "chrome/browser/devtools/device/devtools_android_bridge.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/server/web_socket.h"
+#include "net/socket/stream_socket.h"
 
 using content::BrowserThread;
 using net::WebSocket;
@@ -17,13 +17,6 @@ using net::WebSocket;
 namespace {
 
 const int kBufferSize = 16 * 1024;
-
-static const char kWebSocketUpgradeRequest[] = "GET %s HTTP/1.1\r\n"
-    "Upgrade: WebSocket\r\n"
-    "Connection: Upgrade\r\n"
-    "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
-    "Sec-WebSocket-Version: 13\r\n"
-    "\r\n";
 
 class WebSocketImpl : public DevToolsAndroidBridge::AndroidWebSocket {
  public:
@@ -35,6 +28,7 @@ class WebSocketImpl : public DevToolsAndroidBridge::AndroidWebSocket {
                    const std::string& url,
                    Delegate* delegate);
 
+  virtual void Connect() OVERRIDE;
   virtual void Disconnect() OVERRIDE;
 
   virtual void SendFrame(const std::string& message) OVERRIDE;
@@ -83,6 +77,9 @@ WebSocketImpl::WebSocketImpl(
       socket_name_(socket_name),
       url_(url),
       delegate_(delegate) {
+}
+
+void WebSocketImpl::Connect() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   device_message_loop_->PostTask(
       FROM_HERE, base::Bind(&WebSocketImpl::ConnectOnHandlerThread, this));
@@ -115,7 +112,7 @@ void WebSocketImpl::ConnectOnHandlerThread() {
   device_manager_->HttpUpgrade(
       serial_,
       socket_name_,
-      base::StringPrintf(kWebSocketUpgradeRequest, url_.c_str()),
+      url_,
       base::Bind(&WebSocketImpl::ConnectedOnHandlerThread, this));
 }
 

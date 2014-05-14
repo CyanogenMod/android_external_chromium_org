@@ -117,8 +117,16 @@ void TargetGenerator::GenerateTarget(Scope* scope,
                "I am very confused.");
   }
 
-  if (!err->has_error())
-    scope->settings()->build_settings()->ItemDefined(target.PassAs<Item>());
+  if (err->has_error())
+    return;
+
+  // Save this target for the file.
+  Scope::ItemVector* collector = scope->GetItemCollector();
+  if (!collector) {
+    *err = Err(function_call, "Can't define a target in this context.");
+    return;
+  }
+  collector->push_back(new scoped_ptr<Item>(target.PassAs<Item>()));
 }
 
 const BuildSettings* TargetGenerator::GetBuildSettings() const {
@@ -201,16 +209,13 @@ void TargetGenerator::FillDependencies() {
   if (err_->has_error())
     return;
 
-  FillHardDep();
-}
-
-void TargetGenerator::FillHardDep() {
-  const Value* hard_dep_value = scope_->GetValue(variables::kHardDep, true);
-  if (!hard_dep_value)
-    return;
-  if (!hard_dep_value->VerifyTypeIs(Value::BOOLEAN, err_))
-    return;
-  target_->set_hard_dep(hard_dep_value->boolean_value());
+  // Mark the "hard_dep" variable as used. This was previously part of GN but
+  // is now unused, and we don't want to throw errors for build files setting
+  // it while the new binary is being pushed.
+  // TODO(brettw) remove this code when all hard_deps are removed.
+  const char kHardDep[] = "hard_dep";
+  if (scope_->IsSetButUnused(kHardDep))
+    scope_->MarkUsed(kHardDep);
 }
 
 void TargetGenerator::FillOutputs() {

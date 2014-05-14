@@ -18,7 +18,6 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "net/base/net_util.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_capture_options.h"
 #include "third_party/webrtc/modules/desktop_capture/screen_capturer.h"
@@ -76,7 +75,7 @@ void DesktopCaptureChooseDesktopMediaFunction::Cancel() {
   }
 }
 
-bool DesktopCaptureChooseDesktopMediaFunction::RunImpl() {
+bool DesktopCaptureChooseDesktopMediaFunction::RunAsync() {
   EXTENSION_FUNCTION_VALIDATE(args_->GetSize() > 0);
 
   EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(0, &request_id_));
@@ -131,13 +130,13 @@ bool DesktopCaptureChooseDesktopMediaFunction::RunImpl() {
     Observe(web_contents);
 
     render_view = web_contents->GetRenderViewHost();
-    parent_window = web_contents->GetView()->GetTopLevelNativeWindow();
+    parent_window = web_contents->GetTopLevelNativeWindow();
   } else {
     origin_ = GetExtension()->url();
     target_name = base::UTF8ToUTF16(GetExtension()->name());
     render_view = render_view_host();
     parent_window =
-        GetAssociatedWebContents()->GetView()->GetTopLevelNativeWindow();
+        GetAssociatedWebContents()->GetTopLevelNativeWindow();
   }
   render_process_id_ = render_view->GetProcess()->GetID();
   render_view_id_ = render_view->GetRoutingID();
@@ -216,8 +215,7 @@ bool DesktopCaptureChooseDesktopMediaFunction::RunImpl() {
   return true;
 }
 
-void DesktopCaptureChooseDesktopMediaFunction::WebContentsDestroyed(
-    content::WebContents* web_contents) {
+void DesktopCaptureChooseDesktopMediaFunction::WebContentsDestroyed() {
   Cancel();
 }
 

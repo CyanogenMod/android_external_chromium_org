@@ -13,6 +13,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/javascript_test_observer.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "chrome/test/nacl/nacl_browsertest_util.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/test_renderer_host.h"
@@ -57,21 +58,6 @@ using content::RenderViewHost;
       RunTestWithSSLServer(STRIP_PREFIXES(test_name)); \
     }
 
-// NaCl glibc tests are included for x86 only, as there is no glibc support
-// for other architectures (ARM/MIPS).
-#if defined(ARCH_CPU_X86_FAMILY)
-#define MAYBE_GLIBC(test_name) test_name
-#else
-#define MAYBE_GLIBC(test_name) DISABLED_##test_name
-#endif
-
-// The NonSFI test is currently available only on linux-x86-32 architecture.
-#if defined(OS_LINUX) && defined(ARCH_CPU_X86)
-#define MAYBE_NONSFI(test_name) test_name
-#else
-#define MAYBE_NONSFI(test_name) DISABLED_##test_name
-#endif
-
 #if defined(DISABLE_NACL)
 
 #define TEST_PPAPI_NACL(test_name)
@@ -92,7 +78,7 @@ using content::RenderViewHost;
       RunTestViaHTTP(STRIP_PREFIXES(test_name)); \
     } \
     IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, \
-                           MAYBE_NONSFI(test_name)) { \
+                           MAYBE_PNACL_NONSFI(test_name)) { \
       RunTestViaHTTP(STRIP_PREFIXES(test_name)); \
     }
 
@@ -114,7 +100,7 @@ using content::RenderViewHost;
       RunTestWithSSLServer(STRIP_PREFIXES(test_name)); \
     } \
     IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, \
-                           MAYBE_NONSFI(test_name)) { \
+                           MAYBE_PNACL_NONSFI(test_name)) { \
       RunTestWithSSLServer(STRIP_PREFIXES(test_name)); \
     }
 
@@ -210,7 +196,6 @@ TEST_PPAPI_IN_PROCESS(TraceEvent)
 TEST_PPAPI_OUT_OF_PROCESS(TraceEvent)
 TEST_PPAPI_NACL(TraceEvent)
 
-TEST_PPAPI_IN_PROCESS(InputEvent)
 TEST_PPAPI_OUT_OF_PROCESS(InputEvent)
 TEST_PPAPI_NACL(InputEvent)
 
@@ -221,7 +206,6 @@ TEST_PPAPI_NACL(InputEvent)
 #define MAYBE_ImeInputEvent ImeInputEvent
 #endif
 
-TEST_PPAPI_IN_PROCESS(MAYBE_ImeInputEvent)
 TEST_PPAPI_OUT_OF_PROCESS(MAYBE_ImeInputEvent)
 TEST_PPAPI_NACL(MAYBE_ImeInputEvent)
 
@@ -351,7 +335,8 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(TCPSocket)) {
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, TCPSocket) {
   RUN_TCPSOCKET_SUBTESTS;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, MAYBE_NONSFI(TCPSocket)) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
+                       MAYBE_PNACL_NONSFI(TCPSocket)) {
   RUN_TCPSOCKET_SUBTESTS;
 }
 
@@ -391,7 +376,8 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(UDPSocket)) {
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, UDPSocket) {
   RUN_UDPSOCKET_SUBTESTS;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, MAYBE_NONSFI(UDPSocket)) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
+                       MAYBE_PNACL_NONSFI(UDPSocket)) {
   RUN_UDPSOCKET_SUBTESTS;
 }
 
@@ -438,7 +424,8 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(HostResolver)) {
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, HostResolver) {
   RUN_HOST_RESOLVER_SUBTESTS;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, MAYBE_NONSFI(HostResolver)) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
+                       MAYBE_PNACL_NONSFI(HostResolver)) {
   RUN_HOST_RESOLVER_SUBTESTS;
 }
 
@@ -552,7 +539,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, URLLoader3) {
 #else
 #define MAYBE_URLLoader_BasicFilePOST URLLoader_BasicFilePOST
 #endif
-IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, URLLoader0) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(URLLoader0)) {
   RunTestViaHTTP(
       LIST_TEST(URLLoader_BasicGET)
       LIST_TEST(URLLoader_BasicPOST)
@@ -562,13 +549,13 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, URLLoader0) {
   );
 }
 
-IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, URLLoader1) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(URLLoader1)) {
   RUN_URLLOADER_SUBTESTS_1;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, URLLoader2) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(URLLoader2)) {
   RUN_URLLOADER_SUBTESTS_2;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, URLLoader3) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(URLLoader3)) {
   RUN_URLLOADER_SUBTESTS_3;
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, URLLoader0) {
@@ -583,16 +570,20 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, URLLoader2) {
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, URLLoader3) {
   RUN_URLLOADER_SUBTESTS_3;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, MAYBE_NONSFI(URLLoader0)) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
+                       MAYBE_PNACL_NONSFI(URLLoader0)) {
   RUN_URLLOADER_SUBTESTS_0;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, MAYBE_NONSFI(URLLoader1)) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
+                       MAYBE_PNACL_NONSFI(URLLoader1)) {
   RUN_URLLOADER_SUBTESTS_1;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, MAYBE_NONSFI(URLLoader2)) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
+                       MAYBE_PNACL_NONSFI(URLLoader2)) {
   RUN_URLLOADER_SUBTESTS_2;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, MAYBE_NONSFI(URLLoader3)) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
+                       MAYBE_PNACL_NONSFI(URLLoader3)) {
   RUN_URLLOADER_SUBTESTS_3;
 }
 
@@ -684,22 +675,6 @@ TEST_PPAPI_OUT_OF_PROCESS(MAYBE_VarDeprecated)
 #undef PostMessage
 #endif
 
-IN_PROC_BROWSER_TEST_F(PPAPITest, PostMessage) {
-  RunTestViaHTTP(
-      LIST_TEST(PostMessage_SendInInit)
-      LIST_TEST(PostMessage_SendingData)
-      LIST_TEST(PostMessage_SendingString)
-      LIST_TEST(PostMessage_SendingArrayBuffer)
-      LIST_TEST(DISABLED_PostMessage_SendingArray)
-      LIST_TEST(DISABLED_PostMessage_SendingDictionary)
-      LIST_TEST(DISABLED_PostMessage_SendingResource)
-      LIST_TEST(DISABLED_PostMessage_SendingComplexVar)
-      LIST_TEST(PostMessage_MessageEvent)
-      LIST_TEST(PostMessage_NoHandler)
-      LIST_TEST(PostMessage_ExtraParam)
-  );
-}
-
 // Flaky: crbug.com/269530
 #if defined(OS_WIN)
 #define MAYBE_PostMessage DISABLED_PostMessage
@@ -718,7 +693,8 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(PostMessage)) {
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, PostMessage) {
   RUN_POSTMESSAGE_SUBTESTS;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, MAYBE_NONSFI(PostMessage)) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
+                       MAYBE_PNACL_NONSFI(PostMessage)) {
   RUN_POSTMESSAGE_SUBTESTS;
 }
 
@@ -726,8 +702,8 @@ TEST_PPAPI_IN_PROCESS(Memory)
 TEST_PPAPI_OUT_OF_PROCESS(Memory)
 TEST_PPAPI_NACL(Memory)
 
-TEST_PPAPI_IN_PROCESS(VideoDecoder)
-TEST_PPAPI_OUT_OF_PROCESS(VideoDecoder)
+TEST_PPAPI_IN_PROCESS(VideoDecoderDev)
+TEST_PPAPI_OUT_OF_PROCESS(VideoDecoderDev)
 
 // FileIO tests.
 #define RUN_FILEIO_SUBTESTS \
@@ -812,11 +788,11 @@ IN_PROC_BROWSER_TEST_F(PPAPIPrivateNaClPNaClTest, MAYBE_PNaCl_FileIO_Private) {
   RUN_FILEIO_PRIVATE_SUBTESTS;
 }
 
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, MAYBE_NONSFI(FileIO)) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, MAYBE_PNACL_NONSFI(FileIO)) {
   RUN_FILEIO_SUBTESTS;
 }
 IN_PROC_BROWSER_TEST_F(PPAPIPrivateNaClPNaClTest,
-                       MAYBE_NONSFI(FILEIO_Private)) {
+                       MAYBE_PNACL_NONSFI(FILEIO_Private)) {
   RUN_FILEIO_PRIVATE_SUBTESTS;
 }
 
@@ -875,7 +851,9 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, FileRef2) {
   RUN_FILEREF_SUBTESTS_2;
 }
 // Flaky on 32-bit linux bot; http://crbug.com/308908
-#if defined(OS_LINUX) && defined(ARCH_CPU_X86)
+// Glibc not available on ARM
+#if (defined(OS_LINUX) && defined(ARCH_CPU_X86)) \
+    || defined(ARCH_CPU_ARM_FAMILY)
 #define MAYBE_NaCl_Glibc_FileRef1 DISABLED_FileRef1
 #define MAYBE_NaCl_Glibc_FileRef2 DISABLED_FileRef2
 #else
@@ -894,10 +872,12 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, FileRef1) {
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, FileRef2) {
   RUN_FILEREF_SUBTESTS_2;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, MAYBE_NONSFI(FileRef1)) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
+                       MAYBE_PNACL_NONSFI(FileRef1)) {
   RUN_FILEREF_SUBTESTS_1;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, MAYBE_NONSFI(FileRef2)) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
+                       MAYBE_PNACL_NONSFI(FileRef2)) {
   RUN_FILEREF_SUBTESTS_2;
 }
 
@@ -957,7 +937,8 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(NetAddress)) {
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, NetAddress) {
   RUN_NETADDRESS_SUBTESTS;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, MAYBE_NONSFI(NetAddress)) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
+                       MAYBE_PNACL_NONSFI(NetAddress)) {
   RUN_NETADDRESS_SUBTESTS;
 }
 
@@ -1005,7 +986,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, NetAddressPrivate) {
   RUN_NETADDRESS_PRIVATE_UNTRUSTED_SUBTESTS;
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
-                       MAYBE_NONSFI(NetAddressPrivate)) {
+                       MAYBE_PNACL_NONSFI(NetAddressPrivate)) {
   RUN_NETADDRESS_PRIVATE_UNTRUSTED_SUBTESTS;
 }
 
@@ -1030,7 +1011,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, NetworkMonitor) {
   RUN_NETWORK_MONITOR_SUBTESTS;
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
-                       MAYBE_NONSFI(NetworkMonitor)) {
+                       MAYBE_PNACL_NONSFI(NetworkMonitor)) {
   RUN_NETWORK_MONITOR_SUBTESTS;
 }
 
@@ -1118,10 +1099,12 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, WebSocket1) {
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, WebSocket2) {
   RUN_WEBSOCKET_SUBTESTS_2;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, MAYBE_NONSFI(WebSocket1)) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
+                       MAYBE_PNACL_NONSFI(WebSocket1)) {
   RUN_WEBSOCKET_SUBTESTS_1;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, MAYBE_NONSFI(WebSocket2)) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
+                       MAYBE_PNACL_NONSFI(WebSocket2)) {
   RUN_WEBSOCKET_SUBTESTS_2;
 }
 
@@ -1148,7 +1131,8 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(AudioConfig)) {
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, AudioConfig) {
   RUN_AUDIO_CONFIG_SUBTESTS;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, MAYBE_NONSFI(AudioConfig)) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
+                       MAYBE_PNACL_NONSFI(AudioConfig)) {
   RUN_AUDIO_CONFIG_SUBTESTS;
 }
 
@@ -1177,7 +1161,8 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(Audio)) {
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, Audio) {
   RUN_AUDIO_SUBTESTS;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, MAYBE_NONSFI(Audio)) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
+                       MAYBE_PNACL_NONSFI(Audio)) {
   RUN_AUDIO_SUBTESTS;
 }
 
@@ -1197,7 +1182,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, AudioThreadCreator) {
   RUN_AUDIO_THREAD_CREATOR_SUBTESTS;
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
-                       MAYBE_NONSFI(AudioThreadCreator)) {
+                       MAYBE_PNACL_NONSFI(AudioThreadCreator)) {
   RUN_AUDIO_THREAD_CREATOR_SUBTESTS;
 }
 
@@ -1289,7 +1274,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(View)) {
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, View) {
   RUN_VIEW_SUBTESTS;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, MAYBE_NONSFI(View)) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, MAYBE_PNACL_NONSFI(View)) {
   RUN_VIEW_SUBTESTS;
 }
 

@@ -24,7 +24,6 @@
 #include "chrome/browser/extensions/data_deleter.h"
 #include "chrome/browser/extensions/extension_disabled_ui.h"
 #include "chrome/browser/extensions/extension_error_controller.h"
-#include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/extensions/extension_sync_service.h"
@@ -2063,22 +2062,6 @@ bool ExtensionService::OnExternalExtensionFileFound(
   return true;
 }
 
-void ExtensionService::ReportExtensionLoadError(
-    const base::FilePath& extension_path,
-    const std::string &error) {
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_EXTENSION_LOAD_ERROR,
-      content::Source<Profile>(profile_),
-      content::Details<const std::string>(&error));
-
-  std::string path_str = base::UTF16ToUTF8(extension_path.LossyDisplayName());
-  base::string16 message = base::UTF8ToUTF16(
-      base::StringPrintf("Could not load extension from '%s'. %s",
-                         path_str.c_str(),
-                         error.c_str()));
-  ExtensionErrorReporter::GetInstance()->ReportError(message, false);
-}
-
 void ExtensionService::DidCreateRenderViewForBackgroundPage(
     extensions::ExtensionHost* host) {
   OrphanedDevTools::iterator iter =
@@ -2410,6 +2393,10 @@ void ExtensionService::UpdateGreylistedExtensions(
     if (registry_->enabled_extensions().Contains(extension->id()))
       DisableExtension(*it, extensions::Extension::DISABLE_GREYLIST);
   }
+}
+
+void ExtensionService::ContentVerifyFailed(const std::string& extension_id) {
+  DisableExtension(extension_id, Extension::DISABLE_CORRUPTED);
 }
 
 void ExtensionService::AddUpdateObserver(extensions::UpdateObserver* observer) {

@@ -9,7 +9,6 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 
 using content::WebContents;
@@ -188,7 +187,7 @@ void WebContentsModalDialogManager::WasHidden() {
     child_dialogs_.front()->manager->Hide();
 }
 
-void WebContentsModalDialogManager::WebContentsDestroyed(WebContents* tab) {
+void WebContentsModalDialogManager::WebContentsDestroyed() {
   // First cleanly close all child dialogs.
   // TODO(mpcomplete): handle case if MaybeCloseChildWindows() already asked
   // some of these to close.  CloseAllDialogs is async, so it might get called

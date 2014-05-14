@@ -35,20 +35,6 @@ static void AccurateTrimStart(int frames_to_trim,
                               const AudioTimestampHelper& timestamp_helper) {
   buffer->TrimStart(frames_to_trim);
   buffer->set_timestamp(timestamp_helper.GetTimestamp());
-  buffer->set_duration(
-      timestamp_helper.GetFrameDuration(buffer->frame_count()));
-}
-
-// AudioBuffer::TrimEnd() is not as accurate as the timestamp helper, so
-// manually adjust the duration after trimming.
-static void AccurateTrimEnd(int frames_to_trim,
-                            const scoped_refptr<AudioBuffer> buffer,
-                            const AudioTimestampHelper& timestamp_helper) {
-  DCHECK_LT(std::abs(timestamp_helper.GetFramesToTarget(buffer->timestamp())),
-            kMinGapSize);
-  buffer->TrimEnd(frames_to_trim);
-  buffer->set_duration(
-      timestamp_helper.GetFrameDuration(buffer->frame_count()));
 }
 
 // Returns an AudioBus whose frame buffer is backed by the provided AudioBuffer.
@@ -177,13 +163,12 @@ bool AudioStreamSanitizer::AddInput(const scoped_refptr<AudioBuffer>& input) {
 
     // Create a buffer with enough silence samples to fill the gap and
     // add it to the output buffer.
-    scoped_refptr<AudioBuffer> gap = AudioBuffer::CreateEmptyBuffer(
-        input->channel_layout(),
-        input->channel_count(),
-        input->sample_rate(),
-        frames_to_fill,
-        expected_timestamp,
-        output_timestamp_helper_.GetFrameDuration(frames_to_fill));
+    scoped_refptr<AudioBuffer> gap =
+        AudioBuffer::CreateEmptyBuffer(input->channel_layout(),
+                                       input->channel_count(),
+                                       input->sample_rate(),
+                                       frames_to_fill,
+                                       expected_timestamp);
     AddOutputBuffer(gap);
 
     // Add the input buffer now that the gap has been filled.
@@ -304,7 +289,7 @@ bool AudioSplicer::AddInput(const scoped_refptr<AudioBuffer>& input) {
 
   // The first post splice buffer is expected to match |splice_timestamp_|.
   if (!post_splice_sanitizer_->HasNextBuffer())
-    DCHECK(splice_timestamp_ == input->timestamp());
+    CHECK(splice_timestamp_ == input->timestamp());
 
   // At this point we have all the fade out preroll buffers from the decoder.
   // We now need to wait until we have enough data to perform the crossfade (or
@@ -443,13 +428,17 @@ scoped_ptr<AudioBus> AudioSplicer::ExtractCrossfadeFromPreSplice(
     // If only part of the buffer was consumed, trim it appropriately and stick
     // it into the output queue.
     if (frames_before_splice) {
-      AccurateTrimEnd(preroll->frame_count() - frames_before_splice,
-                      preroll,
-                      output_ts_helper);
+      preroll->TrimEnd(preroll->frame_count() - frames_before_splice);
       CHECK(output_sanitizer_->AddInput(preroll));
       frames_before_splice = 0;
     }
   }
+
+  // Ensure outputs were properly allocated.  The method should not have been
+  // called if there is not enough data to crossfade.
+  // TODO(dalecurtis): Convert to DCHECK() once http://crbug.com/356073 fixed.
+  CHECK(output_bus);
+  CHECK(*crossfade_buffer);
 
   // All necessary buffers have been processed, it's safe to reset.
   pre_splice_sanitizer_->Reset();
@@ -466,8 +455,6 @@ void AudioSplicer::CrossfadePostSplice(
   const AudioTimestampHelper& output_ts_helper =
       output_sanitizer_->timestamp_helper();
   crossfade_buffer->set_timestamp(output_ts_helper.GetTimestamp());
-  crossfade_buffer->set_duration(
-      output_ts_helper.GetFrameDuration(pre_splice_bus->frames()));
 
   // AudioBuffer::ReadFrames() only allows output into an AudioBus, so wrap
   // our AudioBuffer in one so we can avoid extra data copies.

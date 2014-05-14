@@ -85,20 +85,13 @@
 #include "content/renderer/idle_user_detector.h"
 #include "content/renderer/ime_event_guard.h"
 #include "content/renderer/input/input_handler_manager.h"
-#include "content/renderer/input_tag_speech_dispatcher.h"
 #include "content/renderer/internal_document_state_data.h"
 #include "content/renderer/load_progress_tracker.h"
 #include "content/renderer/media/audio_device_factory.h"
-#include "content/renderer/media/audio_renderer_mixer_manager.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/media_stream_dispatcher.h"
-#include "content/renderer/media/media_stream_impl.h"
 #include "content/renderer/media/midi_dispatcher.h"
-#include "content/renderer/media/render_media_log.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
-#include "content/renderer/media/webmediaplayer_impl.h"
-#include "content/renderer/media/webmediaplayer_ms.h"
-#include "content/renderer/media/webmediaplayer_params.h"
 #include "content/renderer/memory_benchmarking_extension.h"
 #include "content/renderer/mhtml_generator.h"
 #include "content/renderer/push_messaging_dispatcher.h"
@@ -122,7 +115,6 @@
 #include "content/renderer/web_ui_mojo.h"
 #include "content/renderer/websharedworker_proxy.h"
 #include "media/audio/audio_output_device.h"
-#include "media/base/audio_renderer_mixer_input.h"
 #include "media/base/filter_collection.h"
 #include "media/base/media_switches.h"
 #include "media/filters/audio_renderer_impl.h"
@@ -185,7 +177,6 @@
 #include "third_party/WebKit/public/web/WebSerializedScriptValue.h"
 #include "third_party/WebKit/public/web/WebSettings.h"
 #include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
-#include "third_party/WebKit/public/web/WebUserMediaClient.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/WebKit/public/web/WebWindowFeatures.h"
 #include "third_party/WebKit/public/web/default/WebRenderTheme.h"
@@ -204,15 +195,11 @@
 #if defined(OS_ANDROID)
 #include <cpu-features.h>
 
-#include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/renderer/android/address_detector.h"
 #include "content/renderer/android/content_detector.h"
 #include "content/renderer/android/email_detector.h"
 #include "content/renderer/android/phone_number_detector.h"
-#include "content/renderer/android/synchronous_compositor_factory.h"
 #include "content/renderer/media/android/renderer_media_player_manager.h"
-#include "content/renderer/media/android/stream_texture_factory_impl.h"
-#include "content/renderer/media/android/webmediaplayer_android.h"
 #include "net/android/network_library.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
@@ -271,9 +258,7 @@ using blink::WebImage;
 using blink::WebInputElement;
 using blink::WebInputEvent;
 using blink::WebLocalFrame;
-using blink::WebMediaPlayer;
 using blink::WebMediaPlayerAction;
-using blink::WebMediaPlayerClient;
 using blink::WebMouseEvent;
 using blink::WebNavigationPolicy;
 using blink::WebNavigationType;
@@ -488,11 +473,6 @@ static bool ShouldUseAcceleratedFixedRootBackground(float device_scale_factor) {
   return DeviceScaleEnsuresTextQuality(device_scale_factor);
 }
 
-static bool ShouldUseCompositingForGpuRasterizationHint() {
-  return RenderThreadImpl::current() &&
-         RenderThreadImpl::current()->is_gpu_rasterization_enabled();
-}
-
 static FaviconURL::IconType ToFaviconType(blink::WebIconURL::Type type) {
   switch (type) {
     case blink::WebIconURL::TypeFavicon:
@@ -671,19 +651,15 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       has_scrolled_focused_editable_node_into_rect_(false),
       push_messaging_dispatcher_(NULL),
       geolocation_dispatcher_(NULL),
-      input_tag_speech_dispatcher_(NULL),
       speech_recognition_dispatcher_(NULL),
       media_stream_dispatcher_(NULL),
       browser_plugin_manager_(NULL),
-      media_stream_client_(NULL),
-      web_user_media_client_(NULL),
       midi_dispatcher_(NULL),
       devtools_agent_(NULL),
       accessibility_mode_(AccessibilityModeOff),
       renderer_accessibility_(NULL),
       mouse_lock_dispatcher_(NULL),
 #if defined(OS_ANDROID)
-      body_background_color_(SK_ColorWHITE),
       expected_content_intent_id_(0),
       media_player_manager_(NULL),
 #endif
@@ -770,9 +746,6 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
       ShouldUseAcceleratedFixedRootBackground(device_scale_factor_));
   webview()->settings()->setCompositedScrollingForFramesEnabled(
       ShouldUseCompositedScrollingForFrames(device_scale_factor_));
-  webview()->settings()
-      ->setAcceleratedCompositingForGpuRasterizationHintEnabled(
-          ShouldUseCompositingForGpuRasterizationHint());
 
   ApplyWebPreferences(webkit_preferences_, webview());
 
@@ -1094,6 +1067,7 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_Stop, OnStop)
     IPC_MESSAGE_HANDLER(ViewMsg_SetName, OnSetName)
     IPC_MESSAGE_HANDLER(ViewMsg_CopyImageAt, OnCopyImageAt)
+    IPC_MESSAGE_HANDLER(ViewMsg_SaveImageAt, OnSaveImageAt)
     IPC_MESSAGE_HANDLER(ViewMsg_Find, OnFind)
     IPC_MESSAGE_HANDLER(ViewMsg_StopFinding, OnStopFinding)
     IPC_MESSAGE_HANDLER(ViewMsg_Zoom, OnZoom)
@@ -1133,8 +1107,6 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
                         OnDisableScrollbarsForSmallWindows)
     IPC_MESSAGE_HANDLER(ViewMsg_SetRendererPrefs, OnSetRendererPrefs)
     IPC_MESSAGE_HANDLER(ViewMsg_MediaPlayerActionAt, OnMediaPlayerActionAt)
-    IPC_MESSAGE_HANDLER(ViewMsg_OrientationChangeEvent,
-                        OnOrientationChangeEvent)
     IPC_MESSAGE_HANDLER(ViewMsg_PluginActionAt, OnPluginActionAt)
     IPC_MESSAGE_HANDLER(ViewMsg_SetActive, OnSetActive)
     IPC_MESSAGE_HANDLER(ViewMsg_GetAllSavableResourceLinksForCurrentPage,
@@ -1237,6 +1209,10 @@ void RenderViewImpl::OnStop() {
 
 void RenderViewImpl::OnCopyImageAt(int x, int y) {
   webview()->copyImageAt(WebPoint(x, y));
+}
+
+void RenderViewImpl::OnSaveImageAt(int x, int y) {
+  webview()->saveImageAt(WebPoint(x, y));
 }
 
 void RenderViewImpl::OnUpdateTargetURLAck() {
@@ -2017,44 +1993,6 @@ void RenderViewImpl::initializeLayerTreeView() {
 
 // blink::WebFrameClient -----------------------------------------------------
 
-blink::WebMediaPlayer* RenderViewImpl::CreateMediaPlayer(
-    RenderFrame* render_frame,
-    blink::WebLocalFrame* frame,
-    const blink::WebURL& url,
-    blink::WebMediaPlayerClient* client) {
-  FOR_EACH_OBSERVER(
-      RenderViewObserver, observers_, WillCreateMediaPlayer(frame, client));
-
-  WebMediaPlayer* player = CreateWebMediaPlayerForMediaStream(frame, url,
-                                                              client);
-  if (player)
-    return player;
-
-#if defined(OS_ANDROID)
-  return CreateAndroidWebMediaPlayer(frame, url, client);
-#else
-  WebMediaPlayerParams params(
-      base::Bind(&ContentRendererClient::DeferMediaLoad,
-                 base::Unretained(GetContentClient()->renderer()),
-                 static_cast<RenderFrame*>(render_frame)),
-      RenderThreadImpl::current()->GetAudioRendererMixerManager()->CreateInput(
-          routing_id_, render_frame->GetRoutingID()));
-  return new WebMediaPlayerImpl(frame, client, AsWeakPtr(), params);
-#endif  // defined(OS_ANDROID)
-}
-
-void RenderViewImpl::didDisownOpener(blink::WebLocalFrame* frame) {
-  // We only need to notify the browser if the active, top-level frame clears
-  // its opener.  We can ignore cases where a swapped out frame clears its
-  // opener after hearing about it from the browser, and the browser does not
-  // (yet) care about subframe openers.
-  if (is_swapped_out_ || frame->parent())
-    return;
-
-  // Notify WebContents and all its swapped out RenderViews.
-  Send(new ViewHostMsg_DidDisownOpener(routing_id_));
-}
-
 void RenderViewImpl::Repaint(const gfx::Size& size) {
   OnRepaint(size);
 }
@@ -2335,13 +2273,6 @@ void RenderViewImpl::didChangeIcon(WebLocalFrame* frame,
   SendUpdateFaviconURL(urls);
 }
 
-void RenderViewImpl::didHandleOnloadEvents(WebLocalFrame* frame) {
-  if (webview()->mainFrame() == frame) {
-    Send(new ViewHostMsg_DocumentOnLoadCompletedInMainFrame(routing_id_,
-                                                            page_id_));
-  }
-}
-
 void RenderViewImpl::didUpdateCurrentHistoryItem(WebLocalFrame* frame) {
   StartNavStateSyncTimerIfNecessary();
 }
@@ -2375,34 +2306,6 @@ BrowserPluginManager* RenderViewImpl::GetBrowserPluginManager() {
   return browser_plugin_manager_.get();
 }
 
-bool RenderViewImpl::InitializeMediaStreamClient() {
-  if (media_stream_client_)
-    return true;
-
-  if (!RenderThreadImpl::current())  // Will be NULL during unit tests.
-    return false;
-
-#if defined(OS_ANDROID)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableWebRTC))
-    return false;
-#endif
-
-#if defined(ENABLE_WEBRTC)
-  if (!media_stream_dispatcher_)
-    media_stream_dispatcher_ = new MediaStreamDispatcher(this);
-
-  MediaStreamImpl* media_stream_impl = new MediaStreamImpl(
-      this,
-      media_stream_dispatcher_,
-      RenderThreadImpl::current()->GetMediaStreamDependencyFactory());
-  media_stream_client_ = media_stream_impl;
-  web_user_media_client_ = media_stream_impl;
-  return true;
-#else
-  return false;
-#endif
-}
-
 void RenderViewImpl::UpdateScrollState(WebFrame* frame) {
   WebSize offset = frame->scrollOffset();
   WebSize minimum_offset = frame->minimumScrollOffset();
@@ -2433,31 +2336,6 @@ void RenderViewImpl::didChangeScrollOffset(WebLocalFrame* frame) {
       RenderViewObserver, observers_, DidChangeScrollOffset(frame));
 }
 
-void RenderViewImpl::didFirstVisuallyNonEmptyLayout(WebLocalFrame* frame) {
-  if (frame != webview()->mainFrame())
-    return;
-
-  InternalDocumentStateData* data =
-      InternalDocumentStateData::FromDataSource(frame->dataSource());
-  data->set_did_first_visually_non_empty_layout(true);
-
-#if defined(OS_ANDROID)
-  // Update body background color if necessary.
-  SkColor bg_color = webwidget_->backgroundColor();
-
-  // If not initialized, default to white. Note that 0 is different from black
-  // as black still has alpha 0xFF.
-  if (!bg_color)
-    bg_color = SK_ColorWHITE;
-
-  if (bg_color != body_background_color_) {
-    body_background_color_ = bg_color;
-    Send(new ViewHostMsg_DidChangeBodyBackgroundColor(
-        GetRoutingID(), bg_color));
-  }
-#endif
-}
-
 void RenderViewImpl::SendFindReply(int request_id,
                                    int match_count,
                                    int ordinal,
@@ -2469,48 +2347,6 @@ void RenderViewImpl::SendFindReply(int request_id,
                                   selection_rect,
                                   ordinal,
                                   final_status_update));
-}
-
-bool RenderViewImpl::willCheckAndDispatchMessageEvent(
-    blink::WebLocalFrame* sourceFrame,
-    blink::WebFrame* targetFrame,
-    blink::WebSecurityOrigin target_origin,
-    blink::WebDOMMessageEvent event) {
-  if (!is_swapped_out_)
-    return false;
-
-  ViewMsg_PostMessage_Params params;
-  params.data = event.data().toString();
-  params.source_origin = event.origin();
-  if (!target_origin.isNull())
-    params.target_origin = target_origin.toString();
-
-  blink::WebMessagePortChannelArray channels = event.releaseChannels();
-  if (!channels.isEmpty()) {
-    std::vector<int> message_port_ids(channels.size());
-     // Extract the port IDs from the channel array.
-     for (size_t i = 0; i < channels.size(); ++i) {
-       WebMessagePortChannelImpl* webchannel =
-           static_cast<WebMessagePortChannelImpl*>(channels[i]);
-       message_port_ids[i] = webchannel->message_port_id();
-       webchannel->QueueMessages();
-       DCHECK_NE(message_port_ids[i], MSG_ROUTING_NONE);
-     }
-     params.message_port_ids = message_port_ids;
-  }
-
-  // Include the routing ID for the source frame (if one exists), which the
-  // browser process will translate into the routing ID for the equivalent
-  // frame in the target process.
-  params.source_routing_id = MSG_ROUTING_NONE;
-  if (sourceFrame) {
-    RenderViewImpl* source_view = FromWebView(sourceFrame->view());
-    if (source_view)
-      params.source_routing_id = source_view->routing_id();
-  }
-
-  Send(new ViewHostMsg_RouteMessageEvent(routing_id_, params));
-  return true;
 }
 
 blink::WebString RenderViewImpl::acceptLanguages() {
@@ -2630,22 +2466,6 @@ void RenderViewImpl::DidStartLoading() {
 
 void RenderViewImpl::DidStopLoading() {
   main_render_frame_->didStopLoading();
-}
-
-void RenderViewImpl::DidPlay(blink::WebMediaPlayer* player) {
-  Send(new ViewHostMsg_MediaPlayingNotification(routing_id_,
-                                                reinterpret_cast<int64>(player),
-                                                player->hasVideo(),
-                                                player->hasAudio()));
-}
-
-void RenderViewImpl::DidPause(blink::WebMediaPlayer* player) {
-  Send(new ViewHostMsg_MediaPausedNotification(
-      routing_id_, reinterpret_cast<int64>(player)));
-}
-
-void RenderViewImpl::PlayerGone(blink::WebMediaPlayer* player) {
-  DidPause(player);
 }
 
 void RenderViewImpl::SyncNavigationState() {
@@ -3184,12 +3004,13 @@ void RenderViewImpl::OnMediaPlayerActionAt(const gfx::Point& location,
     webview()->performMediaPlayerAction(action, location);
 }
 
-void RenderViewImpl::OnOrientationChangeEvent(int orientation) {
-  // Screen has rotated. 0 = default (portrait), 90 = one turn right, and so on.
+void RenderViewImpl::OnOrientationChange() {
+  // TODO(mlamouri): consumers of that event should be using DisplayObserver.
   FOR_EACH_OBSERVER(RenderViewObserver,
                     observers_,
-                    OrientationChangeEvent(orientation));
-  webview()->mainFrame()->sendOrientationChangeEvent(orientation);
+                    OrientationChangeEvent());
+
+  webview()->mainFrame()->sendOrientationChangeEvent();
 }
 
 void RenderViewImpl::OnPluginActionAt(const gfx::Point& location,
@@ -3383,8 +3204,7 @@ void RenderViewImpl::DidFlushPaint() {
     if (data->did_first_visually_non_empty_layout() &&
         !data->did_first_visually_non_empty_paint()) {
       data->set_did_first_visually_non_empty_paint(true);
-      Send(new ViewHostMsg_DidFirstVisuallyNonEmptyPaint(routing_id_,
-                                                         page_id_));
+      Send(new ViewHostMsg_DidFirstVisuallyNonEmptyPaint(routing_id_));
     }
 
     // TODO(jar): The following code should all be inside a method, probably in
@@ -3900,16 +3720,6 @@ blink::WebGeolocationClient* RenderViewImpl::geolocationClient() {
   return geolocation_dispatcher_;
 }
 
-blink::WebSpeechInputController* RenderViewImpl::speechInputController(
-    blink::WebSpeechInputListener* listener) {
-#if defined(ENABLE_INPUT_SPEECH)
-  if (!input_tag_speech_dispatcher_)
-    input_tag_speech_dispatcher_ =
-        new InputTagSpeechDispatcher(this, listener);
-#endif
-  return input_tag_speech_dispatcher_;
-}
-
 blink::WebSpeechRecognizer* RenderViewImpl::speechRecognizer() {
   if (!speech_recognition_dispatcher_)
     speech_recognition_dispatcher_ = new SpeechRecognitionDispatcher(this);
@@ -3934,15 +3744,19 @@ void RenderViewImpl::zoomLimitsChanged(double minimum_level,
 
 void RenderViewImpl::zoomLevelChanged() {
   bool remember = !webview()->mainFrame()->document().isPluginDocument();
-  float zoom_level = webview()->zoomLevel();
+  double zoom_level = webview()->zoomLevel();
 
   FOR_EACH_OBSERVER(RenderViewObserver, observers_, ZoomLevelChanged());
 
-  // Tell the browser which url got zoomed so it can update the menu and the
-  // saved values if necessary
-  Send(new ViewHostMsg_DidZoomURL(
-      routing_id_, zoom_level, remember,
-      GURL(webview()->mainFrame()->document().url())));
+  // Do not send empty URLs to the browser when we are just setting the default
+  // zoom level (from RendererPreferences) before the first navigation.
+  if (!webview()->mainFrame()->document().url().isEmpty()) {
+    // Tell the browser which url got zoomed so it can update the menu and the
+    // saved values if necessary
+    Send(new ViewHostMsg_DidZoomURL(
+        routing_id_, zoom_level, remember,
+        GURL(webview()->mainFrame()->document().url())));
+  }
 }
 
 double RenderViewImpl::zoomLevelToZoomFactor(double zoom_level) const {
@@ -3983,14 +3797,6 @@ blink::WebPageVisibilityState RenderViewImpl::visibilityState() const {
   return current_state;
 }
 
-blink::WebUserMediaClient* RenderViewImpl::userMediaClient() {
-  // This can happen in tests, in which case it's OK to return NULL.
-  if (!InitializeMediaStreamClient())
-    return NULL;
-
-  return web_user_media_client_;
-}
-
 blink::WebMIDIClient* RenderViewImpl::webMIDIClient() {
   if (!midi_dispatcher_)
     midi_dispatcher_ = new MidiDispatcher(this);
@@ -4008,28 +3814,6 @@ void RenderViewImpl::draggableRegionsChanged() {
       RenderViewObserver,
       observers_,
       DraggableRegionsChanged(webview()->mainFrame()));
-}
-
-WebMediaPlayer* RenderViewImpl::CreateWebMediaPlayerForMediaStream(
-    WebFrame* frame,
-    const blink::WebURL& url,
-    WebMediaPlayerClient* client) {
-#if defined(ENABLE_WEBRTC)
-  if (!InitializeMediaStreamClient()) {
-    LOG(ERROR) << "Failed to initialize MediaStreamClient";
-    return NULL;
-  }
-  if (media_stream_client_->IsMediaStream(url)) {
-#if defined(OS_ANDROID) && defined(ARCH_CPU_ARMEL)
-    bool found_neon =
-        (android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON) != 0;
-    UMA_HISTOGRAM_BOOLEAN("Platform.WebRtcNEONFound", found_neon);
-#endif  // defined(OS_ANDROID) && defined(ARCH_CPU_ARMEL)
-    return new WebMediaPlayerMS(frame, client, AsWeakPtr(),
-                                media_stream_client_, new RenderMediaLog());
-  }
-#endif  // defined(ENABLE_WEBRTC)
-  return NULL;
 }
 
 #if defined(OS_ANDROID)
@@ -4093,46 +3877,6 @@ bool RenderViewImpl::openDateTimeChooser(
 void RenderViewImpl::DismissDateTimeDialog() {
   DCHECK(date_time_picker_client_);
   date_time_picker_client_.reset(NULL);
-}
-
-WebMediaPlayer* RenderViewImpl::CreateAndroidWebMediaPlayer(
-      WebFrame* frame,
-      const blink::WebURL& url,
-      WebMediaPlayerClient* client) {
-  GpuChannelHost* gpu_channel_host =
-      RenderThreadImpl::current()->EstablishGpuChannelSync(
-          CAUSE_FOR_GPU_LAUNCH_VIDEODECODEACCELERATOR_INITIALIZE);
-  if (!gpu_channel_host) {
-    LOG(ERROR) << "Failed to establish GPU channel for media player";
-    return NULL;
-  }
-
-  scoped_refptr<StreamTextureFactory> stream_texture_factory;
-  if (UsingSynchronousRendererCompositor()) {
-    SynchronousCompositorFactory* factory =
-        SynchronousCompositorFactory::GetInstance();
-    stream_texture_factory = factory->CreateStreamTextureFactory(routing_id_);
-  } else {
-    scoped_refptr<webkit::gpu::ContextProviderWebContext> context_provider =
-        RenderThreadImpl::current()->SharedMainThreadContextProvider();
-
-    if (!context_provider.get()) {
-      LOG(ERROR) << "Failed to get context3d for media player";
-      return NULL;
-    }
-
-    stream_texture_factory = StreamTextureFactoryImpl::Create(
-        context_provider, gpu_channel_host, routing_id_);
-  }
-
-  return new WebMediaPlayerAndroid(
-      frame,
-      client,
-      AsWeakPtr(),
-      media_player_manager_,
-      stream_texture_factory,
-      RenderThreadImpl::current()->GetMediaThreadMessageLoopProxy(),
-      new RenderMediaLog());
 }
 
 #endif  // defined(OS_ANDROID)
@@ -4247,10 +3991,10 @@ bool RenderViewImpl::didTapMultipleTargets(
         canvas.translate(-zoom_rect.x() * device_scale_factor_,
                          -zoom_rect.y() * device_scale_factor_);
 
-        webwidget_->paint(
-            &canvas,
-            zoom_rect,
-            WebWidget::ForceSoftwareRenderingAndIgnoreGPUResidentContent);
+        DCHECK(webwidget_->isAcceleratedCompositingActive());
+        // TODO(aelias): The disambiguation popup should be composited so we
+        // don't have to call this method.
+        webwidget_->paintCompositedDeprecated(&canvas, zoom_rect);
       }
 
       gfx::Rect physical_window_zoom_rect = gfx::ToEnclosingRect(
@@ -4304,6 +4048,11 @@ void RenderViewImpl::SetDeviceScaleFactorForTesting(float factor) {
   OnResize(params);
 }
 
+void RenderViewImpl::SetDeviceColorProfileForTesting(
+    const std::vector<char>& color_profile) {
+  // TODO(noel): Add RenderViewImpl::SetDeviceColorProfile(color_profile).
+}
+
 void RenderViewImpl::ForceResizeForTesting(const gfx::Size& new_size) {
   gfx::Rect new_position(rootWindowRect().x,
                          rootWindowRect().y,
@@ -4325,13 +4074,6 @@ void RenderViewImpl::DisableAutoResizeForTesting(const gfx::Size& new_size) {
   OnDisableAutoResize(new_size);
 }
 
-void RenderViewImpl::SetMediaStreamClientForTesting(
-    MediaStreamClient* media_stream_client) {
-  DCHECK(!media_stream_client_);
-  DCHECK(!web_user_media_client_);
-  media_stream_client_ = media_stream_client;
-}
-
 void RenderViewImpl::OnReleaseDisambiguationPopupBitmap(
     const cc::SharedBitmapId& id) {
   BitmapMap::iterator it = disambiguation_bitmaps_.find(id);
@@ -4347,7 +4089,7 @@ void RenderViewImpl::DidCommitCompositorFrame() {
 
 void RenderViewImpl::SendUpdateFaviconURL(const std::vector<FaviconURL>& urls) {
   if (!urls.empty())
-    Send(new ViewHostMsg_UpdateFaviconURL(routing_id_, page_id_, urls));
+    Send(new ViewHostMsg_UpdateFaviconURL(routing_id_, urls));
 }
 
 void RenderViewImpl::DidStopLoadingIcons() {

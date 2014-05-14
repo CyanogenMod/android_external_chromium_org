@@ -230,6 +230,16 @@ bool RecordInfo::IsOnlyPlacementNewable() {
   return is_only_placement_newable_;
 }
 
+CXXMethodDecl* RecordInfo::DeclaresNewOperator() {
+  for (CXXRecordDecl::method_iterator it = record_->method_begin();
+       it != record_->method_end();
+       ++it) {
+    if (it->getNameAsString() == kNewOperatorName && it->getNumParams() == 1)
+      return *it;
+  }
+  return 0;
+}
+
 // An object requires a tracing method if it has any fields that need tracing.
 bool RecordInfo::RequiresTraceMethod() {
   if (IsStackAllocated())
@@ -504,11 +514,9 @@ Edge* RecordInfo::CreateEdge(const Type* type) {
     for (TemplateArgs::iterator it = args.begin(); it != args.end(); ++it) {
       if (Edge* member = CreateEdge(*it)) {
         edge->members().push_back(member);
-      } else {
-        // We failed to create an edge so abort the entire edge construction.
-        delete edge;  // Will delete the already allocated members.
-        return 0;
       }
+      // TODO: Handle the case where we fail to create an edge (eg, if the
+      // argument is a primitive type or just not fully known yet).
     }
     return edge;
   }

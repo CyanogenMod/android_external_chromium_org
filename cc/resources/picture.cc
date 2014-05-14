@@ -273,17 +273,23 @@ void Picture::Record(ContentLayerClient* painter,
                               &factory,
                               SkPicture::kUsePathBoundsForClip_RecordingFlag));
 
+  ContentLayerClient::GraphicsContextStatus graphics_context_status =
+      ContentLayerClient::GRAPHICS_CONTEXT_ENABLED;
+
   switch (recording_mode) {
     case RECORD_NORMALLY:
-      // Already setup for normal recording
+      // Already setup for normal recording.
       break;
     case RECORD_WITH_SK_NULL_CANVAS:
       canvas = skia::AdoptRef(SkCreateNullCanvas());
       break;
     case RECORD_WITH_PAINTING_DISABLED:
-      // Blink's GraphicsContext will disable painting when given a NULL
-      // canvas.
-      canvas.clear();
+      // We pass a disable flag through the paint calls when perfromance
+      // testing (the only time this case should ever arise) when we want to
+      // prevent the Blink GraphicsContext object from consuming any compute
+      // time.
+      canvas = skia::AdoptRef(SkCreateNullCanvas());
+      graphics_context_status = ContentLayerClient::GRAPHICS_CONTEXT_DISABLED;
       break;
     case RECORD_WITH_SKRECORD:
       recording.reset(new EXPERIMENTAL::SkRecording(layer_rect_.width(),
@@ -294,23 +300,21 @@ void Picture::Record(ContentLayerClient* painter,
       NOTREACHED();
   }
 
-  if (canvas) {
-    canvas->save();
-    canvas->translate(SkFloatToScalar(-layer_rect_.x()),
-                      SkFloatToScalar(-layer_rect_.y()));
+  canvas->save();
+  canvas->translate(SkFloatToScalar(-layer_rect_.x()),
+                    SkFloatToScalar(-layer_rect_.y()));
 
-    SkRect layer_skrect = SkRect::MakeXYWH(layer_rect_.x(),
-                                           layer_rect_.y(),
-                                           layer_rect_.width(),
-                                           layer_rect_.height());
-    canvas->clipRect(layer_skrect);
-  }
+  SkRect layer_skrect = SkRect::MakeXYWH(layer_rect_.x(),
+                                         layer_rect_.y(),
+                                         layer_rect_.width(),
+                                         layer_rect_.height());
+  canvas->clipRect(layer_skrect);
 
   gfx::RectF opaque_layer_rect;
-  painter->PaintContents(canvas.get(), layer_rect_, &opaque_layer_rect);
+  painter->PaintContents(
+      canvas.get(), layer_rect_, &opaque_layer_rect, graphics_context_status);
 
-  if (canvas)
-    canvas->restore();
+  canvas->restore();
   picture_ = skia::AdoptRef(recorder.endRecording());
   DCHECK(picture_);
 
@@ -387,7 +391,8 @@ int Picture::Raster(
     SkDrawPictureCallback* callback,
     const Region& negated_content_region,
     float contents_scale) {
-  DCHECK(raster_thread_checker_.CalledOnValidThread());
+  if (!playback_)
+    DCHECK(raster_thread_checker_.CalledOnValidThread());
   TRACE_EVENT_BEGIN1(
       "cc",
       "Picture::Raster",
@@ -418,7 +423,8 @@ int Picture::Raster(
 }
 
 void Picture::Replay(SkCanvas* canvas) {
-  DCHECK(raster_thread_checker_.CalledOnValidThread());
+  if (!playback_)
+    DCHECK(raster_thread_checker_.CalledOnValidThread());
   TRACE_EVENT_BEGIN0("cc", "Picture::Replay");
   DCHECK(picture_);
 
@@ -436,8 +442,21 @@ void Picture::Replay(SkCanvas* canvas) {
 scoped_ptr<base::Value> Picture::AsValue() const {
   SkDynamicMemoryWStream stream;
 
-  // Serialize the picture.
-  picture_->serialize(&stream, &EncodeBitmap);
+  if (playback_) {
+    // SkPlayback can't serialize itself, so re-record into an SkPicture.
+    SkPictureRecorder recorder;
+    skia::RefPtr<SkCanvas> canvas(skia::SharePtr(recorder.beginRecording(
+        layer_rect_.width(),
+        layer_rect_.height(),
+        NULL,  // Default (no) bounding-box hierarchy is fastest.
+        SkPicture::kUsePathBoundsForClip_RecordingFlag)));
+    playback_->draw(canvas.get());
+    skia::RefPtr<SkPicture> picture(skia::AdoptRef(recorder.endRecording()));
+    picture->serialize(&stream, &EncodeBitmap);
+  } else {
+    // Serialize the picture.
+    picture_->serialize(&stream, &EncodeBitmap);
+  }
 
   // Encode the picture as base64.
   scoped_ptr<base::DictionaryValue> res(new base::DictionaryValue());

@@ -41,7 +41,6 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/browser/quota_service.h"
@@ -98,7 +97,7 @@ base::FilePath GetDefaultFilepathForBookmarkExport() {
 
 }  // namespace
 
-bool BookmarksFunction::RunImpl() {
+bool BookmarksFunction::RunAsync() {
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(GetProfile());
   if (!model->loaded()) {
     // Bookmarks are not ready yet.  We'll wait.
@@ -282,10 +281,12 @@ void BookmarkEventRouter::BookmarkNodeAdded(BookmarkModel* model,
                                              *tree_node));
 }
 
-void BookmarkEventRouter::BookmarkNodeRemoved(BookmarkModel* model,
-                                              const BookmarkNode* parent,
-                                              int index,
-                                              const BookmarkNode* node) {
+void BookmarkEventRouter::BookmarkNodeRemoved(
+    BookmarkModel* model,
+    const BookmarkNode* parent,
+    int index,
+    const BookmarkNode* node,
+    const std::set<GURL>& removed_urls) {
   bookmarks::OnRemoved::RemoveInfo remove_info;
   remove_info.parent_id = base::Int64ToString(parent->id());
   remove_info.index = index;
@@ -295,7 +296,9 @@ void BookmarkEventRouter::BookmarkNodeRemoved(BookmarkModel* model,
                                              remove_info));
 }
 
-void BookmarkEventRouter::BookmarkAllNodesRemoved(BookmarkModel* model) {
+void BookmarkEventRouter::BookmarkAllNodesRemoved(
+    BookmarkModel* model,
+    const std::set<GURL>& removed_urls) {
   NOTREACHED();
   // TODO(shashishekhar) Currently this notification is only used on Android,
   // which does not support extensions. If Desktop needs to support this, add
@@ -951,7 +954,7 @@ void BookmarksIOFunction::ShowSelectFileDialog(
   file_type_info.extensions.resize(1);
   file_type_info.extensions[0].push_back(FILE_PATH_LITERAL("html"));
   gfx::NativeWindow owning_window = web_contents ?
-      platform_util::GetTopLevel(web_contents->GetView()->GetNativeView())
+      platform_util::GetTopLevel(web_contents->GetNativeView())
           : NULL;
 #if defined(OS_WIN)
   if (!owning_window &&

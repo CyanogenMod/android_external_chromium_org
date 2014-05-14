@@ -214,6 +214,8 @@ class _Generator(object):
       # static. On the other hand, those declared inline (e.g. in an object) do.
       maybe_static = '' if is_toplevel else 'static '
       (c.Append()
+        .Append('%sstd::string %sToString(%s as_enum);' %
+                (maybe_static, classname, classname))
         .Append('%sstd::string ToString(%s as_enum);' %
                 (maybe_static, classname))
         .Append('%s%s Parse%s(const std::string& as_string);' %
@@ -398,5 +400,5 @@ class _Generator(object):
     # For example, optional properties may have failed to parse, but the
     # parser was able to continue.
     if self._generate_error_messages:
-      params += ('base::string16* error = NULL',)
+      params += ('base::string16* error',)
     return ', '.join(str(p) for p in params)

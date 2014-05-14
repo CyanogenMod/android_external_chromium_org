@@ -6,6 +6,15 @@
 // See extensions/common/features/* to understand this file, in particular
 // feature.h, simple_feature.h, and base_feature_provider.h.
 
+// To add a new whitelisted ID, SHA-1 it and force it to uppercase. In Bash:
+//
+// $ echo -n "aaaabbbbccccddddeeeeffffgggghhhh" | \
+// sha1sum | tr '[:lower:]' '[:upper:]'
+// 9A0417016F345C934A1A88F55CA17C05014EEEBA  -
+//
+// Google employees: please update http://go/chrome-api-whitelist to map
+// hashes back to ids.
+
 {
   "app": {
     "channel": "stable",
@@ -28,6 +37,10 @@
   "author": {
     "channel": "stable",
     "extension_types": "all"
+  },
+  "automation": {
+    "channel": "trunk",
+    "extension_types": ["extension", "legacy_packaged_app"]
   },
   "bluetooth": {
     // Note: The "bluetooth" manifest permission is used by the
@@ -169,10 +182,19 @@
       "location": "component"
     }
   ],
-  "file_handlers": {
+  "file_handlers": [
+  {
     "channel": "stable",
     "extension_types": ["platform_app"]
-  },
+  }, {
+    "channel": "stable",
+    "extension_types": [ "extension"],
+    "whitelist": [
+      "2FC374607C2DF285634B67C64A2E356C607091C3",  // Quickoffice
+      "3727DD3E564B6055387425027AD74C58784ACC15",  // Quickoffice internal
+      "12E618C3C6E97495AAECF2AC12DEB082353241C6"   // QO component extension
+    ]
+  }],
   "homepage_url": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"]
@@ -328,10 +350,25 @@
     "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
     "min_manifest_version": 2
   },
-  "system_indicator": {
-    "channel": "dev",
-    "extension_types": ["extension", "legacy_packaged_app", "platform_app"]
-  },
+  "system_indicator": [
+    {
+      "channel": "dev",
+      "extension_types": ["extension", "legacy_packaged_app", "platform_app"]
+    },
+    {
+      "channel": "stable",
+      "whitelist": [
+        "F29716B08705C9D3C12CDFE3F638BAE709570C31",  // browser_tests
+        // See crbug.com/245730 for details on the Hangouts whitelist.
+        "53041A2FA309EECED01FFC751E7399186E860B2C",  // Hangouts
+        "312745D9BF916161191143F6490085EEA0434997",  // Hangouts beta
+        "A74A4D44C7CFCD8844830E6140C8D763E12DD8F3",  // Hangouts alpha
+        "E7E2461CE072DF036CF9592740196159E2D7C089",  // Hangouts debug
+        "49DA0B9CCEEA299186C6E7226FD66922D57543DC"   // Hangouts dev
+      ],
+      "extension_types": ["extension", "platform_app"]
+    }
+  ],
   "theme": {
     "channel": "stable",
     "extension_types": ["theme"]

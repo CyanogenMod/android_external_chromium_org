@@ -18,10 +18,10 @@
 #include "base/strings/string_util.h"
 #include "base/task_runner.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "chrome/browser/feedback/feedback_util.h"
 #include "chrome/browser/memory_details.h"
 #include "chrome/common/chrome_switches.h"
 #include "chromeos/network/network_event_log.h"
+#include "components/feedback/feedback_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "dbus/dbus_statistics.h"
 
@@ -158,7 +158,7 @@ LogDictionaryType* GetSystemLogs(base::FilePath* zip_file_name,
     base::TrimWhitespaceASCII(key, base::TRIM_ALL, &key);
     if (!key.empty()) {
       std::string value = ReadValue(&data);
-      if (IsStringUTF8(value)) {
+      if (base::IsStringUTF8(value)) {
         base::TrimWhitespaceASCII(value, base::TRIM_ALL, &value);
         if (value.empty())
           (*logs)[key] = kEmptyLogEntry;

@@ -63,6 +63,7 @@ LOCAL_SRC_FILES := \
 	content/public/browser/browser_main_parts.cc \
 	content/public/browser/browser_message_filter.cc \
 	content/public/browser/browser_plugin_guest_delegate.cc \
+	content/public/browser/browser_plugin_guest_manager_delegate.cc \
 	content/public/browser/content_browser_client.cc \
 	content/public/browser/desktop_media_id.cc \
 	content/public/browser/download_manager_delegate.cc \
@@ -114,7 +115,6 @@ LOCAL_SRC_FILES := \
 	content/browser/android/in_process/synchronous_compositor_output_surface.cc \
 	content/browser/android/in_process/synchronous_input_event_filter.cc \
 	content/browser/android/interstitial_page_delegate_android.cc \
-	content/browser/android/layer_tree_build_helper_impl.cc \
 	content/browser/android/load_url_params.cc \
 	content/browser/android/overscroll_glow.cc \
 	content/browser/android/surface_texture_peer_browser_impl.cc \
@@ -157,9 +157,9 @@ LOCAL_SRC_FILES := \
 	content/browser/devtools/devtools_system_info_handler.cc \
 	content/browser/devtools/devtools_tracing_handler.cc \
 	content/browser/devtools/ipc_devtools_agent_host.cc \
+	content/browser/devtools/embedded_worker_devtools_manager.cc \
 	content/browser/devtools/render_view_devtools_agent_host.cc \
 	content/browser/devtools/renderer_overrides_handler.cc \
-	content/browser/devtools/shared_worker_devtools_manager.cc \
 	content/browser/devtools/tethering_handler.cc \
 	content/browser/devtools/worker_devtools_manager.cc \
 	content/browser/devtools/worker_devtools_message_filter.cc \
@@ -354,6 +354,7 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/ime_adapter_android.cc \
 	content/browser/renderer_host/input/gesture_event_queue.cc \
 	content/browser/renderer_host/input/input_router_impl.cc \
+	content/browser/renderer_host/input/input_router_config_helper.cc \
 	content/browser/renderer_host/input/motion_event_android.cc \
 	content/browser/renderer_host/input/motion_event_web.cc \
 	content/browser/renderer_host/input/synthetic_gesture.cc \
@@ -429,6 +430,7 @@ LOCAL_SRC_FILES := \
 	content/browser/service_worker/service_worker_context_wrapper.cc \
 	content/browser/service_worker/service_worker_controllee_request_handler.cc \
 	content/browser/service_worker/service_worker_database.cc \
+	content/browser/service_worker/service_worker_disk_cache.cc \
 	content/browser/service_worker/service_worker_dispatcher_host.cc \
 	content/browser/service_worker/service_worker_fetch_dispatcher.cc \
 	content/browser/service_worker/service_worker_handle.cc \
@@ -437,6 +439,7 @@ LOCAL_SRC_FILES := \
 	content/browser/service_worker/service_worker_job_coordinator.cc \
 	content/browser/service_worker/service_worker_process_manager.cc \
 	content/browser/service_worker/service_worker_provider_host.cc \
+	content/browser/service_worker/service_worker_read_from_cache_job.cc \
 	content/browser/service_worker/service_worker_register_job.cc \
 	content/browser/service_worker/service_worker_registration.cc \
 	content/browser/service_worker/service_worker_registration_status.cc \
@@ -527,7 +530,6 @@ MY_CFLAGS_Debug := \
 	-Wno-unused-local-typedefs \
 	-m64 \
 	-march=x86-64 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \
@@ -577,11 +579,6 @@ MY_DEFS_Debug := \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
-	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
-	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
 	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
@@ -704,7 +701,6 @@ MY_CFLAGS_Release := \
 	-Wno-unused-local-typedefs \
 	-m64 \
 	-march=x86-64 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \
@@ -754,11 +750,6 @@ MY_DEFS_Release := \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
-	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
-	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
 	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \

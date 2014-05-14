@@ -415,16 +415,6 @@ const FavoriteState* NetworkStateHandler::GetEAPForEthernet(
   return list.front();
 }
 
-void NetworkStateHandler::GetNetworkStatePropertiesForTest(
-    base::DictionaryValue* dictionary) const {
-  for (ManagedStateList::const_iterator iter = network_list_.begin();
-       iter != network_list_.end(); ++iter) {
-    base::DictionaryValue* network_dict = new base::DictionaryValue;
-    (*iter)->AsNetworkState()->GetProperties(network_dict);
-    dictionary->SetWithoutPathExpansion((*iter)->path(), network_dict);
-  }
-}
-
 //------------------------------------------------------------------------------
 // ShillPropertyHandler::Delegate overrides
 
@@ -638,6 +628,24 @@ void NetworkStateHandler::UpdateDeviceProperty(const std::string& device_path,
       }
       RequestUpdateForNetwork(ethernet_service->path());
     }
+  }
+}
+
+void NetworkStateHandler::UpdateIPConfigProperties(
+    ManagedState::ManagedType type,
+    const std::string& path,
+    const std::string& ip_config_path,
+    const base::DictionaryValue& properties)  {
+  if (type == ManagedState::MANAGED_TYPE_NETWORK) {
+    NetworkState* network = GetModifiableNetworkState(path);
+    if (!network)
+      return;
+    network->IPConfigPropertiesChanged(properties);
+  } else if (type == ManagedState::MANAGED_TYPE_DEVICE) {
+    DeviceState* device = GetModifiableDeviceState(path);
+    if (!device)
+      return;
+    device->IPConfigPropertiesChanged(ip_config_path, properties);
   }
 }
 

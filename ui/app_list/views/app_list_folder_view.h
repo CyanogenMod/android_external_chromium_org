@@ -5,6 +5,8 @@
 #ifndef UI_APP_LIST_VIEWS_APP_LIST_FOLDER_VIEW_H_
 #define UI_APP_LIST_VIEWS_APP_LIST_FOLDER_VIEW_H_
 
+#include <string>
+
 #include "ui/app_list/app_list_item_list_observer.h"
 #include "ui/app_list/views/apps_grid_view.h"
 #include "ui/app_list/views/apps_grid_view_folder_delegate.h"
@@ -101,9 +103,11 @@ class AppListFolderView : public views::View,
       AppsGridView::Pointer pointer,
       const gfx::Point& drag_point_in_folder_grid) OVERRIDE;
   virtual void DispatchEndDragEventForReparent(
-      bool events_forwarded_to_drag_drop_host) OVERRIDE;
+      bool events_forwarded_to_drag_drop_host,
+      bool cancel_drag) OVERRIDE;
   virtual bool IsPointOutsideOfFolderBoundary(const gfx::Point& point) OVERRIDE;
   virtual bool IsOEMFolder() const OVERRIDE;
+  virtual void SetRootLevelDragViewVisible(bool visible) OVERRIDE;
 
   AppsContainerView* container_view_;  // Not owned.
   AppListMainView* app_list_main_view_;   // Not Owned.

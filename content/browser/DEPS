@@ -1,5 +1,4 @@
 include_rules = [
-  "+content/port/browser",
   "+content/public/browser",
   "+media/audio",  # For audio input for speech input feature.
   "+media/base",  # For Android JNI registration.
@@ -33,6 +32,7 @@ include_rules = [
   # header-only types, and some selected common code.
   "-third_party/WebKit",
   "+third_party/WebKit/public/platform/WebCursorInfo.h",
+  "+third_party/WebKit/public/platform/WebGamepad.h",
   "+third_party/WebKit/public/platform/WebGamepads.h",
   "+third_party/WebKit/public/platform/WebGraphicsContext3D.h",
   "+third_party/WebKit/public/platform/WebIDBDatabaseException.h",

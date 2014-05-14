@@ -14,7 +14,7 @@
         border-style: solid;
         border-width: 0px 0px;
         color: #666666;
-        font-family: 'Droid Sans';
+        font-family: roboto-bold;
         font-weight: 100;
       }
 
@@ -53,13 +53,13 @@
         height: 30%;
       }
 
-      :host([image].search) .key {
-        height: 80%;
+      :host([image].tab) .key {
+        height: 40%;
       }
 
       :host .hint,
       :host([invert]) key {
-        color: #bbbbbb;
+        color: #bababa;
       }
 
       :host .hint {
@@ -69,12 +69,20 @@
         top: 5%;
       }
 
+      :host-context(.hide-hint-text) .hint {
+        display: none;
+      }
+
       :host([invert]) .hint {
         color: #666666;
       }
 
       :host(.dark) {
         font-size: 70%;
+      }
+
+      :host(.dark.active) {
+        background-color: #cccccc;
       }
 
       :host(.active) {

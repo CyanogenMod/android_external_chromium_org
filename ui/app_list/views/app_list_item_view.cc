@@ -27,6 +27,7 @@
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/transform_util.h"
+#include "ui/views/background.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/menu/menu_runner.h"
@@ -39,6 +40,15 @@ namespace {
 const int kTopPadding = 20;
 const int kIconTitleSpacing = 7;
 const int kProgressBarHorizontalPadding = 12;
+
+// The font is different on each platform. The font size is adjusted on some
+// platforms to keep a consistent look.
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+// Reducing the font size by 2 makes it the same as the Windows font size.
+const int kFontSizeDelta = -2;
+#else
+const int kFontSizeDelta = 0;
+#endif
 
 // Radius of the folder dropping preview circle.
 const int kFolderPreviewRadius = 40;
@@ -72,10 +82,12 @@ AppListItemView::AppListItemView(AppsGridView* apps_grid_view,
   title_->SetBackgroundColor(0);
   title_->SetAutoColorReadabilityEnabled(false);
   title_->SetEnabledColor(kGridTitleColor);
-  title_->SetFontList(rb.GetFontList(kItemTextFontStyle));
+  title_->SetFontList(
+      rb.GetFontList(kItemTextFontStyle).DeriveWithSizeDelta(kFontSizeDelta));
   title_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   title_->SetVisible(!item_->is_installing());
   title_->Invalidate();
+  SetTitleSubpixelAA();
 
   const gfx::ShadowValue kIconShadows[] = {
     gfx::ShadowValue(gfx::Point(0, 2), 2, SkColorSetARGB(0x24, 0, 0, 0)),
@@ -192,6 +204,32 @@ void AppListItemView::OnMouseDragTimer() {
   SetUIState(UI_STATE_DRAGGING);
 }
 
+void AppListItemView::SetTitleSubpixelAA() {
+  // TODO(tapted): Enable AA for folders as well, taking care to play nice with
+  // the folder bubble animation.
+  bool enable_aa = !item_->IsInFolder() && ui_state_ == UI_STATE_NORMAL &&
+                   !item_->highlighted() &&
+                   !apps_grid_view_->IsSelectedView(this) &&
+                   !apps_grid_view_->IsAnimatingView(this);
+
+  bool currently_enabled = title_->background() != NULL;
+  if (currently_enabled == enable_aa)
+    return;
+
+  if (enable_aa) {
+    title_->SetBackgroundColor(app_list::kContentsBackgroundColor);
+    title_->set_background(views::Background::CreateSolidBackground(
+        app_list::kContentsBackgroundColor));
+  } else {
+    // In other cases, keep the background transparent to ensure correct
+    // interactions with animations. This will temporarily disable subpixel AA.
+    title_->SetBackgroundColor(0);
+    title_->set_background(NULL);
+  }
+  title_->Invalidate();
+  title_->SchedulePaint();
+}
+
 void AppListItemView::Prerender() {
   title_->PaintToBackingImage();
 }
@@ -287,6 +325,11 @@ void AppListItemView::Layout() {
                             kProgressBarHorizontalPadding);
   progress_bar_bounds.set_y(title_bounds.y());
   progress_bar_->SetBoundsRect(progress_bar_bounds);
+}
+
+void AppListItemView::SchedulePaintInRect(const gfx::Rect& r) {
+  SetTitleSubpixelAA();
+  views::CustomButton::SchedulePaintInRect(r);
 }
 
 void AppListItemView::OnPaint(gfx::Canvas* canvas) {

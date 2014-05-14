@@ -13,6 +13,7 @@
 #include "content/renderer/pepper/pepper_file_ref_renderer_host.h"
 #include "content/renderer/pepper/pepper_file_system_host.h"
 #include "content/renderer/pepper/pepper_graphics_2d_host.h"
+#include "content/renderer/pepper/pepper_media_stream_video_track_host.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/pepper/pepper_truetype_font_host.h"
 #include "content/renderer/pepper/pepper_url_loader_host.h"
@@ -126,6 +127,9 @@ scoped_ptr<ResourceHost> ContentRendererPepperHostFactory::CreateResourceHost(
       return scoped_ptr<ResourceHost>(
           new PepperWebSocketHost(host_, instance, params.pp_resource()));
 #if defined(ENABLE_WEBRTC)
+    case PpapiHostMsg_MediaStreamVideoTrack_Create::ID:
+      return scoped_ptr<ResourceHost>(new PepperMediaStreamVideoTrackHost(
+          host_, instance, params.pp_resource()));
     // These private MediaStream interfaces are exposed as if they were public
     // so they can be used by NaCl plugins. However, they are available only
     // for whitelisted apps.
@@ -157,7 +161,7 @@ scoped_ptr<ResourceHost> ContentRendererPepperHostFactory::CreateResourceHost(
         }
         // Check that the family name is valid UTF-8 before passing it to the
         // host OS.
-        if (IsStringUTF8(desc.family)) {
+        if (base::IsStringUTF8(desc.family)) {
           return scoped_ptr<ResourceHost>(new PepperTrueTypeFontHost(
               host_, instance, params.pp_resource(), desc));
         }

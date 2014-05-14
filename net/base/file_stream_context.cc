@@ -4,8 +4,10 @@
 
 #include "net/base/file_stream_context.h"
 
+#include "base/files/file_path.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/task_runner.h"
 #include "base/task_runner_util.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
@@ -182,10 +184,10 @@ FileStream::Context::IOResult FileStream::Context::CloseFileImpl() {
 
 void FileStream::Context::OnOpenCompleted(const CompletionCallback& callback,
                                           OpenResult open_result) {
-  if (open_result.file.IsValid() && !orphaned_) {
-    file_ = open_result.file.Pass();
+  file_ = open_result.file.Pass();
+  if (file_.IsValid() && !orphaned_)
     OnAsyncFileOpened();
-  }
+
   OnAsyncCompleted(IntToInt64(callback), open_result.error_code);
 }
 

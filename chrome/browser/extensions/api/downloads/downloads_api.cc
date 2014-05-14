@@ -61,7 +61,6 @@
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/browser/extension_registry.h"
@@ -614,16 +613,34 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
   void OnItemUpdated() { ++updated_; }
   void OnChangedFired() { ++changed_fired_; }
 
-  void set_filename_change_callbacks(
+  static void SetDetermineFilenameTimeoutSecondsForTesting(int s) {
+    determine_filename_timeout_s_ = s;
+  }
+
+  void BeginFilenameDetermination(
       const base::Closure& no_change,
       const ExtensionDownloadsEventRouter::FilenameChangedCallback& change) {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
+    ClearPendingDeterminers();
     filename_no_change_ = no_change;
     filename_change_ = change;
     determined_filename_ = creator_suggested_filename_;
     determined_conflict_action_ = creator_conflict_action_;
     // determiner_.install_time should default to 0 so that creator suggestions
     // should be lower priority than any actual onDeterminingFilename listeners.
+
+    // Ensure that the callback is called within a time limit.
+    weak_ptr_factory_.reset(
+        new base::WeakPtrFactory<ExtensionDownloadsEventRouterData>(this));
+    base::MessageLoopForUI::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&ExtensionDownloadsEventRouterData::DetermineFilenameTimeout,
+                   weak_ptr_factory_->GetWeakPtr()),
+        base::TimeDelta::FromSeconds(determine_filename_timeout_s_));
+  }
+
+  void DetermineFilenameTimeout() {
+    CallFilenameCallback();
   }
 
   void ClearPendingDeterminers() {
@@ -749,6 +766,8 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
   }
 
  private:
+  static int determine_filename_timeout_s_;
+
   struct DeterminerInfo {
     DeterminerInfo();
     DeterminerInfo(const std::string& e_id,
@@ -771,17 +790,8 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
       if (!iter->reported)
         return;
     }
-    if (determined_filename_.empty() &&
-        (determined_conflict_action_ ==
-         downloads::FILENAME_CONFLICT_ACTION_UNIQUIFY)) {
-      if (!filename_no_change_.is_null())
-        filename_no_change_.Run();
-    } else {
-      if (!filename_change_.is_null()) {
-        filename_change_.Run(determined_filename_, ConvertConflictAction(
-            determined_conflict_action_));
-      }
-    }
+    CallFilenameCallback();
+
     // Don't clear determiners_ immediately in case there's a second listener
     // for one of the extensions, so that DetermineFilename can return
     // kTooManyListeners. After a few seconds, DetermineFilename will return
@@ -793,8 +803,26 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
         FROM_HERE,
         base::Bind(&ExtensionDownloadsEventRouterData::ClearPendingDeterminers,
                    weak_ptr_factory_->GetWeakPtr()),
-        base::TimeDelta::FromSeconds(30));
+        base::TimeDelta::FromSeconds(15));
   }
+
+  void CallFilenameCallback() {
+    if (determined_filename_.empty() &&
+        (determined_conflict_action_ ==
+         downloads::FILENAME_CONFLICT_ACTION_UNIQUIFY)) {
+      if (!filename_no_change_.is_null())
+        filename_no_change_.Run();
+    } else {
+      if (!filename_change_.is_null()) {
+        filename_change_.Run(determined_filename_, ConvertConflictAction(
+            determined_conflict_action_));
+      }
+    }
+    // Clear the callbacks immediately in case they aren't idempotent.
+    filename_no_change_ = base::Closure();
+    filename_change_ = ExtensionDownloadsEventRouter::FilenameChangedCallback();
+  }
+
 
   int updated_;
   int changed_fired_;
@@ -818,6 +846,8 @@ class ExtensionDownloadsEventRouterData : public base::SupportsUserData::Data {
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionDownloadsEventRouterData);
 };
+
+int ExtensionDownloadsEventRouterData::determine_filename_timeout_s_ = 15;
 
 ExtensionDownloadsEventRouterData::DeterminerInfo::DeterminerInfo(
     const std::string& e_id,
@@ -958,7 +988,7 @@ DownloadsDownloadFunction::DownloadsDownloadFunction() {}
 
 DownloadsDownloadFunction::~DownloadsDownloadFunction() {}
 
-bool DownloadsDownloadFunction::RunImpl() {
+bool DownloadsDownloadFunction::RunAsync() {
   scoped_ptr<downloads::Download::Params> params(
       downloads::Download::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -1207,7 +1237,7 @@ DownloadsRemoveFileFunction::DownloadsRemoveFileFunction() {
 DownloadsRemoveFileFunction::~DownloadsRemoveFileFunction() {
 }
 
-bool DownloadsRemoveFileFunction::RunImpl() {
+bool DownloadsRemoveFileFunction::RunAsync() {
   scoped_ptr<downloads::RemoveFile::Params> params(
       downloads::RemoveFile::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -1240,7 +1270,7 @@ DownloadsAcceptDangerFunction::~DownloadsAcceptDangerFunction() {}
 DownloadsAcceptDangerFunction::OnPromptCreatedCallback*
     DownloadsAcceptDangerFunction::on_prompt_created_ = NULL;
 
-bool DownloadsAcceptDangerFunction::RunImpl() {
+bool DownloadsAcceptDangerFunction::RunAsync() {
   scoped_ptr<downloads::AcceptDanger::Params> params(
       downloads::AcceptDanger::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -1261,8 +1291,7 @@ void DownloadsAcceptDangerFunction::PromptOrWait(int download_id, int retries) {
     SendResponse(error_.empty());
     return;
   }
-  bool visible = platform_util::IsVisible(
-      web_contents->GetView()->GetNativeView());
+  bool visible = platform_util::IsVisible(web_contents->GetNativeView());
   if (!visible) {
     if (retries > 0) {
       base::MessageLoopForUI::current()->PostDelayedTask(
@@ -1317,7 +1346,7 @@ DownloadsShowFunction::DownloadsShowFunction() {}
 
 DownloadsShowFunction::~DownloadsShowFunction() {}
 
-bool DownloadsShowFunction::RunImpl() {
+bool DownloadsShowFunction::RunAsync() {
   scoped_ptr<downloads::Show::Params> params(
       downloads::Show::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -1334,7 +1363,7 @@ DownloadsShowDefaultFolderFunction::DownloadsShowDefaultFolderFunction() {}
 
 DownloadsShowDefaultFolderFunction::~DownloadsShowDefaultFolderFunction() {}
 
-bool DownloadsShowDefaultFolderFunction::RunImpl() {
+bool DownloadsShowDefaultFolderFunction::RunAsync() {
   DownloadManager* manager = NULL;
   DownloadManager* incognito_manager = NULL;
   GetManagers(GetProfile(), include_incognito(), &manager, &incognito_manager);
@@ -1372,7 +1401,7 @@ DownloadsDragFunction::DownloadsDragFunction() {}
 
 DownloadsDragFunction::~DownloadsDragFunction() {}
 
-bool DownloadsDragFunction::RunImpl() {
+bool DownloadsDragFunction::RunAsync() {
   scoped_ptr<downloads::Drag::Params> params(
       downloads::Drag::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -1386,7 +1415,7 @@ bool DownloadsDragFunction::RunImpl() {
   RecordApiFunctions(DOWNLOADS_FUNCTION_DRAG);
   gfx::Image* icon = g_browser_process->icon_manager()->LookupIconFromFilepath(
       download_item->GetTargetFilePath(), IconLoader::NORMAL);
-  gfx::NativeView view = web_contents->GetView()->GetNativeView();
+  gfx::NativeView view = web_contents->GetNativeView();
   {
     // Enable nested tasks during DnD, while |DragDownload()| blocks.
     base::MessageLoop::ScopedNestableTaskAllower allow(
@@ -1466,7 +1495,7 @@ void DownloadsGetFileIconFunction::SetIconExtractorForTesting(
   icon_extractor_.reset(extractor);
 }
 
-bool DownloadsGetFileIconFunction::RunImpl() {
+bool DownloadsGetFileIconFunction::RunAsync() {
   scoped_ptr<downloads::GetFileIcon::Params> params(
       downloads::GetFileIcon::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -1535,6 +1564,12 @@ ExtensionDownloadsEventRouter::~ExtensionDownloadsEventRouter() {
     router->UnregisterObserver(this);
 }
 
+void ExtensionDownloadsEventRouter::
+    SetDetermineFilenameTimeoutSecondsForTesting(int s) {
+  ExtensionDownloadsEventRouterData::
+      SetDetermineFilenameTimeoutSecondsForTesting(s);
+}
+
 void ExtensionDownloadsEventRouter::SetShelfEnabled(
     const extensions::Extension* extension, bool enabled) {
   std::set<const extensions::Extension*>::iterator iter =
@@ -1558,23 +1593,22 @@ bool ExtensionDownloadsEventRouter::IsShelfEnabled() const {
 // chrome.downloads.onDeterminingFilename.addListener, which adds an
 // EventListener object to ExtensionEventRouter::listeners().
 //
-// When a download's filename is being determined,
-// ChromeDownloadManagerDelegate::CheckVisitedReferrerBeforeDone (CVRBD) passes
-// 2 callbacks to ExtensionDownloadsEventRouter::OnDeterminingFilename (ODF),
-// which stores the callbacks in the item's ExtensionDownloadsEventRouterData
-// (EDERD) along with all of the extension IDs that are listening for
-// onDeterminingFilename events.  ODF dispatches
-// chrome.downloads.onDeterminingFilename.
+// When a download's filename is being determined, DownloadTargetDeterminer (via
+// ChromeDownloadManagerDelegate (CDMD) ::NotifyExtensions()) passes 2 callbacks
+// to ExtensionDownloadsEventRouter::OnDeterminingFilename (ODF), which stores
+// the callbacks in the item's ExtensionDownloadsEventRouterData (EDERD) along
+// with all of the extension IDs that are listening for onDeterminingFilename
+// events. ODF dispatches chrome.downloads.onDeterminingFilename.
 //
 // When the extension's event handler calls |suggestCallback|,
 // downloads_custom_bindings.js calls
-// DownloadsInternalDetermineFilenameFunction::RunImpl, which calls
+// DownloadsInternalDetermineFilenameFunction::RunAsync, which calls
 // EDER::DetermineFilename, which notifies the item's EDERD.
 //
 // When the last extension's event handler returns, EDERD calls one of the two
-// callbacks that CVRBD passed to ODF, allowing CDMD to complete the filename
-// determination process. If multiple extensions wish to override the filename,
-// then the extension that was last installed wins.
+// callbacks that CDMD passed to ODF, allowing DownloadTargetDeterminer to
+// continue the filename determination process. If multiple extensions wish to
+// override the filename, then the extension that was last installed wins.
 
 void ExtensionDownloadsEventRouter::OnDeterminingFilename(
     DownloadItem* item,
@@ -1588,8 +1622,7 @@ void ExtensionDownloadsEventRouter::OnDeterminingFilename(
     no_change.Run();
     return;
   }
-  data->ClearPendingDeterminers();
-  data->set_filename_change_callbacks(no_change, change);
+  data->BeginFilenameDetermination(no_change, change);
   bool any_determiners = false;
   base::DictionaryValue* json = DownloadItemToJSON(
       item, profile_).release();

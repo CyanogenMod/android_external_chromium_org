@@ -12,7 +12,7 @@ from telemetry.page.actions.all_page_actions import *
 from telemetry.unittest import options_for_unittests
 
 
-class TestRepaintPage(page_module.PageWithDefaultRunNavigate):
+class TestRepaintPage(page_module.Page):
   def __init__(self, page_set, base_dir):
     super(TestRepaintPage, self).__init__('file://blank.html',
                                           page_set, base_dir)
@@ -34,7 +34,7 @@ class RepaintUnitTest(
     self._options = options_for_unittests.GetCopy()
     self._options.browser_options.wpr_mode = wpr_modes.WPR_OFF
 
-  @test.Disabled('android')
+  @test.Disabled  # http://crbug.com/368767
   def testRepaint(self):
     ps = self.CreateEmptyPageSet()
     ps.AddPage(TestRepaintPage(ps, ps.base_dir))

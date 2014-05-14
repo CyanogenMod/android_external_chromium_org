@@ -332,6 +332,8 @@
       'safe_browsing%': 1,
 
       # Speech input is compiled in by default. Set to 0 to disable.
+      # TODO(tommyw): Speech Input doesn't exist anymore. Clarify the scope
+      # of this flag (and probably rename it).
       'input_speech%': 1,
 
       # Notifications are compiled in by default. Set to 0 to disable.
@@ -480,8 +482,15 @@
       # Enables used resource whitelist generation; disabled by default.
       'enable_resource_whitelist_generation%': 0,
 
+      # Enable FILE support by default.
+      'disable_file_support%': 0,
+
       # Enable FTP support by default.
       'disable_ftp_support%': 0,
+
+      # Use native android functions in place of ICU.  Not supported by most
+      # components.
+      'use_icu_alternatives_on_android%': 0,
 
       # XInput2 multitouch support is enabled by default (use_xi2_mt=2).
       # Setting to zero value disables XI2 MT. When XI2 MT is enabled,
@@ -811,10 +820,7 @@
 
         ['OS=="linux" and target_arch=="arm" and chromeos==0', {
           # Set some defaults for arm/linux chrome builds
-          # TODO(dmikurube): Change the default of use_allocator to "none".
-          # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-          'linux_use_tcmalloc%': 0,
-          'use_allocator%': 'see_use_tcmalloc',
+          'use_allocator%': 'none',
           # sysroot needs to be an absolute path otherwise it generates
           # incorrect results when passed to pkg-config
           'sysroot%': '<!(cd <(DEPTH) && pwd -P)/arm-sysroot',
@@ -853,12 +859,12 @@
           'test_isolation_mode%': 'noop',
         }],
         # Whether Android ARM or x86 build uses OpenMAX DL FFT.
-        ['OS=="android" and ((target_arch=="arm" and arm_version >= 7) or target_arch=="ia32" or target_arch=="x64") and android_webview_build==0', {
-          # Currently only supported on Android ARMv7+, ia32 or x64
-          # without webview.  When enabled, this will also enable
-          # WebAudio support on Android ARM, ia32 and x64.  Default is
-          # enabled.  Whether WebAudio is actually available depends
-          # on runtime settings and flags.
+        ['OS=="android" and ((target_arch=="arm" and arm_version >= 7) or target_arch=="ia32" or target_arch=="x64")', {
+          # Currently only supported on Android ARMv7+, ia32 or x64.
+          # When enabled, this will also enable WebAudio support on
+          # Android ARM, ia32 and x64.  Default is enabled.  Whether
+          # WebAudio is actually available depends on runtime settings
+          # and flags.
           'use_openmax_dl_fft%': 1,
         }, {
           'use_openmax_dl_fft%': 0,
@@ -1038,7 +1044,9 @@
     'cld2_dynamic%': '<(cld2_dynamic)',
     'cld2_is_component%': '<(cld2_is_component)',
     'enable_captive_portal_detection%': '<(enable_captive_portal_detection)',
+    'disable_file_support%': '<(disable_file_support)',
     'disable_ftp_support%': '<(disable_ftp_support)',
+    'use_icu_alternatives_on_android%': '<(use_icu_alternatives_on_android)',
     'enable_task_manager%': '<(enable_task_manager)',
     'sas_dll_path%': '<(sas_dll_path)',
     'wix_path%': '<(wix_path)',
@@ -1211,15 +1219,8 @@
     'binutils_dir%': '',
 
     # Enable TCMalloc.
-    # TODO(dmikurube): Change Linux default of use_allocator to "tcmalloc".
-    # TODO(dmikurube): Change Android default of use_allocator to "none".
-    # TODO(dmikurube): Kill {linux|android}_use_tcmalloc. http://crbug.com/345554
-    # {linux|android}_use_tcmalloc are to be replaced with use_allocator.
-    # They are now used only if use_allocator=="see_use_tcmalloc" (default).
-    # TODO(dmikurube): Assert when {linux|android}_use_tcmalloc is explicitly specified.
-    'linux_use_tcmalloc%': 1,
-    'android_use_tcmalloc%': 0,
-    'use_allocator%': 'see_use_tcmalloc',
+    # Default of 'use_allocator' is set to 'none' if OS=='android' later.
+    'use_allocator%': 'tcmalloc',
 
     # Set to 1 to link against libgnome-keyring instead of using dlopen().
     'linux_link_gnome_keyring%': 0,
@@ -1449,10 +1450,7 @@
             'werror%': '',
             'disable_nacl%': 1,
             'nacl_untrusted_build%': 0,
-            # TODO(dmikurube): Change the default of use_allocator to "none".
-            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-            'linux_use_tcmalloc%': 0,
-            'use_allocator%': 'see_use_tcmalloc',
+            'use_allocator%': 'none',
           }],
           ['OS=="linux" and target_arch=="mipsel"', {
             'sysroot%': '<(sysroot)',
@@ -1639,10 +1637,7 @@
         'input_speech%': 0,
         'java_bridge%': 1,
         'build_ffmpegsumo%': 0,
-        # TODO(dmikurube): Change the default of use_allocator to "none".
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        'linux_use_tcmalloc%': 0,
-        'use_allocator%': 'see_use_tcmalloc',
+        'use_allocator%': 'none',
 
         # Disable Native Client.
         'disable_nacl%': 1,
@@ -2002,6 +1997,12 @@
         ],
       }],
 
+      ['OS=="win"', {
+        # The Clang plugins don't currently work on Windows.
+        # TODO(hans): One day, this will work. (crbug.com/82385)
+        'clang_use_chrome_plugins%': 0,
+      }],
+
       # On valgrind bots, override the optimizer settings so we don't inline too
       # much and make the stacks harder to figure out.
       #
@@ -2026,10 +2027,7 @@
         'win_release_InlineFunctionExpansion': '0',
         'win_release_OmitFramePointers': '0',
 
-        # TODO(dmikurube): Change the default of use_allocator to "tcmalloc".
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        'linux_use_tcmalloc%': 1,
-        'use_allocator': 'see_use_tcmalloc',
+        'use_allocator': 'tcmalloc',
         'release_valgrind_build': 1,
         'werror': '',
         'component': 'static_library',
@@ -2105,9 +2103,11 @@
         'ozone_platform%': "test",
 
         # Enable built-in ozone platforms if ozone is enabled.
+        'ozone_platform_caca%': 0,
         'ozone_platform_dri%': 1,
         'ozone_platform_test%': 1,
       }, {  # use_ozone==0
+        'ozone_platform_caca%': 0,
         'ozone_platform_dri%': 0,
         'ozone_platform_test%': 0,
       }],
@@ -2280,8 +2280,7 @@
           '<(DEPTH)/build/mac/asan.gyp:asan_dynamic_runtime',
         ],
       }],
-      # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-      ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)) and clang_type_profiler==1', {
+      ['OS=="linux" and use_allocator!="none" and clang_type_profiler==1', {
         'cflags_cc!': ['-fno-rtti'],
         'cflags_cc+': [
           '-frtti',
@@ -2388,9 +2387,6 @@
       }],
       ['configuration_policy==1', {
         'defines': ['ENABLE_CONFIGURATION_POLICY'],
-      }],
-      ['input_speech==1', {
-        'defines': ['ENABLE_INPUT_SPEECH'],
       }],
       ['notifications==1', {
         'defines': ['ENABLE_NOTIFICATIONS'],
@@ -2500,6 +2496,12 @@
           'ENABLE_EGLIMAGE=1',
         ],
       }],
+      ['asan==1', {
+        'defines': [
+          'ADDRESS_SANITIZER',
+          'MEMORY_TOOL_REPLACES_ALLOCATOR',
+        ],
+      }],
       ['syzyasan==1', {
         # SyzyAsan needs /PROFILE turned on to produce appropriate pdbs.
         'msvs_settings': {
@@ -2605,8 +2607,14 @@
       ['enable_settings_app==1', {
         'defines': ['ENABLE_SETTINGS_APP=1'],
       }],
+      ['disable_file_support==1', {
+        'defines': ['DISABLE_FILE_SUPPORT=1'],
+      }],
       ['disable_ftp_support==1', {
         'defines': ['DISABLE_FTP_SUPPORT=1'],
+      }],
+      ['use_icu_alternatives_on_android==1', {
+        'defines': ['USE_ICU_ALTERNATIVES_ON_ANDROID=1'],
       }],
       ['enable_managed_users==1', {
         'defines': ['ENABLE_MANAGED_USERS=1'],
@@ -3375,9 +3383,6 @@
                 'conditions': [
                   # Use gold linker for Android ia32 target.
                   ['OS=="android"', {
-                    'cflags': [
-                      '-fuse-ld=gold',
-                    ],
                     'ldflags': [
                       '-fuse-ld=gold',
                     ],
@@ -3403,9 +3408,6 @@
                 'conditions': [
                   # Use gold linker for Android x64 target.
                   ['OS=="android"', {
-                    'cflags': [
-                      '-fuse-ld=gold',
-                    ],
                     'ldflags': [
                       '-fuse-ld=gold',
                     ],
@@ -3469,7 +3471,6 @@
                       # compiler (r5-r7). This can be verified using
                       # webkit_unit_tests' WTF.Checked_int8_t test.
                       '-fno-tree-sra',
-                      '-fuse-ld=gold',
                       '-Wno-psabi',
                     ],
                     # Android now supports .relro sections properly.
@@ -3497,7 +3498,6 @@
                           '-mthumb-interwork',
                           '-finline-limit=64',
                           '-fno-tree-sra',
-                          '-fuse-ld=gold',
                           '-Wno-psabi',
                         ],
                         'cflags': [
@@ -3713,9 +3713,6 @@
                 'ldflags': [
                   '-fsanitize=address',
                 ],
-                'defines': [
-                  'ADDRESS_SANITIZER',
-                ],
               }],
             ],
             'conditions': [
@@ -3809,8 +3806,7 @@
           }],
           ['use_custom_libcxx==1', {
             'dependencies': [
-              '<(DEPTH)/third_party/libc++/libc++.gyp:libc++',
-              '<(DEPTH)/third_party/libc++abi/libc++abi.gyp:libc++abi',
+              '<(DEPTH)/third_party/libc++/libc++.gyp:libcxx_proxy',
             ],
           }],
           ['order_profiling!=0 and (chromeos==1 or OS=="linux" or OS=="android")', {
@@ -3849,8 +3845,7 @@
               }],
             ],
           }],
-          # TODO(dmikurube): Kill {linux|android}_use_tcmalloc. http://crbug.com/345554
-          ['use_allocator!="tcmalloc" and (use_allocator!="see_use_tcmalloc" or ((OS=="linux" and linux_use_tcmalloc==0) or (OS=="android" and android_use_tcmalloc==0)))', {
+          ['use_allocator!="tcmalloc"', {
             'defines': ['NO_TCMALLOC'],
           }],
           ['linux_use_gold_flags==1', {
@@ -3892,9 +3887,6 @@
               ['gcc_version>=48', {
                 'target_conditions': [
                   ['_toolset=="target"', {
-                    'cflags': [
-                      '-fuse-ld=gold',
-                    ],
                     'ldflags': [
                       '-fuse-ld=gold',
                     ],
@@ -3904,9 +3896,6 @@
               ['host_gcc_version>=48', {
                 'target_conditions': [
                   ['_toolset=="host"', {
-                    'cflags': [
-                      '-fuse-ld=gold',
-                    ],
                     'ldflags': [
                       '-fuse-ld=gold',
                     ],
@@ -4449,10 +4438,6 @@
                 '-w',  # http://crbug.com/162783
               ],
             },
-            'defines': [
-              'ADDRESS_SANITIZER',
-              'MEMORY_TOOL_REPLACES_ALLOCATOR',
-            ],
           }],
           ['asan_coverage!=0', {
             'target_conditions': [
@@ -5056,7 +5041,7 @@
               'VCLinkerTool': {
                 'AdditionalLibraryDirectories': [
                   # TODO(hans): If make_clang_dir is absolute, this breaks.
-                  '<(DEPTH)/<(make_clang_dir)/lib/clang/3.5/lib/windows',
+                  '<(DEPTH)/<(make_clang_dir)/lib/clang/3.5.0/lib/windows',
                 ],
               },
               'target_conditions': [

@@ -8,7 +8,12 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_vector.h"
 #include "mojo/public/cpp/bindings/remote_ptr.h"
+#include "mojo/services/public/cpp/view_manager/view_manager_types.h"
 #include "mojo/services/public/interfaces/view_manager/view_manager.mojom.h"
+
+namespace base {
+class RunLoop;
+}
 
 namespace mojo {
 namespace services {
@@ -23,11 +28,18 @@ class ViewManagerSynchronizer : public IViewManagerClient {
   explicit ViewManagerSynchronizer(ViewManager* view_manager);
   virtual ~ViewManagerSynchronizer();
 
+  bool connected() const { return connected_; }
+
   // API exposed to the node implementation that pushes local changes to the
   // service.
-  uint16_t CreateViewTreeNode();
-  void AddChild(uint16_t child_id, uint16_t parent_id);
-  void RemoveChild(uint16_t child_id, uint16_t parent_id);
+  TransportNodeId CreateViewTreeNode();
+  void DestroyViewTreeNode(TransportNodeId node_id);
+
+  // These methods take TransportIds. For views owned by the current connection,
+  // the connection id high word can be zero. In all cases, the TransportId 0x1
+  // refers to the root node.
+  void AddChild(TransportNodeId child_id, TransportNodeId parent_id);
+  void RemoveChild(TransportNodeId child_id, TransportNodeId parent_id);
 
  private:
   friend class ViewManagerTransaction;
@@ -35,9 +47,9 @@ class ViewManagerSynchronizer : public IViewManagerClient {
 
   // Overridden from IViewManagerClient:
   virtual void OnConnectionEstablished(uint16 connection_id) OVERRIDE;
-  virtual void OnNodeHierarchyChanged(uint32 node,
-                                      uint32 new_parent,
-                                      uint32 old_parent,
+  virtual void OnNodeHierarchyChanged(uint32 node_id,
+                                      uint32 new_parent_id,
+                                      uint32 old_parent_id,
                                       uint32 change_id) OVERRIDE;
   virtual void OnNodeViewReplaced(uint32_t node,
                                   uint32_t new_view_id,
@@ -62,6 +74,8 @@ class ViewManagerSynchronizer : public IViewManagerClient {
   // front of the queue.
   void RemoveFromPendingQueue(ViewManagerTransaction* transaction);
 
+  void OnRootTreeReceived(const Array<INode>& data);
+
   ViewManager* view_manager_;
   bool connected_;
   uint16_t connection_id_;
@@ -69,6 +83,10 @@ class ViewManagerSynchronizer : public IViewManagerClient {
   uint32_t next_change_id_;
 
   Transactions pending_transactions_;
+
+  // Non-NULL while blocking on the connection to |service_| during
+  // construction.
+  base::RunLoop* init_loop_;
 
   RemotePtr<IViewManager> service_;
 

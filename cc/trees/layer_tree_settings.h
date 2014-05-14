@@ -30,13 +30,15 @@ class CC_EXPORT LayerTreeSettings {
   bool partial_swap_enabled;
   bool accelerated_animation_enabled;
   bool can_use_lcd_text;
+  bool use_distance_field_text;
   bool should_clear_root_render_pass;
-  enum RasterizationSite {
-    CpuRasterization,
-    HybridRasterization,
-    GpuRasterization,
+  bool gpu_rasterization_enabled;
+  bool gpu_rasterization_forced;
+  enum RecordingMode {
+    RecordNormally,
+    RecordWithSkRecord,
   };
-  RasterizationSite rasterization_site;
+  RecordingMode recording_mode;
   bool create_low_res_tiling;
 
   enum ScrollbarAnimator {
@@ -45,8 +47,8 @@ class CC_EXPORT LayerTreeSettings {
     Thinning,
   };
   ScrollbarAnimator scrollbar_animator;
-  int scrollbar_linear_fade_delay_ms;
-  int scrollbar_linear_fade_length_ms;
+  int scrollbar_fade_delay_ms;
+  int scrollbar_fade_duration_ms;
   SkColor solid_color_scrollbar_color;
   bool calculate_top_controls_position;
   bool timeout_and_draw_when_animation_checkerboards;
@@ -65,7 +67,7 @@ class CC_EXPORT LayerTreeSettings {
   bool use_pinch_zoom_scrollbars;
   bool use_pinch_virtual_viewport;
   size_t max_tiles_for_interest_area;
-  float skewport_target_time_in_seconds;
+  float skewport_target_time_multiplier;
   int skewport_extrapolation_limit_in_content_pixels;
   size_t max_unused_resource_memory_percentage;
   size_t max_memory_for_prepaint_percentage;

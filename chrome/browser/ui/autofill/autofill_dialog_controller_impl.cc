@@ -73,7 +73,6 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/url_constants.h"
 #include "grit/chromium_strings.h"
 #include "grit/component_scaled_resources.h"
@@ -257,13 +256,12 @@ void GetBillingInfoFromOutputs(const FieldValueMap& output,
 // window might be a browser window for a Chrome tab, or it might be an app
 // window for a platform app.
 ui::BaseWindow* GetBaseWindowForWebContents(
-    const content::WebContents* web_contents) {
+    content::WebContents* web_contents) {
   Browser* browser = chrome::FindBrowserWithWebContents(web_contents);
   if (browser)
     return browser->window();
 
-  gfx::NativeWindow native_window =
-      web_contents->GetView()->GetTopLevelNativeWindow();
+  gfx::NativeWindow native_window = web_contents->GetTopLevelNativeWindow();
   apps::AppWindow* app_window =
       apps::AppWindowRegistry::GetAppWindowForNativeWindowAnyProfile(
           native_window);
@@ -565,6 +563,97 @@ ValidityMessage GetPhoneValidityMessage(const base::string16& country_name,
   return phone_message;
 }
 
+// Constructs |inputs| from template data for a given |dialog_section|.
+// |country_country| specifies the country code that the inputs should be built
+// for. Sets the |language_code| to be used for address formatting, if
+// internationalized address input is enabled. The |language_code| parameter can
+// be NULL.
+void BuildInputsForSection(DialogSection dialog_section,
+                           const std::string& country_code,
+                           DetailInputs* inputs,
+                           std::string* language_code) {
+  using l10n_util::GetStringUTF16;
+
+  const DetailInput kCCInputs[] = {
+    { DetailInput::LONG,
+      CREDIT_CARD_NUMBER,
+      GetStringUTF16(IDS_AUTOFILL_DIALOG_PLACEHOLDER_CARD_NUMBER) },
+    { DetailInput::SHORT,
+      CREDIT_CARD_EXP_MONTH,
+      GetStringUTF16(IDS_AUTOFILL_DIALOG_PLACEHOLDER_EXPIRY_MONTH) },
+    { DetailInput::SHORT,
+      CREDIT_CARD_EXP_4_DIGIT_YEAR,
+      GetStringUTF16(IDS_AUTOFILL_DIALOG_PLACEHOLDER_EXPIRY_YEAR) },
+    { DetailInput::SHORT_EOL,
+      CREDIT_CARD_VERIFICATION_CODE,
+      GetStringUTF16(IDS_AUTOFILL_DIALOG_PLACEHOLDER_CVC),
+      1.5 },
+  };
+
+  const DetailInput kBillingPhoneInputs[] = {
+    { DetailInput::LONG,
+      PHONE_BILLING_WHOLE_NUMBER,
+      GetStringUTF16(IDS_AUTOFILL_DIALOG_PLACEHOLDER_PHONE_NUMBER) },
+  };
+
+  const DetailInput kEmailInputs[] = {
+    { DetailInput::LONG,
+      EMAIL_ADDRESS,
+      GetStringUTF16(IDS_AUTOFILL_DIALOG_PLACEHOLDER_EMAIL) },
+  };
+
+  const DetailInput kShippingPhoneInputs[] = {
+    { DetailInput::LONG,
+      PHONE_HOME_WHOLE_NUMBER,
+      GetStringUTF16(IDS_AUTOFILL_DIALOG_PLACEHOLDER_PHONE_NUMBER) },
+  };
+
+  switch (dialog_section) {
+    case SECTION_CC: {
+      common::BuildInputs(kCCInputs, arraysize(kCCInputs), inputs);
+      break;
+    }
+
+    case SECTION_BILLING: {
+      i18ninput::BuildAddressInputs(common::ADDRESS_TYPE_BILLING,
+                                    country_code, inputs, language_code);
+      common::BuildInputs(kBillingPhoneInputs, arraysize(kBillingPhoneInputs),
+                          inputs);
+      common::BuildInputs(kEmailInputs, arraysize(kEmailInputs), inputs);
+      break;
+    }
+
+    case SECTION_CC_BILLING: {
+      common::BuildInputs(kCCInputs, arraysize(kCCInputs), inputs);
+
+      // Wallet only supports US billing addresses.
+      const std::string hardcoded_country_code = "US";
+      i18ninput::BuildAddressInputs(common::ADDRESS_TYPE_BILLING,
+                                    hardcoded_country_code,
+                                    inputs,
+                                    language_code);
+      DCHECK_EQ(inputs->back().type, ADDRESS_BILLING_COUNTRY);
+      inputs->back().length = DetailInput::NONE;
+      const std::string& app_locale =
+          g_browser_process->GetApplicationLocale();
+      inputs->back().initial_value =
+          AutofillCountry(hardcoded_country_code, app_locale).name();
+
+      common::BuildInputs(kBillingPhoneInputs, arraysize(kBillingPhoneInputs),
+                          inputs);
+      break;
+    }
+
+    case SECTION_SHIPPING: {
+      i18ninput::BuildAddressInputs(common::ADDRESS_TYPE_SHIPPING,
+                                    country_code, inputs, language_code);
+      common::BuildInputs(kShippingPhoneInputs, arraysize(kShippingPhoneInputs),
+                          inputs);
+      break;
+    }
+  }
+}
+
 }  // namespace
 
 AutofillDialogViewDelegate::~AutofillDialogViewDelegate() {}
@@ -720,7 +809,7 @@ void AutofillDialogControllerImpl::Show() {
       country_code = model->GetDefaultCountryCode();
 
     DetailInputs* inputs = MutableRequestedFieldsForSection(section);
-    common::BuildInputsForSection(
+    BuildInputsForSection(
         section, country_code, inputs,
         MutableAddressLanguageCodeForSection(section));
   }
@@ -1351,7 +1440,7 @@ gfx::Image AutofillDialogControllerImpl::GetGeneratedCardImage(
   const int kCardHeightPx = 190;
   const gfx::Size size(kCardWidthPx, kCardHeightPx);
   ui::ScaleFactor scale_factor = ui::GetScaleFactorForNativeView(
-      web_contents()->GetView()->GetNativeView());
+      web_contents()->GetNativeView());
   gfx::Canvas canvas(size, ui::GetImageScale(scale_factor), false);
 
   gfx::Rect display_rect(size);
@@ -2759,7 +2848,7 @@ void AutofillDialogControllerImpl::LoadRiskFingerprintData() {
       g_browser_process->local_state()->GetInt64(::prefs::kInstallDate));
 
   risk::GetFingerprint(
-      obfuscated_gaia_id, window_bounds, *web_contents(),
+      obfuscated_gaia_id, window_bounds, web_contents(),
       chrome::VersionInfo().Version(), charset, accept_languages, install_time,
       g_browser_process->GetApplicationLocale(), GetUserAgent(),
       base::Bind(&AutofillDialogControllerImpl::OnDidLoadRiskFingerprintData,
@@ -3066,8 +3155,8 @@ void AutofillDialogControllerImpl::FillOutputForSectionWithComparator(
 
   DetailInputs inputs;
   std::string country_code = CountryCodeForSection(section);
-  common::BuildInputsForSection(section, country_code, &inputs,
-                                MutableAddressLanguageCodeForSection(section));
+  BuildInputsForSection(section, country_code, &inputs,
+                        MutableAddressLanguageCodeForSection(section));
   std::vector<ServerFieldType> types = common::TypesFromInputs(inputs);
 
   scoped_ptr<DataModelWrapper> wrapper = CreateWrapper(section);
@@ -3374,8 +3463,8 @@ bool AutofillDialogControllerImpl::RebuildInputsForCountry(
 
   DetailInputs* inputs = MutableRequestedFieldsForSection(section);
   inputs->clear();
-  common::BuildInputsForSection(section, country_code, inputs,
-                                MutableAddressLanguageCodeForSection(section));
+  BuildInputsForSection(section, country_code, inputs,
+                        MutableAddressLanguageCodeForSection(section));
 
   if (!country_code.empty()) {
     GetValidator()->LoadRules(AutofillCountry::GetCountryCode(

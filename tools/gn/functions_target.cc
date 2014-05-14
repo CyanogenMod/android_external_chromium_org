@@ -58,7 +58,7 @@ Value ExecuteGenericTarget(const char* target_type,
 #define SCRIPT_EXECUTION_CONTEXT \
     "  The script will be executed with the given arguments with the current\n"\
     "  directory being that of the root build directory. If you pass files\n"\
-    "  to your script, see \"gn help to_build_path\" for how to convert\n" \
+    "  to your script, see \"gn help rebase_path\" for how to convert\n" \
     "  file names to be relative to the build directory (file names in the\n" \
     "  sources, outputs, and source_prereqs will be all treated as relative\n" \
     "  to the current build file and converted as needed automatically).\n"
@@ -70,6 +70,14 @@ Value ExecuteGenericTarget(const char* target_type,
     "  reference the output or generated intermediate file directories,\n" \
     "  respectively.\n"
 
+#define ACTION_DEPS \
+    "  The \"deps\" for an action will always be completed before any part\n" \
+    "  of the action is run so it can depend on the output of previous\n" \
+    "  steps. The \"datadeps\" will be built if the action is built, but\n" \
+    "  may not have completed before all steps of the action are started.\n" \
+    "  This can give additional parallelism in the build for runtime-only\n" \
+    "  dependencies.\n"
+
 const char kAction[] = "action";
 const char kAction_HelpShort[] =
     "action: Declare a target that runs a script a single time.";
@@ -80,14 +88,23 @@ const char kAction_Help[] =
     "  or more output files. If you want to run a script once for each of a\n"
     "  set of input files, see \"gn help action_foreach\".\n"
     "\n"
+    "Inputs\n"
+    "\n"
     "  In an action the \"sources\" and \"source_prereqs\" are treated the\n"
     "  same: they're both input dependencies on script execution with no\n"
     "  special handling. If you want to pass the sources to your script, you\n"
-    "  must do so explicitly by including them in the \"args\".\n"
+    "  must do so explicitly by including them in the \"args\". Note also\n"
+    "  that this means there is no special handling of paths since GN\n"
+    "  doesn't know which of the args are paths and not. You will want to use\n"
+    "  rebase_path() to convert paths to be relative to the root_build_dir.\n"
     "\n"
     "  It is recommended you put inputs to your script in the \"sources\"\n"
     "  variable, and stuff like other Python files required to run your\n"
     "  script in the \"source_prereqs\" variable.\n"
+    "\n"
+    ACTION_DEPS
+    "\n"
+    "Outputs\n"
     "\n"
     "  You should specify files created by your script by specifying them in\n"
     "  the \"outputs\".\n"
@@ -117,7 +134,8 @@ const char kAction_Help[] =
     "\n"
     "    # Note that we have to manually pass the sources to our script if\n"
     "    # the script needs them as inputs.\n"
-    "    args = [ \"--out\", to_build_path(target_gen_dir) ] + sources\n"
+    "    args = [ \"--out\", rebase_path(target_gen_dir, root_build_dir) ] +\n"
+    "           rebase_path(sources, root_build_dir)\n"
     "  }\n";
 
 Value RunAction(Scope* scope,
@@ -141,6 +159,8 @@ const char kActionForEach_Help[] =
     "  of sources. If you want to run a script once that takes many files as\n"
     "  input, see \"gn help action\".\n"
     "\n"
+    "Inputs\n"
+    "\n"
     "  The script will be run once per file in the \"sources\" variable. The\n"
     "  \"outputs\" variable should specify one or more files with a source\n"
     "  expansion pattern in it (see \"gn help source_expansion\"). The output\n"
@@ -151,6 +171,10 @@ const char kActionForEach_Help[] =
     "  configuration file or a Python module it uses, those files should be\n"
     "  listed in the \"source_prereqs\" variable. These files are treated as\n"
     "  dependencies of each script invocation.\n"
+    "\n"
+    ACTION_DEPS
+    "\n"
+    "Outputs\n"
     "\n"
     SCRIPT_EXECUTION_CONTEXT
     "\n"
@@ -182,11 +206,12 @@ const char kActionForEach_Help[] =
     "\n"
     "    # Note that since \"args\" is opaque to GN, if you specify paths\n"
     "    # here, you will need to convert it to be relative to the build\n"
-    "    # directory using \"to_build_path()\".\n"
-    "    args = [ \"{{source}}\",\n"
-    "             \"-o\",\n"
-    "             to_build_path(relative_target_gen_dir) + \"/\" +\n"
-    "                 {{source_name_part}}.h\" ]\n"
+    "    # directory using \"rebase_path()\".\n"
+    "    args = [\n"
+    "      \"{{source}}\",\n"
+    "      \"-o\",\n"
+    "      rebase_path(relative_target_gen_dir, root_build_dir) +\n"
+    "        \"/{{source_name_part}}.h\" ]\n"
     "  }\n"
     "\n";
 Value RunActionForEach(Scope* scope,

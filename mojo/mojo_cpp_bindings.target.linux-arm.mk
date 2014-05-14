@@ -33,6 +33,7 @@ LOCAL_SRC_FILES := \
 	mojo/public/cpp/bindings/lib/interface.cc \
 	mojo/public/cpp/bindings/lib/message.cc \
 	mojo/public/cpp/bindings/lib/message_builder.cc \
+	mojo/public/cpp/bindings/lib/message_header_validator.cc \
 	mojo/public/cpp/bindings/lib/message_queue.cc \
 	mojo/public/cpp/bindings/lib/router.cc \
 	mojo/public/cpp/bindings/lib/scratch_buffer.cc \
@@ -53,7 +54,6 @@ MY_CFLAGS_Debug := \
 	-pipe \
 	-fPIC \
 	-fno-tree-sra \
-	-fuse-ld=gold \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \
@@ -138,7 +138,6 @@ MY_CFLAGS_Release := \
 	-pipe \
 	-fPIC \
 	-fno-tree-sra \
-	-fuse-ld=gold \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \

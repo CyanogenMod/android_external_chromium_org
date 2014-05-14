@@ -16,6 +16,7 @@ GYP_TARGET_DEPENDENCIES :=
 
 ### Rules for action "generate_jni_headers_from_jar_file":
 $(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -55,7 +56,6 @@ MY_CFLAGS_Debug := \
 	-Wno-unused-local-typedefs \
 	-m64 \
 	-march=x86-64 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \
@@ -140,7 +140,6 @@ MY_CFLAGS_Release := \
 	-Wno-unused-local-typedefs \
 	-m64 \
 	-march=x86-64 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \

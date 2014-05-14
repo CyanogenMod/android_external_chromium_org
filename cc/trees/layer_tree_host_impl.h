@@ -16,6 +16,7 @@
 #include "base/time/time.h"
 #include "cc/animation/animation_events.h"
 #include "cc/animation/animation_registrar.h"
+#include "cc/animation/scrollbar_animation_controller.h"
 #include "cc/base/cc_export.h"
 #include "cc/debug/micro_benchmark_controller_impl.h"
 #include "cc/input/input_handler.h"
@@ -90,7 +91,9 @@ class LayerTreeHostImplClient {
   virtual void SendManagedMemoryStats() = 0;
   virtual bool IsInsideDraw() = 0;
   virtual void RenewTreePriority() = 0;
-  virtual void RequestScrollbarAnimationOnImplThread(base::TimeDelta delay) = 0;
+  virtual void PostDelayedScrollbarFadeOnImplThread(
+      const base::Closure& start_fade,
+      base::TimeDelta delay) = 0;
   virtual void DidActivatePendingTree() = 0;
   virtual void DidManageTiles() = 0;
 
@@ -106,6 +109,7 @@ class CC_EXPORT LayerTreeHostImpl
       public TileManagerClient,
       public OutputSurfaceClient,
       public TopControlsManagerClient,
+      public ScrollbarAnimationControllerClient,
       public base::SupportsWeakPtr<LayerTreeHostImpl> {
  public:
   static scoped_ptr<LayerTreeHostImpl> Create(
@@ -141,16 +145,17 @@ class CC_EXPORT LayerTreeHostImpl
                                        float page_scale,
                                        base::TimeDelta duration) OVERRIDE;
   virtual void SetNeedsAnimate() OVERRIDE;
-  virtual bool HaveTouchEventHandlersAt(const gfx::Point& viewport_port)
-      OVERRIDE;
+  virtual bool IsCurrentlyScrollingLayerAt(
+      const gfx::Point& viewport_point,
+      InputHandler::ScrollInputType type) OVERRIDE;
+  virtual bool HaveTouchEventHandlersAt(
+      const gfx::Point& viewport_port) OVERRIDE;
   virtual scoped_ptr<SwapPromiseMonitor> CreateLatencyInfoSwapPromiseMonitor(
       ui::LatencyInfo* latency) OVERRIDE;
 
   // TopControlsManagerClient implementation.
   virtual void DidChangeTopControlsPosition() OVERRIDE;
   virtual bool HaveRootScrollLayer() const OVERRIDE;
-
-  void StartScrollbarAnimation();
 
   struct CC_EXPORT FrameData : public RenderPassSink {
     FrameData();
@@ -227,6 +232,11 @@ class CC_EXPORT LayerTreeHostImpl
   // TileManagerClient implementation.
   virtual void NotifyReadyToActivate() OVERRIDE;
   virtual void NotifyTileInitialized(const Tile* tile) OVERRIDE;
+
+  // ScrollbarAnimationControllerClient implementation.
+  virtual void PostDelayedScrollbarFade(const base::Closure& start_fade,
+                                        base::TimeDelta delay) OVERRIDE;
+  virtual void SetNeedsScrollbarAnimationFrame() OVERRIDE;
 
   // OutputSurfaceClient implementation.
   virtual void DeferredInitialize() OVERRIDE;
@@ -398,6 +408,11 @@ class CC_EXPORT LayerTreeHostImpl
   void ResetCurrentFrameTimeForNextFrame();
   virtual base::TimeTicks CurrentFrameTimeTicks();
 
+  // Expected time between two begin impl frame calls.
+  base::TimeDelta begin_impl_frame_interval() const {
+    return begin_impl_frame_interval_;
+  }
+
   scoped_ptr<base::Value> AsValue() const { return AsValueWithFrame(NULL); }
   scoped_ptr<base::Value> AsValueWithFrame(FrameData* frame) const;
   scoped_ptr<base::Value> ActivationStateAsValue() const;
@@ -516,10 +531,10 @@ class CC_EXPORT LayerTreeHostImpl
       InputHandler::ScrollInputType type,
       LayerImpl* layer_hit_by_point,
       bool* scroll_on_main_thread,
-      bool* has_ancestor_scroll_handler) const;
+      bool* optional_has_ancestor_scroll_handler) const;
   float DeviceSpaceDistanceToLayer(const gfx::PointF& device_viewport_point,
                                    LayerImpl* layer_impl);
-  void StartScrollbarAnimationRecursive(LayerImpl* layer, base::TimeTicks time);
+  void StartScrollbarFadeRecursive(LayerImpl* layer);
   void SetManagedMemoryPolicy(const ManagedMemoryPolicy& policy,
                               bool zero_budget);
   void EnforceManagedMemoryPolicy(const ManagedMemoryPolicy& policy);
@@ -643,6 +658,9 @@ class CC_EXPORT LayerTreeHostImpl
   gfx::Rect viewport_damage_rect_;
 
   base::TimeTicks current_frame_timeticks_;
+
+  // Expected time between two begin impl frame calls.
+  base::TimeDelta begin_impl_frame_interval_;
 
   scoped_ptr<AnimationRegistrar> animation_registrar_;
 

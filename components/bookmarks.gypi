@@ -27,6 +27,7 @@
       'sources': [
         'bookmarks/core/browser/base_bookmark_model_observer.cc',
         'bookmarks/core/browser/base_bookmark_model_observer.h',
+        'bookmarks/core/browser/bookmark_client.cc',
         'bookmarks/core/browser/bookmark_client.h',
         'bookmarks/core/browser/bookmark_codec.cc',
         'bookmarks/core/browser/bookmark_codec.h',
@@ -43,12 +44,11 @@
         'bookmarks/core/browser/bookmark_node.h',
         'bookmarks/core/browser/bookmark_node_data.cc',
         'bookmarks/core/browser/bookmark_node_data.h',
+        'bookmarks/core/browser/bookmark_node_data_ios.cc',
         'bookmarks/core/browser/bookmark_node_data_mac.cc',
         'bookmarks/core/browser/bookmark_node_data_views.cc',
         'bookmarks/core/browser/bookmark_pasteboard_helper_mac.h',
         'bookmarks/core/browser/bookmark_pasteboard_helper_mac.mm',
-        'bookmarks/core/browser/bookmark_prompt_prefs.cc',
-        'bookmarks/core/browser/bookmark_prompt_prefs.h',
         'bookmarks/core/browser/bookmark_service.h',
         'bookmarks/core/browser/bookmark_storage.cc',
         'bookmarks/core/browser/bookmark_storage.h',
@@ -56,14 +56,6 @@
         'bookmarks/core/browser/bookmark_utils.h',
         'bookmarks/core/browser/scoped_group_bookmark_actions.cc',
         'bookmarks/core/browser/scoped_group_bookmark_actions.h',
-      ],
-      'conditions': [
-        ['OS=="android"', {
-          'sources!': [
-            'bookmarks/core/browser/scoped_group_bookmark_actions.cc',
-            'bookmarks/core/browser/scoped_group_bookmark_actions.h',
-          ],
-        }]
       ],
     },
     {
@@ -80,6 +72,24 @@
         'bookmarks/core/common/bookmark_constants.h',
         'bookmarks/core/common/bookmark_pref_names.cc',
         'bookmarks/core/common/bookmark_pref_names.h',
+      ],
+    },
+    {
+      'target_name': 'bookmarks_core_test_support',
+      'type': 'static_library',
+      'include_dirs': [
+        '..',
+      ],
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../url/url.gyp:url_lib',
+        'bookmarks_core_browser',
+      ],
+      'sources': [
+        'bookmarks/core/test/bookmark_test_helpers.cc',
+        'bookmarks/core/test/bookmark_test_helpers.h',
+        'bookmarks/core/test/test_bookmark_client.cc',
+        'bookmarks/core/test/test_bookmark_client.h',
       ],
     },
   ],

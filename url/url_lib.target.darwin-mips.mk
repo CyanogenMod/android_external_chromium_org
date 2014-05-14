@@ -26,6 +26,7 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
+	url/android/url_jni_registrar.cc \
 	url/gurl.cc \
 	url/origin.cc \
 	url/third_party/mozilla/url_parse.cc \
@@ -43,6 +44,7 @@ LOCAL_SRC_FILES := \
 	url/url_canon_relative.cc \
 	url/url_canon_stdstring.cc \
 	url/url_canon_stdurl.cc \
+	url/url_constants.cc \
 	url/url_parse_file.cc \
 	url/url_util.cc
 

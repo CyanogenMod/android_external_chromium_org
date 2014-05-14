@@ -26,6 +26,9 @@ class CHROMEOS_EXPORT DeviceState : public ManagedState {
   virtual bool InitialPropertiesReceived(
       const base::DictionaryValue& properties) OVERRIDE;
 
+  void IPConfigPropertiesChanged(const std::string& ip_config_path,
+                                 const base::DictionaryValue& properties);
+
   // Accessors
   const std::string& mac_address() const { return mac_address_; }
 
@@ -34,6 +37,7 @@ class CHROMEOS_EXPORT DeviceState : public ManagedState {
 
   // Cellular specific accessors
   const std::string& home_provider_id() const { return home_provider_id_; }
+  bool allow_roaming() const { return allow_roaming_; }
   bool provider_requires_roaming() const { return provider_requires_roaming_; }
   bool support_network_scan() const { return support_network_scan_; }
   bool scanning() const { return scanning_; }
@@ -47,7 +51,11 @@ class CHROMEOS_EXPORT DeviceState : public ManagedState {
   const std::string& iccid() const { return iccid_; }
   const std::string& mdn() const { return mdn_; }
   const CellularScanResults& scan_results() const { return scan_results_; }
+
+  // Do not use this. It exists temporarily for internet_options_handler.cc
+  // which is being deprecated.
   const base::DictionaryValue& properties() const { return properties_; }
+  const base::DictionaryValue& ip_configs() const { return ip_configs_; }
 
   // Ethernet specific accessors
   bool eap_authentication_completed() const {
@@ -63,6 +71,7 @@ class CHROMEOS_EXPORT DeviceState : public ManagedState {
 
   // Cellular specific properties
   std::string home_provider_id_;
+  bool allow_roaming_;
   bool provider_requires_roaming_;
   bool support_network_scan_;
   bool scanning_;
@@ -81,9 +90,11 @@ class CHROMEOS_EXPORT DeviceState : public ManagedState {
   // Ethernet specific properties
   bool eap_authentication_completed_;
 
-  // Keep all Device properties in a dictionary. Devices are limited and should
-  // change rarely if ever, so the overhead for this is small.
+  // Keep all Device properties in a dictionary for now. See comment above.
   base::DictionaryValue properties_;
+
+  // Dictionary of IPConfig properties, keyed by IpConfig path.
+  base::DictionaryValue ip_configs_;
 
   DISALLOW_COPY_AND_ASSIGN(DeviceState);
 };

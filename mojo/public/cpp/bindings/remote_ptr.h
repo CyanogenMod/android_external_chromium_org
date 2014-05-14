@@ -86,6 +86,7 @@ class RemotePtr {
   // Move-only constructor and operator=.
   RemotePtr(RValue other) : state_(other.object->release()) {}
   RemotePtr& operator=(RValue other) {
+    delete state_;
     state_ = other.object->release();
     return *this;
   }
@@ -124,6 +125,10 @@ class RemotePtr {
   bool encountered_error() const {
     assert(state_);
     return state_->router.encountered_error();
+  }
+
+  internal::Router* router_for_testing() {
+    return &state_->router;
   }
 
  private:

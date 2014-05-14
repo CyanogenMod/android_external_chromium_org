@@ -12,6 +12,7 @@
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/shell/renderer/test_runner/WebTask.h"
+#include "third_party/WebKit/public/platform/WebCompositeAndReadbackAsyncCallback.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
@@ -51,8 +52,6 @@ class WebNotificationPresenter;
 class WebPlugin;
 class WebRange;
 class WebSerializedScriptValue;
-class WebSpeechInputController;
-class WebSpeechInputListener;
 class WebSpeechRecognizer;
 class WebSpellCheckClient;
 class WebString;
@@ -72,24 +71,20 @@ struct WebWindowFeatures;
 typedef unsigned WebColor;
 }
 
-namespace WebTestRunner {
-class MockWebSpeechInputController;
+namespace content {
+
 class MockWebSpeechRecognizer;
+class RenderFrame;
 class SpellCheckClient;
 class TestInterfaces;
 class WebTestDelegate;
 class WebTestInterfaces;
 class WebUserMediaClientMock;
-}
 
-namespace content {
-
-class RenderFrame;
-
-class WebTestProxyBase {
+class WebTestProxyBase : public blink::WebCompositeAndReadbackAsyncCallback {
 public:
-    void setInterfaces(WebTestRunner::WebTestInterfaces*);
-    void setDelegate(WebTestRunner::WebTestDelegate*);
+    void setInterfaces(WebTestInterfaces*);
+    void setDelegate(WebTestDelegate*);
     void setWidget(blink::WebWidget*);
 
     void reset();
@@ -103,6 +98,7 @@ public:
 
     std::string captureTree(bool debugRenderTree);
     SkCanvas* capturePixels();
+    void CapturePixelsAsync(base::Callback<void(const SkBitmap&)> callback);
 
     void setLogConsoleOutput(bool enabled);
 
@@ -119,16 +115,18 @@ public:
     void discardBackingStore();
 
     blink::WebMIDIClientMock* midiClientMock();
-    WebTestRunner::MockWebSpeechInputController* speechInputControllerMock();
-    WebTestRunner::MockWebSpeechRecognizer* speechRecognizerMock();
+    MockWebSpeechRecognizer* speechRecognizerMock();
 
-    WebTestRunner::WebTaskList* taskList() { return &m_taskList; }
+    WebTaskList* taskList() { return &m_taskList; }
 
     blink::WebView* webView();
 
     void didForceResize();
 
     void postSpellCheckEvent(const blink::WebString& eventName);
+
+    // WebCompositeAndReadbackAsyncCallback implementation.
+    virtual void didCompositeAndReadback(const SkBitmap& bitmap);
 
 protected:
     WebTestProxyBase();
@@ -156,7 +154,6 @@ protected:
     void printPage(blink::WebLocalFrame*);
     blink::WebNotificationPresenter* notificationPresenter();
     blink::WebMIDIClient* webMIDIClient();
-    blink::WebSpeechInputController* speechInputController(blink::WebSpeechInputListener*);
     blink::WebSpeechRecognizer* speechRecognizer();
     bool requestPointerLock();
     void requestPointerUnlock();
@@ -197,17 +194,18 @@ private:
     SkCanvas* canvas();
     void invalidateAll();
     void animateNow();
+    void DrawSelectionRect(SkCanvas* canvas);
 
     blink::WebWidget* webWidget();
 
-    WebTestRunner::TestInterfaces* m_testInterfaces;
-    ::WebTestRunner::WebTestDelegate* m_delegate;
+    TestInterfaces* m_testInterfaces;
+    WebTestDelegate* m_delegate;
     blink::WebWidget* m_webWidget;
 
-    WebTestRunner::WebTaskList m_taskList;
+    WebTaskList m_taskList;
 
-    scoped_ptr<WebTestRunner::SpellCheckClient> m_spellcheck;
-    scoped_ptr<WebTestRunner::WebUserMediaClientMock> m_userMediaClient;
+    scoped_ptr<SpellCheckClient> m_spellcheck;
+    scoped_ptr<WebUserMediaClientMock> m_userMediaClient;
 
     // Painting.
     scoped_ptr<SkCanvas> m_canvas;
@@ -216,14 +214,13 @@ private:
     bool m_animateScheduled;
     std::map<unsigned, std::string> m_resourceIdentifierMap;
     std::map<unsigned, blink::WebURLRequest> m_requestMap;
+    base::Callback<void(const SkBitmap&)> m_compositeAndReadbackCallback;
 
     bool m_logConsoleOutput;
     int m_chooserCount;
 
     scoped_ptr<blink::WebMIDIClientMock> m_midiClient;
-    scoped_ptr<WebTestRunner::MockWebSpeechRecognizer> m_speechRecognizer;
-    scoped_ptr<WebTestRunner::MockWebSpeechInputController>
-        m_speechInputController;
+    scoped_ptr<MockWebSpeechRecognizer> m_speechRecognizer;
 
 private:
     DISALLOW_COPY_AND_ASSIGN(WebTestProxyBase);
@@ -314,10 +311,6 @@ public:
     virtual blink::WebMIDIClient* webMIDIClient()
     {
         return WebTestProxyBase::webMIDIClient();
-    }
-    virtual blink::WebSpeechInputController* speechInputController(blink::WebSpeechInputListener* listener)
-    {
-        return WebTestProxyBase::speechInputController(listener);
     }
     virtual blink::WebSpeechRecognizer* speechRecognizer()
     {

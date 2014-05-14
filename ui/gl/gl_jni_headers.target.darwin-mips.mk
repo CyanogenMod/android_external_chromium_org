@@ -19,6 +19,7 @@ GYP_TARGET_DEPENDENCIES := \
 ### Generated for rule "ui_gl_gl_gyp_gl_jni_headers_target_generate_jni_headers":
 # "{'inputs': ['../../base/android/jni_generator/jni_generator.py', '../../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/gl/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['../android/java/src/org/chromium/ui/gl/SurfaceTexturePlatformWrapper.java', '../android/java/src/org/chromium/ui/gl/SurfaceTextureListener.java'], 'action': ['../../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/ui/gl/jni', '--includes', 'base/android/jni_generator/jni_generator_helper.h', '--optimize_generation', '0', '--jarjar', '../../android_webview/build/jarjar-rules.txt', '--ptr_type', 'long'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTexturePlatformWrapper_jni.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTexturePlatformWrapper_jni.h: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTexturePlatformWrapper_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTexturePlatformWrapper_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTexturePlatformWrapper_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -27,6 +28,7 @@ $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTexturePlatformWrapper_jni.h: $(
 
 
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/gl/jni/SurfaceTextureListener_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))

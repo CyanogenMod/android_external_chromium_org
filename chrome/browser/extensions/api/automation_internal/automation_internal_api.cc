@@ -19,6 +19,10 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/ui/ash/accessibility/automation_manager_views.h"
+#endif
+
 namespace extensions {
 class AutomationWebContentsObserver;
 }  // namespace extensions
@@ -59,7 +63,7 @@ class AutomationWebContentsObserver
 // if this doesn't turn accessibility on for the first time (e.g. if a
 // RendererAccessibility object existed already because a screenreader has been
 // run at some point).
-bool AutomationInternalEnableCurrentTabFunction::RunImpl() {
+bool AutomationInternalEnableCurrentTabFunction::RunAsync() {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableAutomationAPI)) {
     return false;
@@ -88,7 +92,7 @@ bool AutomationInternalEnableCurrentTabFunction::RunImpl() {
   return true;
 }
 
-bool AutomationInternalPerformActionFunction::RunImpl() {
+bool AutomationInternalPerformActionFunction::RunAsync() {
   using api::automation_internal::PerformAction::Params;
   scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -121,6 +125,21 @@ bool AutomationInternalPerformActionFunction::RunImpl() {
     default:
       NOTREACHED();
   }
+  return true;
+}
+
+bool AutomationInternalEnableDesktopFunction::RunAsync() {
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableAutomationAPI)) {
+    return false;
+  }
+
+#if defined(OS_CHROMEOS)
+  AutomationManagerViews::GetInstance()->Enable(browser_context());
+#else
+  error_ = "getDesktop is unsupported by this platform";
+#endif
+
   return true;
 }
 

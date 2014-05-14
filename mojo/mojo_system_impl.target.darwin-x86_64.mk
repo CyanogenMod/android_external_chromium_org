@@ -53,6 +53,7 @@ LOCAL_SRC_FILES := \
 	mojo/system/raw_shared_buffer_posix.cc \
 	mojo/system/shared_buffer_dispatcher.cc \
 	mojo/system/simple_dispatcher.cc \
+	mojo/system/transport_data.cc \
 	mojo/system/waiter.cc \
 	mojo/system/waiter_list.cc \
 	mojo/embedder/test_embedder.cc
@@ -74,7 +75,6 @@ MY_CFLAGS_Debug := \
 	-Wno-unused-local-typedefs \
 	-m64 \
 	-march=x86-64 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \
@@ -163,7 +163,6 @@ MY_CFLAGS_Release := \
 	-Wno-unused-local-typedefs \
 	-m64 \
 	-march=x86-64 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \

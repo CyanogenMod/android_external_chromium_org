@@ -206,7 +206,8 @@ class TestAppsGridViewFolderDelegate : public AppsGridViewFolderDelegate {
       const gfx::Point& drag_point_in_folder_grid) OVERRIDE {}
 
   virtual void DispatchEndDragEventForReparent(
-      bool events_forwarded_to_drag_drop_host) OVERRIDE {}
+      bool events_forwarded_to_drag_drop_host,
+      bool cancel_drag) OVERRIDE {}
 
   virtual bool IsPointOutsideOfFolderBoundary(const gfx::Point& point)
       OVERRIDE {
@@ -214,6 +215,8 @@ class TestAppsGridViewFolderDelegate : public AppsGridViewFolderDelegate {
   }
 
   virtual bool IsOEMFolder() const OVERRIDE { return false; }
+
+  virtual void SetRootLevelDragViewVisible(bool visible) OVERRIDE {}
 
   bool show_bubble() { return show_bubble_; }
 

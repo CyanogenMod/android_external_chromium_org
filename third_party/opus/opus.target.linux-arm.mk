@@ -15,6 +15,7 @@ GYP_TARGET_DEPENDENCIES :=
 
 ### Rules for action "convert_assembler":
 $(gyp_intermediate_dir)/celt_pitch_xcorr_arm_gnu.S: gyp_local_path := $(LOCAL_PATH)
+$(gyp_intermediate_dir)/celt_pitch_xcorr_arm_gnu.S: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_intermediate_dir)/celt_pitch_xcorr_arm_gnu.S: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_intermediate_dir)/celt_pitch_xcorr_arm_gnu.S: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_intermediate_dir)/celt_pitch_xcorr_arm_gnu.S: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -182,7 +183,6 @@ MY_CFLAGS_Debug := \
 	-fPIC \
 	-Wno-format \
 	-fno-tree-sra \
-	-fuse-ld=gold \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \
@@ -285,7 +285,6 @@ MY_CFLAGS_Release := \
 	-fPIC \
 	-Wno-format \
 	-fno-tree-sra \
-	-fuse-ld=gold \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \

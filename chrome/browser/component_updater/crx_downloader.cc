@@ -14,14 +14,17 @@ using content::BrowserThread;
 
 namespace component_updater {
 
-CrxDownloader::Result::Result() : error(0) {}
+CrxDownloader::Result::Result()
+    : error(0), downloaded_bytes(-1), total_bytes(-1) {
+}
 
 CrxDownloader::DownloadMetrics::DownloadMetrics()
     : downloader(kNone),
       error(0),
-      bytes_downloaded(-1),
-      bytes_total(-1),
-      download_time_ms(0) {}
+      downloaded_bytes(-1),
+      total_bytes(-1),
+      download_time_ms(0) {
+}
 
 // On Windows, the first downloader in the chain is a background downloader,
 // which uses the BITS service.
@@ -33,7 +36,7 @@ CrxDownloader* CrxDownloader::Create(
       new UrlFetcherDownloader(scoped_ptr<CrxDownloader>().Pass(),
                                context_getter,
                                task_runner));
-#if defined (OS_WIN)
+#if defined(OS_WIN)
   if (is_background_download) {
     return new BackgroundDownloader(url_fetcher_downloader.Pass(),
                                     context_getter,
@@ -52,6 +55,11 @@ CrxDownloader::CrxDownloader(scoped_ptr<CrxDownloader> successor)
 CrxDownloader::~CrxDownloader() {
 }
 
+void CrxDownloader::set_progress_callback(
+    const ProgressCallback& progress_callback) {
+  progress_callback_ = progress_callback;
+}
+
 GURL CrxDownloader::url() const {
   return current_url_ != urls_.end() ? *current_url_ : GURL();
 }
@@ -62,9 +70,8 @@ CrxDownloader::download_metrics() const {
     return download_metrics_;
 
   std::vector<DownloadMetrics> retval(successor_->download_metrics());
-  retval.insert(retval.begin(),
-                download_metrics_.begin(),
-                download_metrics_.end());
+  retval.insert(
+      retval.begin(), download_metrics_.begin(), download_metrics_.end());
   return retval;
 }
 
@@ -139,5 +146,13 @@ void CrxDownloader::OnDownloadComplete(
   download_callback_.Run(result);
 }
 
-}  // namespace component_updater
+void CrxDownloader::OnDownloadProgress(const Result& result) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
+  if (progress_callback_.is_null())
+    return;
+
+  progress_callback_.Run(result);
+}
+
+}  // namespace component_updater

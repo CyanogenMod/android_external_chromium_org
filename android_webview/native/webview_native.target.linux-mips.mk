@@ -35,6 +35,7 @@ LOCAL_SRC_FILES := \
 	android_webview/native/aw_contents.cc \
 	android_webview/native/aw_contents_client_bridge.cc \
 	android_webview/native/aw_contents_io_thread_client_impl.cc \
+	android_webview/native/aw_contents_statics.cc \
 	android_webview/native/aw_dev_tools_server.cc \
 	android_webview/native/aw_form_database.cc \
 	android_webview/native/aw_geolocation_permission_context.cc \
@@ -52,6 +53,11 @@ LOCAL_SRC_FILES := \
 	android_webview/native/intercepted_request_data_impl.cc \
 	android_webview/native/java_browser_view_renderer_helper.cc \
 	android_webview/native/net_init_native_callback.cc \
+	android_webview/native/permission/aw_permission_request.cc \
+	android_webview/native/permission/aw_permission_request_delegate.cc \
+	android_webview/native/permission/media_access_permission_request.cc \
+	android_webview/native/permission/permission_request_handler.cc \
+	android_webview/native/permission/permission_request_handler_client.cc \
 	android_webview/native/state_serializer.cc
 
 
@@ -118,11 +124,6 @@ MY_DEFS_Debug := \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
-	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
-	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
 	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
@@ -249,11 +250,6 @@ MY_DEFS_Release := \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
-	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
-	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
 	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \

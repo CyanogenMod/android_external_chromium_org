@@ -20,6 +20,7 @@
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_main_platform_delegate.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
+#include "content/test/frame_load_waiter.h"
 #include "content/test/mock_render_process.h"
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
@@ -117,12 +118,10 @@ void RenderViewTest::LoadHTML(const char* html) {
   std::string url_str = "data:text/html;charset=utf-8,";
   url_str.append(html);
   GURL url(url_str);
-
   GetMainFrame()->loadRequest(WebURLRequest(url));
-
   // The load actually happens asynchronously, so we pump messages to process
   // the pending continuation.
-  ProcessPendingMessages();
+  FrameLoadWaiter(view_->GetMainRenderFrame()).Wait();
 }
 
 void RenderViewTest::GoBack(const PageState& state) {
@@ -268,14 +267,15 @@ const char* const kGetCoordinatesScript =
     "    var parent_coordinates = GetCoordinates(elem.offsetParent);"
     "    coordinates[0] += parent_coordinates[0];"
     "    coordinates[1] += parent_coordinates[1];"
-    "    return coordinates;"
+    "    return [ Math.round(coordinates[0]),"
+    "             Math.round(coordinates[1])];"
     "  };"
     "  var elem = document.getElementById('$1');"
     "  if (!elem)"
     "    return null;"
     "  var bounds = GetCoordinates(elem);"
-    "  bounds[2] = elem.offsetWidth;"
-    "  bounds[3] = elem.offsetHeight;"
+    "  bounds[2] = Math.round(elem.offsetWidth);"
+    "  bounds[3] = Math.round(elem.offsetHeight);"
     "  return bounds;"
     "})();";
 gfx::Rect RenderViewTest::GetElementBounds(const std::string& element_id) {
@@ -341,6 +341,7 @@ void RenderViewTest::Reload(const GURL& url) {
   params.navigation_type = FrameMsg_Navigate_Type::RELOAD;
   RenderViewImpl* impl = static_cast<RenderViewImpl*>(view_);
   impl->main_render_frame()->OnNavigate(params);
+  FrameLoadWaiter(impl->main_render_frame()).Wait();
 }
 
 uint32 RenderViewTest::GetNavigationIPCType() {
@@ -424,7 +425,7 @@ void RenderViewTest::GoToOffset(int offset, const PageState& state) {
 
   // The load actually happens asynchronously, so we pump messages to process
   // the pending continuation.
-  ProcessPendingMessages();
+  FrameLoadWaiter(view_->GetMainRenderFrame()).Wait();
 }
 
 }  // namespace content

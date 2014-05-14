@@ -11,9 +11,13 @@ namespace services {
 namespace view_manager {
 
 ViewManager::ViewManager(Shell* shell)
-    : shell_(shell),
-      synchronizer_(new ViewManagerSynchronizer(this)) {}
+    : shell_(shell) {}
+
 ViewManager::~ViewManager() {}
+
+void ViewManager::Init() {
+  synchronizer_.reset(new ViewManagerSynchronizer(this));
+}
 
 }  // namespace view_manager
 }  // namespace services

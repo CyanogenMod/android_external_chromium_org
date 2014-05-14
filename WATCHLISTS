@@ -482,6 +482,14 @@
                   '|chrome/browser/ui/gtk/panels'\
                   '|chrome/browser/ui/views/panels'
     },
+    'password_manager': {
+      'filepath': 'chrome/.*/password_'\
+                  '|chrome/browser/ui/passwords'\
+                  '|chrome/browser/ui/views/passwords'\
+                  '|chrome/test/data/password'\
+                  '|components/autofill.*password'
+                  '|components/password_'\
+    },
     'pepper_api': {
       'filepath': 'ppapi/api'\
                   '|ppapi/c',
@@ -829,7 +837,8 @@
              'ben+mojo@chromium.org',
              'darin@chromium.org',
              'qsr+mojo@chromium.org',
-             'viettrungluu+watch@chromium.org'],
+             'viettrungluu+watch@chromium.org',
+             'yzshen+watch@chromium.org'],
     'mouse_lock': ['scheib+watch@chromium.org'],
     'music_manager_private': ['gab+watch@chromium.org',
                               'erikwright+watch@chromium.org',
@@ -850,8 +859,8 @@
               'rjkroege@chromium.org'],
     'panels': ['dimich@chromium.org', 'jennb@chromium.org',
                'dcheng@chromium.org', 'jianli@chromium.org'],
-    'pepper_api': ['piman+watch@chromium.org',
-                   'ihf+watch@chromium.org', 'yzshen+watch@chromium.org',
+    'password_manager': ['mkwst+watchlist@chromium.org'],
+    'pepper_api': ['piman+watch@chromium.org', 'ihf+watch@chromium.org',
                    'yusukes+watch@chromium.org', 'raymes+watch@chromium.org',
                    'noelallen@chromium.org', 'binji+watch@chromium.org',
                    'nfullagar@chromium.org', 'teravest+watch@chromium.org',

@@ -129,6 +129,7 @@ LOCAL_SRC_FILES := \
 	media/cdm/aes_decryptor.cc \
 	media/cdm/json_web_key.cc \
 	media/cdm/key_system_names.cc \
+	media/filters/audio_clock.cc \
 	media/filters/audio_renderer_algorithm.cc \
 	media/filters/audio_renderer_impl.cc \
 	media/filters/chunk_demuxer.cc \
@@ -144,7 +145,6 @@ LOCAL_SRC_FILES := \
 	media/filters/gpu_video_decoder.cc \
 	media/filters/h264_bit_reader.cc \
 	media/filters/h264_parser.cc \
-	media/filters/h264_to_annex_b_bitstream_converter.cc \
 	media/filters/legacy_frame_processor.cc \
 	media/filters/skcanvas_video_renderer.cc \
 	media/filters/source_buffer_stream.cc \
@@ -190,6 +190,7 @@ LOCAL_SRC_FILES := \
 	media/formats/webm/webm_video_client.cc \
 	media/formats/webm/webm_webvtt_parser.cc \
 	media/base/media_stub.cc \
+	media/filters/h264_to_annex_b_bitstream_converter.cc \
 	media/formats/mp2t/es_parser_adts.cc \
 	media/formats/mp2t/es_parser_h264.cc \
 	media/formats/mp2t/mp2t_stream_parser.cc \
@@ -205,6 +206,7 @@ LOCAL_SRC_FILES := \
 	media/formats/mp4/cenc.cc \
 	media/formats/mp4/es_descriptor.cc \
 	media/formats/mp4/mp4_stream_parser.cc \
+	media/formats/mp4/sample_to_group_iterator.cc \
 	media/formats/mp4/track_run_iterator.cc \
 	media/formats/mpeg/adts_constants.cc \
 	media/formats/mpeg/adts_stream_parser.cc \
@@ -275,11 +277,6 @@ MY_DEFS_Debug := \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
-	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
-	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
 	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \
@@ -403,11 +400,6 @@ MY_DEFS_Release := \
 	'-DSK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS=1' \
 	'-DSK_SUPPORT_LEGACY_GETTOPDEVICE' \
 	'-DSK_SUPPORT_LEGACY_N32_NAME' \
-	'-DSK_SUPPORT_LEGACY_PROCXFERMODE' \
-	'-DSK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_HEADERS' \
-	'-DSK_SUPPORT_LEGACY_PICTURE_CAN_RECORD' \
-	'-DSK_SUPPORT_DEPRECATED_RECORD_FLAGS' \
 	'-DSK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE' \
 	'-DSK_SUPPORT_LEGACY_GETTOTALCLIP' \
 	'-DSK_BUILD_FOR_ANDROID' \

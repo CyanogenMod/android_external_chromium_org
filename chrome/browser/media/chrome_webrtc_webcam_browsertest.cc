@@ -12,40 +12,74 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/test/browser_test_utils.h"
+#include "media/base/media_switches.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
+#include "testing/gtest/include/gtest/gtest-param-test.h"
 
 static const char kMainWebrtcTestHtmlPage[] =
     "/webrtc/webrtc_jsep01_test.html";
 
+static const char* kTestConfigFlags[] = {
+#if defined(OS_WIN)
+  switches::kForceDirectShowVideoCapture,
+  // Media Foundation is only available in Windows versions >= 7, below that the
+  // following flag has no effect; the test would run twice using DirectShow.
+  switches::kForceMediaFoundationVideoCapture
+#elif defined(OS_MACOSX)
+  switches::kForceQTKit,
+  switches::kEnableAVFoundation
+#else
+  NULL
+#endif
+};
+
 // These tests runs on real webcams and ensure WebRTC can acquire webcams
 // correctly. They will do nothing if there are no webcams on the system.
 // The webcam on the system must support up to 1080p, or the test will fail.
-class WebRtcWebcamBrowserTest : public WebRtcTestBase {
+class WebRtcWebcamBrowserTest : public WebRtcTestBase,
+    public testing::WithParamInterface<const char*> {
  public:
+  WebRtcWebcamBrowserTest() : get_user_media_call_count_(0) {}
+
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     EXPECT_FALSE(command_line->HasSwitch(
         switches::kUseFakeDeviceForMediaStream));
     EXPECT_FALSE(command_line->HasSwitch(
         switches::kUseFakeUIForMediaStream));
+    if (GetParam())
+      command_line->AppendSwitch(GetParam());
   }
 
+ protected:
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     DetectErrorsInJavaScript();  // Look for errors in our rather complex js.
   }
 
- protected:
   std::string GetUserMediaAndGetStreamSize(content::WebContents* tab,
                                            const std::string& constraints) {
-    GetUserMediaWithSpecificConstraintsAndAccept(tab, constraints);
+    // We will get a permission prompt for the first getUserMedia call.
+    // Subsequent calls won't trigger a prompt.
+    if (get_user_media_call_count_ == 0) {
+      GetUserMediaWithSpecificConstraintsAndAccept(tab, constraints);
+    } else {
+      GetUserMedia(tab, constraints);
+      EXPECT_TRUE(test::PollingWaitUntil(
+          "obtainGetUserMediaResult()", "ok-got-stream", tab));
+    }
+
+    ++get_user_media_call_count_;
+
     StartDetectingVideo(tab, "local-view");
     WaitForVideoToPlay(tab);
     std::string actual_stream_size = GetStreamSize(tab, "local-view");
     CloseLastLocalStream(tab);
     return actual_stream_size;
   }
+
+  int get_user_media_call_count_;
 };
 
-IN_PROC_BROWSER_TEST_F(WebRtcWebcamBrowserTest,
+IN_PROC_BROWSER_TEST_P(WebRtcWebcamBrowserTest,
                        TestAcquiringAndReacquiringWebcam) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
   GURL url(embedded_test_server()->GetURL(kMainWebrtcTestHtmlPage));
@@ -69,3 +103,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcWebcamBrowserTest,
   EXPECT_EQ("1920x1080",
             GetUserMediaAndGetStreamSize(tab, kAudioVideoCallConstraints1080p));
 }
+
+INSTANTIATE_TEST_CASE_P(WebRtcWebcamBrowserTests,
+                        WebRtcWebcamBrowserTest,
+                        testing::ValuesIn(kTestConfigFlags));

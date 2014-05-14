@@ -8,14 +8,19 @@
 #include "base/message_loop/message_loop.h"
 #include "sync/api/attachments/attachment.h"
 #include "sync/api/attachments/fake_attachment_store.h"
+#include "sync/api/attachments/fake_attachment_uploader.h"
 
 namespace syncer {
 
 FakeAttachmentService::FakeAttachmentService(
-    scoped_ptr<AttachmentStore> attachment_store)
-    : attachment_store_(attachment_store.Pass()), weak_ptr_factory_(this) {
+    scoped_ptr<AttachmentStore> attachment_store,
+    scoped_ptr<AttachmentUploader> attachment_uploader)
+    : attachment_store_(attachment_store.Pass()),
+      attachment_uploader_(attachment_uploader.Pass()),
+      weak_ptr_factory_(this) {
   DCHECK(CalledOnValidThread());
   DCHECK(attachment_store_);
+  DCHECK(attachment_uploader_);
 }
 
 FakeAttachmentService::~FakeAttachmentService() {
@@ -26,8 +31,11 @@ FakeAttachmentService::~FakeAttachmentService() {
 scoped_ptr<syncer::AttachmentService> FakeAttachmentService::CreateForTest() {
   scoped_ptr<syncer::AttachmentStore> attachment_store(
       new syncer::FakeAttachmentStore(base::MessageLoopProxy::current()));
+  scoped_ptr<AttachmentUploader> attachment_uploader(
+      new FakeAttachmentUploader);
   scoped_ptr<syncer::AttachmentService> attachment_service(
-      new syncer::FakeAttachmentService(attachment_store.Pass()));
+      new syncer::FakeAttachmentService(attachment_store.Pass(),
+                                        attachment_uploader.Pass()));
   return attachment_service.Pass();
 }
 
@@ -51,10 +59,15 @@ void FakeAttachmentService::DropAttachments(
                                      callback));
 }
 
-void FakeAttachmentService::OnSyncDataAdd(const SyncData& sync_data) {
+void FakeAttachmentService::StoreAttachments(const AttachmentList& attachments,
+                                             const StoreCallback& callback) {
   DCHECK(CalledOnValidThread());
-  // TODO(maniscalco): Ensure the linked attachments get persisted in local
-  // storage and schedule them for upload to the server (bug 356351).
+  attachment_store_->Write(attachments,
+                           base::Bind(&FakeAttachmentService::WriteDone,
+                                      weak_ptr_factory_.GetWeakPtr(),
+                                      callback));
+  // TODO(maniscalco): Ensure the linked attachments are schedule for upload to
+  // the server (bug 356351).
 }
 
 void FakeAttachmentService::OnSyncDataDelete(const SyncData& sync_data) {
@@ -97,6 +110,18 @@ void FakeAttachmentService::DropDone(const DropCallback& callback,
   // TODO(maniscalco): Deal with case where an error occurred (bug 361251).
   base::MessageLoop::current()->PostTask(FROM_HERE,
                                          base::Bind(callback, drop_result));
+}
+
+void FakeAttachmentService::WriteDone(const StoreCallback& callback,
+                                      const AttachmentStore::Result& result) {
+  AttachmentService::StoreResult store_result =
+      AttachmentService::STORE_UNSPECIFIED_ERROR;
+  if (result == AttachmentStore::SUCCESS) {
+    store_result = AttachmentService::STORE_SUCCESS;
+  }
+  // TODO(maniscalco): Deal with case where an error occurred (bug 361251).
+  base::MessageLoop::current()->PostTask(FROM_HERE,
+                                         base::Bind(callback, store_result));
 }
 
 }  // namespace syncer

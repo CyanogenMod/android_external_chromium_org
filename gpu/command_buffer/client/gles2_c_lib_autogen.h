@@ -737,8 +737,8 @@ void* GLES2MapBufferCHROMIUM(GLuint target, GLenum access) {
 GLboolean GLES2UnmapBufferCHROMIUM(GLuint target) {
   return gles2::GetGLContext()->UnmapBufferCHROMIUM(target);
 }
-void* GLES2MapImageCHROMIUM(GLuint image_id, GLenum access) {
-  return gles2::GetGLContext()->MapImageCHROMIUM(image_id, access);
+void* GLES2MapImageCHROMIUM(GLuint image_id) {
+  return gles2::GetGLContext()->MapImageCHROMIUM(image_id);
 }
 void GLES2UnmapImageCHROMIUM(GLuint image_id) {
   gles2::GetGLContext()->UnmapImageCHROMIUM(image_id);
@@ -798,9 +798,10 @@ GLuint GLES2CreateStreamTextureCHROMIUM(GLuint texture) {
 }
 GLuint GLES2CreateImageCHROMIUM(GLsizei width,
                                 GLsizei height,
-                                GLenum internalformat) {
+                                GLenum internalformat,
+                                GLenum usage) {
   return gles2::GetGLContext()->CreateImageCHROMIUM(
-      width, height, internalformat);
+      width, height, internalformat, usage);
 }
 void GLES2DestroyImageCHROMIUM(GLuint image_id) {
   gles2::GetGLContext()->DestroyImageCHROMIUM(image_id);

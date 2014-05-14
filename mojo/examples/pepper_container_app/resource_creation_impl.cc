@@ -211,6 +211,12 @@ PP_Resource ResourceCreationImpl::CreateImageDataSimple(
   return 0;
 }
 
+PP_Resource ResourceCreationImpl::CreateMediaStreamVideoTrack(
+    PP_Instance instance) {
+  NOTIMPLEMENTED();
+  return 0;
+}
+
 PP_Resource ResourceCreationImpl::CreateNetAddressFromIPv4Address(
     PP_Instance instance,
     const PP_NetAddress_IPv4* ipv4_addr) {
@@ -380,7 +386,7 @@ PP_Resource ResourceCreationImpl::CreateVideoCapture(PP_Instance instance) {
   return 0;
 }
 
-PP_Resource ResourceCreationImpl::CreateVideoDecoder(
+PP_Resource ResourceCreationImpl::CreateVideoDecoderDev(
     PP_Instance instance,
     PP_Resource context3d_id,
     PP_VideoDecoder_Profile profile) {

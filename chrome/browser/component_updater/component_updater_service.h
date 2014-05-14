@@ -35,7 +35,7 @@ class OnDemandTester;
 // OnUpdateError() and Install(). A valid instance of this class must be
 // given to ComponentUpdateService::RegisterComponent().
 class ComponentInstaller {
- public :
+ public:
   // Called by the component updater on the UI thread when there was a
   // problem unpacking or verifying the component. |error| is a non-zero
   // value which is only meaningful to the component updater.
@@ -106,12 +106,7 @@ struct CrxComponentInfo {
 // All methods are safe to call ONLY from chrome's UI thread.
 class ComponentUpdateService {
  public:
-  enum Status {
-    kOk,
-    kReplaced,
-    kInProgress,
-    kError
-  };
+  enum Status { kOk, kReplaced, kInProgress, kError };
   // Controls the component updater behavior.
   class Configurator {
    public:
@@ -176,6 +171,9 @@ class ComponentUpdateService {
       // Sent when a component has not been updated following an update check:
       // either there was no update available, or an update failed.
       COMPONENT_NOT_UPDATED,
+
+      // Sent when component bytes are being downloaded.
+      COMPONENT_UPDATE_DOWNLOADING,
     };
 
     virtual ~Observer() {}
@@ -214,7 +212,8 @@ class ComponentUpdateService {
   // downloaded and installed before the resource is unthrottled. This is the
   // only function callable from the IO thread.
   virtual content::ResourceThrottle* GetOnDemandResourceThrottle(
-      net::URLRequest* request, const std::string& crx_id) = 0;
+      net::URLRequest* request,
+      const std::string& crx_id) = 0;
 
   virtual ~ComponentUpdateService() {}
 

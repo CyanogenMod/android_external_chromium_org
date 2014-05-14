@@ -29,4 +29,16 @@ IN_PROC_BROWSER_TEST_F(FileSystemProviderApiTest, Unmount) {
       << message_;
 }
 
+IN_PROC_BROWSER_TEST_F(FileSystemProviderApiTest, GetMetadata) {
+  ASSERT_TRUE(RunPlatformAppTestWithFlags("file_system_provider/get_metadata",
+                                          kFlagLoadAsComponent))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(FileSystemProviderApiTest, ReadDirectory) {
+  ASSERT_TRUE(RunPlatformAppTestWithFlags("file_system_provider/read_directory",
+                                          kFlagLoadAsComponent))
+      << message_;
+}
+
 }  // namespace extensions

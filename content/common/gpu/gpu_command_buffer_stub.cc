@@ -186,6 +186,7 @@ bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
   devtools_gpu_instrumentation::ScopedGpuTask task(channel());
   FastSetActiveURL(active_url_, active_url_hash_);
 
+  bool have_context = false;
   // Ensure the appropriate GL context is current before handling any IPC
   // messages directed at the command buffer. This ensures that the message
   // handler can assume that the context is current (not necessary for
@@ -197,6 +198,7 @@ bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
       message.type() != GpuCommandBufferMsg_SetLatencyInfo::ID) {
     if (!MakeCurrent())
       return false;
+    have_context = true;
   }
 
   // Always use IPC_MESSAGE_HANDLER_DELAY_REPLY for synchronous message handlers
@@ -249,8 +251,10 @@ bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
 
   CheckCompleteWaits();
 
-  // Ensure that any delayed work that was created will be handled.
-  ScheduleDelayedWork(kHandleMoreWorkPeriodMs);
+  if (have_context) {
+    // Ensure that any delayed work that was created will be handled.
+    ScheduleDelayedWork(kHandleMoreWorkPeriodMs);
+  }
 
   DCHECK(handled);
   return handled;
@@ -538,12 +542,8 @@ void GpuCommandBufferStub::OnInitialize(
     return;
   }
 
-  gpu_control_.reset(
-      new gpu::GpuControlService(context_group_->image_manager(),
-                                 NULL,
-                                 context_group_->mailbox_manager(),
-                                 NULL,
-                                 decoder_->GetCapabilities()));
+  gpu_control_service_.reset(
+      new gpu::GpuControlService(context_group_->image_manager(), NULL));
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableGPUServiceLogging)) {
@@ -587,7 +587,7 @@ void GpuCommandBufferStub::OnInitialize(
       shared_state_shm.Pass(), kSharedStateSize));
 
   GpuCommandBufferMsg_Initialize::WriteReplyParams(
-      reply_message, true, gpu_control_->GetCapabilities());
+      reply_message, true, decoder_->GetCapabilities());
   Send(reply_message);
 
   if (handle_.is_null() && !active_url_.is_empty()) {
@@ -942,19 +942,16 @@ void GpuCommandBufferStub::OnRegisterGpuMemoryBuffer(
     return;
   }
 #endif
-  if (gpu_control_) {
-    gpu_control_->RegisterGpuMemoryBuffer(id,
-                                          gpu_memory_buffer,
-                                          width,
-                                          height,
-                                          internalformat);
+  if (gpu_control_service_) {
+    gpu_control_service_->RegisterGpuMemoryBuffer(
+        id, gpu_memory_buffer, width, height, internalformat);
   }
 }
 
 void GpuCommandBufferStub::OnDestroyGpuMemoryBuffer(int32 id) {
   TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnDestroyGpuMemoryBuffer");
-  if (gpu_control_)
-    gpu_control_->DestroyGpuMemoryBuffer(id);
+  if (gpu_control_service_)
+    gpu_control_service_->UnregisterGpuMemoryBuffer(id);
 }
 
 void GpuCommandBufferStub::SendConsoleMessage(

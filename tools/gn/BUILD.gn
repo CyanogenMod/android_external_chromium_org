@@ -52,6 +52,7 @@ static_library("gn_lib") {
     "functions.h",
     "functions_target.cc",
     "function_exec_script.cc",
+    "function_get_target_outputs.cc",
     "function_process_file_template.cc",
     "function_read_file.cc",
     "function_rebase_path.cc",
@@ -177,6 +178,7 @@ test("gn_unittests") {
     "escape_unittest.cc",
     "filesystem_utils_unittest.cc",
     "file_template_unittest.cc",
+    "function_get_target_outputs_unittest.cc",
     "function_rebase_path_unittest.cc",
     "functions_unittest.cc",
     "header_checker_unittest.cc",
@@ -187,6 +189,7 @@ test("gn_unittests") {
     "ninja_binary_target_writer_unittest.cc",
     "ninja_copy_target_writer_unittest.cc",
     "ninja_helper_unittest.cc",
+    "ninja_target_writer_unittest.cc",
     "operators_unittest.cc",
     "parse_tree_unittest.cc",
     "parser_unittest.cc",
@@ -202,6 +205,7 @@ test("gn_unittests") {
     "test_with_scope.cc",
     "test_with_scope.h",
     "tokenizer_unittest.cc",
+    "value_unittest.cc",
     "visibility_unittest.cc",
   ]
   deps = [

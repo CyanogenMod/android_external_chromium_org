@@ -26,8 +26,6 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "content/public/browser/web_contents_view.h"
-
 using base::UserMetricsAction;
 using content::WebContents;
 
@@ -75,7 +73,7 @@ class CloseTracker {
 
    private:
     // WebContentsObserver:
-    virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE {
+    virtual void WebContentsDestroyed() OVERRIDE {
       parent_->OnWebContentsDestroyed(this);
     }
 
@@ -163,7 +161,7 @@ class TabStripModel::WebContentsData : public content::WebContentsObserver {
  private:
   // Make sure that if someone deletes this WebContents out from under us, it
   // is properly removed from the tab strip.
-  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
 
   // The WebContents being tracked by this WebContentsData. The
   // WebContentsObserver does keep a reference, but when the WebContents is
@@ -226,13 +224,12 @@ void TabStripModel::WebContentsData::SetWebContents(WebContents* contents) {
   Observe(contents);
 }
 
-void TabStripModel::WebContentsData::WebContentsDestroyed(
-    WebContents* web_contents) {
-  DCHECK_EQ(contents_, web_contents);
+void TabStripModel::WebContentsData::WebContentsDestroyed() {
+  DCHECK_EQ(contents_, web_contents());
 
   // Note that we only detach the contents here, not close it - it's
   // already been closed. We just want to undo our bookkeeping.
-  int index = tab_strip_model_->GetIndexOfWebContents(web_contents);
+  int index = tab_strip_model_->GetIndexOfWebContents(web_contents());
   DCHECK_NE(TabStripModel::kNoTab, index);
   tab_strip_model_->DetachWebContentsAt(index);
 }
@@ -840,7 +837,7 @@ void TabStripModel::AddWebContents(WebContents* contents,
   if (WebContents* old_contents = GetActiveWebContents()) {
     if ((add_types & ADD_ACTIVE) == 0) {
       apps::ResizeWebContents(contents,
-                              old_contents->GetView()->GetContainerSize());
+                              old_contents->GetContainerBounds().size());
     }
   }
 }

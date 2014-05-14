@@ -18,6 +18,7 @@ GYP_TARGET_DEPENDENCIES :=
 ### Generated for rule "content_content_gyp_common_aidl_target_compile_aidl":
 # "{'inputs': ['$(PWD)/prebuilts/sdk/18/framework.aidl', 'public/android/java/src/org/chromium/content/common/common.aidl'], 'extension': 'aidl', 'rule_sources': ['public/android/java/src/org/chromium/content/common/IChildProcessCallback.aidl', 'public/android/java/src/org/chromium/content/common/IChildProcessService.aidl'], 'rule_name': 'compile_aidl', 'outputs': ['$(gyp_shared_intermediate_dir)/common_aidl/aidl/%(INPUT_ROOT)s.java'], 'action': ['$(PWD)/prebuilts/sdk/tools/darwin/aidl', '-p$(PWD)/prebuilts/sdk/18/framework.aidl', '-ppublic/android/java/src/org/chromium/content/common/common.aidl', '$(RULE_SOURCES)', '$(gyp_shared_intermediate_dir)/common_aidl/aidl/%(INPUT_ROOT)s.java']}":
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -26,6 +27,7 @@ $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessCallback.java: $(LO
 
 
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/common_aidl/aidl/IChildProcessService.java: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -64,7 +66,6 @@ MY_CFLAGS_Debug := \
 	-mfpmath=sse \
 	-mmmx \
 	-m32 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \
@@ -149,7 +150,6 @@ MY_CFLAGS_Release := \
 	-mfpmath=sse \
 	-mmmx \
 	-m32 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \

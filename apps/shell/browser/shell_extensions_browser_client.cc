@@ -7,11 +7,11 @@
 #include "apps/shell/browser/shell_app_sorting.h"
 #include "apps/shell/browser/shell_extension_system_factory.h"
 #include "apps/shell/browser/shell_extension_web_contents_observer.h"
+#include "apps/shell/browser/shell_runtime_api_delegate.h"
 #include "apps/shell/common/api/generated_api.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/pref_service_factory.h"
 #include "base/prefs/testing_pref_store.h"
-#include "chrome/common/extensions/api/generated_api.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "components/user_prefs/user_prefs.h"
 #include "extensions/browser/api/extensions_api_client.h"
@@ -227,12 +227,14 @@ void ShellExtensionsBrowserClient::RegisterExtensionFunctions(
   // Register core extension-system APIs.
   extensions::core_api::GeneratedFunctionRegistry::RegisterAll(registry);
 
-  // TODO(rockot): Remove dependency on src/chrome once we have some core APIs
-  // moved out. Also clean up the comment below. See http://crbug.com/349042.
-  extensions::api::GeneratedFunctionRegistry::RegisterAll(registry);
-
   // Register chrome.shell APIs.
   apps::shell_api::GeneratedFunctionRegistry::RegisterAll(registry);
+}
+
+scoped_ptr<RuntimeAPIDelegate>
+ShellExtensionsBrowserClient::CreateRuntimeAPIDelegate(
+    content::BrowserContext* context) const {
+  return scoped_ptr<RuntimeAPIDelegate>(new apps::ShellRuntimeAPIDelegate());
 }
 
 }  // namespace extensions

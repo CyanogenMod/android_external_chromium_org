@@ -33,25 +33,31 @@ class FakeCrosDisksClient : public CrosDisksClient {
   virtual void EnumerateAutoMountableDevices(
       const EnumerateAutoMountableDevicesCallback& callback,
       const base::Closure& error_callback) OVERRIDE;
-  virtual void FormatDevice(const std::string& device_path,
-                            const std::string& filesystem,
-                            const FormatDeviceCallback& callback,
-                            const base::Closure& error_callback) OVERRIDE;
+  virtual void Format(const std::string& device_path,
+                      const std::string& filesystem,
+                      const base::Closure& callback,
+                      const base::Closure& error_callback) OVERRIDE;
   virtual void GetDeviceProperties(
       const std::string& device_path,
       const GetDevicePropertiesCallback& callback,
       const base::Closure& error_callback) OVERRIDE;
-  virtual void SetUpConnections(
-      const MountEventHandler& mount_event_handler,
+  virtual void SetMountEventHandler(
+      const MountEventHandler& mount_event_handler) OVERRIDE;
+  virtual void SetMountCompletedHandler(
       const MountCompletedHandler& mount_completed_handler) OVERRIDE;
+  virtual void SetFormatCompletedHandler(
+      const FormatCompletedHandler& format_completed_handler) OVERRIDE;
 
   // Used in tests to simulate signals sent by cros disks layer.
-  // Invokes handlers set in |SetUpConnections|.
+  // Invokes handlers set in |SetMountEventHandler|, |SetMountCompletedHandler|,
+  // and |SetFormatCompletedHandler|.
   bool SendMountEvent(MountEventType event, const std::string& path);
   bool SendMountCompletedEvent(MountError error_code,
                                const std::string& source_path,
                                MountType mount_type,
                                const std::string& mount_path);
+  bool SendFormatCompletedEvent(FormatError error_code,
+                                const std::string& device_path);
 
   // Returns how many times Unmount() was called.
   int unmount_call_count() const {
@@ -79,42 +85,40 @@ class FakeCrosDisksClient : public CrosDisksClient {
     unmount_listener_ = listener;
   }
 
-  // Returns how many times FormatDevice() was called.
-  int format_device_call_count() const {
-    return format_device_call_count_;
+  // Returns how many times Format() was called.
+  int format_call_count() const {
+    return format_call_count_;
   }
 
-  // Returns the |device_path| parameter from the last invocation of
-  // FormatDevice().
-  const std::string& last_format_device_device_path() const {
-    return last_format_device_device_path_;
+  // Returns the |device_path| parameter from the last invocation of Format().
+  const std::string& last_format_device_path() const {
+    return last_format_device_path_;
   }
 
-  // Returns the |filesystem| parameter from the last invocation of
-  // FormatDevice().
-  const std::string& last_format_device_filesystem() const {
-    return last_format_device_filesystem_;
+  // Returns the |filesystem| parameter from the last invocation of Format().
+  const std::string& last_format_filesystem() const {
+    return last_format_filesystem_;
   }
 
-  // Makes the subsequent FormatDevice() calls fail. FormatDevice() succeeds by
-  // default.
-  void MakeFormatDeviceFail() {
-    format_device_success_ = false;
+  // Makes the subsequent Format() calls fail. Format() succeeds by default.
+  void MakeFormatFail() {
+    format_success_ = false;
   }
 
  private:
   MountEventHandler mount_event_handler_;
   MountCompletedHandler mount_completed_handler_;
+  FormatCompletedHandler format_completed_handler_;
 
   int unmount_call_count_;
   std::string last_unmount_device_path_;
   UnmountOptions last_unmount_options_;
   bool unmount_success_;
   base::Closure unmount_listener_;
-  int format_device_call_count_;
-  std::string last_format_device_device_path_;
-  std::string last_format_device_filesystem_;
-  bool format_device_success_;
+  int format_call_count_;
+  std::string last_format_device_path_;
+  std::string last_format_filesystem_;
+  bool format_success_;
 };
 
 }  // namespace chromeos

@@ -16,12 +16,6 @@ from telemetry.core.forwarders import cros_forwarder
 
 
 class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
-  # Some developers' workflow includes running the Chrome process from
-  # /usr/local/... instead of the default location. We have to check for both
-  # paths in order to support this workflow.
-  CHROME_PATHS = ['/opt/google/chrome/chrome ',
-                  '/usr/local/opt/google/chrome/chrome ']
-
   def __init__(self, browser_type, browser_options, cri, is_guest,
                extensions_to_load):
     super(CrOSBrowserBackend, self).__init__(
@@ -58,24 +52,18 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
       cri.Chown(extension_dir)
       e.local_path = os.path.join(extension_dir, os.path.basename(e.path))
 
-    self._cri.RunCmdOnDevice(['stop', 'ui'])
-
-    if self.browser_options.clear_enterprise_policy:
-      self._cri.RmRF('/var/lib/whitelist/*')
-      self._cri.RmRF('/home/chronos/Local\ State')
+    self._cri.RestartUI(self.browser_options.clear_enterprise_policy)
+    util.WaitFor(self.IsBrowserRunning, 20)
 
     # Delete test user's cryptohome vault (user data directory).
     if not self.browser_options.dont_override_profile:
       self._cri.RunCmdOnDevice(['cryptohome', '--action=remove', '--force',
-                                '--user=%s' % self.browser_options.username])
+                                '--user=%s' % self._username])
     if self.browser_options.profile_dir:
       cri.RmRF(self.profile_directory)
       cri.PushFile(self.browser_options.profile_dir + '/Default',
                    self.profile_directory)
       cri.Chown(self.profile_directory)
-
-    self._cri.RunCmdOnDevice(['start', 'ui'])
-    util.WaitFor(self.IsBrowserRunning, 20)
 
     self._SetBranchNumber(self._GetChromeVersion())
 
@@ -100,42 +88,8 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
 
     return args
 
-  def _GetSessionManagerPid(self, procs):
-    """Returns the pid of the session_manager process, given the list of
-    processes."""
-    for pid, process, _, _ in procs:
-      if process.startswith('/sbin/session_manager '):
-        return pid
-    return None
-
-  def _GetChromeProcess(self):
-    """Locates the the main chrome browser process.
-
-    Chrome on cros is usually in /opt/google/chrome, but could be in
-    /usr/local/ for developer workflows - debug chrome is too large to fit on
-    rootfs.
-
-    Chrome spawns multiple processes for renderers. pids wrap around after they
-    are exhausted so looking for the smallest pid is not always correct. We
-    locate the session_manager's pid, and look for the chrome process that's an
-    immediate child. This is the main browser process.
-    """
-    procs = self._cri.ListProcesses()
-    session_manager_pid = self._GetSessionManagerPid(procs)
-    if not session_manager_pid:
-      return None
-
-    # Find the chrome process that is the child of the session_manager.
-    for pid, process, ppid, _ in procs:
-      if ppid != session_manager_pid:
-        continue
-      for path in self.CHROME_PATHS:
-        if process.startswith(path):
-          return {'pid': pid, 'path': path, 'args': process}
-    return None
-
   def _GetChromeVersion(self):
-    result = util.WaitFor(self._GetChromeProcess, timeout=30)
+    result = util.WaitFor(self._cri.GetChromeProcess, timeout=30)
     assert result and result['path']
     (version, _) = self._cri.RunCmdOnDevice([result['path'], '--version'])
     assert version
@@ -143,14 +97,11 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
 
   @property
   def pid(self):
-    result = self._GetChromeProcess()
-    if result and 'pid' in result:
-      return result['pid']
-    return None
+    return self._cri.GetChromePid()
 
   @property
   def browser_directory(self):
-    result = self._GetChromeProcess()
+    result = self._cri.GetChromeProcess()
     if result and 'path' in result:
       return os.path.dirname(result['path'])
     return None
@@ -208,20 +159,23 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
         # Guest browsing shuts down the current browser and launches an
         # incognito browser in a separate process, which we need to wait for.
         util.WaitFor(lambda: pid != self.pid, 10)
-        self._WaitForBrowserToComeUp()
       elif self.browser_options.gaia_login:
-        self.oobe.NavigateGaiaLogin(self.browser_options.username,
-                                    self.browser_options.password)
+        try:
+          self.oobe.NavigateGaiaLogin(self._username, self._password)
+        except util.TimeoutException:
+          self._cri.TakeScreenShot('gaia-login')
+          raise
       else:
-        self.oobe.NavigateFakeLogin(self.browser_options.username,
-                                    self.browser_options.password)
+        self.oobe.NavigateFakeLogin(self._username, self._password)
+      self._WaitForLogin()
 
     logging.info('Browser is up!')
 
   def Close(self):
     super(CrOSBrowserBackend, self).Close()
 
-    self._RestartUI() # Logs out.
+    if self._cri:
+      self._cri.RestartUI(False) # Logs out.
 
     util.WaitFor(lambda: not self._IsCryptohomeMounted(), 30)
 
@@ -249,17 +203,6 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   def GetStackTrace(self):
     return 'Cannot get stack trace on CrOS'
 
-  def _RestartUI(self):
-    if self._cri:
-      logging.info('(Re)starting the ui (logs the user out)')
-      if self._cri.IsServiceRunning('ui'):
-        self._cri.RunCmdOnDevice(['restart', 'ui'])
-      else:
-        self._cri.RunCmdOnDevice(['start', 'ui'])
-
-  def TakeScreenShot(self, screenshot_prefix):
-    self._cri.TakeScreenShot(screenshot_prefix)
-
   @property
   @decorators.Cache
   def misc_web_contents_backend(self):
@@ -274,8 +217,16 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   def oobe_exists(self):
     return self.misc_web_contents_backend.oobe_exists
 
+  @property
+  def _username(self):
+    return self.browser_options.username
+
+  @property
+  def _password(self):
+    return self.browser_options.password
+
   def _IsCryptohomeMounted(self):
-    username = '$guest' if self._is_guest else self.browser_options.username
+    username = '$guest' if self._is_guest else self._username
     return self._cri.IsCryptohomeMounted(username, self._is_guest)
 
   def _IsLoggedIn(self):
@@ -285,23 +236,24 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
             self.HasBrowserFinishedLaunching() and
             not self.oobe_exists)
 
-  def WaitForLogin(self):
+  def _WaitForLogin(self):
     if self._is_guest:
+      self._WaitForBrowserToComeUp()
       util.WaitFor(self._IsCryptohomeMounted, 30)
       return
 
     try:
       util.WaitFor(self._IsLoggedIn, 60)
     except util.TimeoutException:
-      self.TakeScreenShot('login-screen')
+      self._cri.TakeScreenShot('login-screen')
       raise exceptions.LoginException('Timed out going through login screen')
 
     # Wait for extensions to load.
     try:
       self._WaitForBrowserToComeUp()
     except util.TimeoutException:
-      logging.error('Chrome args: %s' % self._GetChromeProcess()['args'])
-      self.TakeScreenShot('extension-timeout')
+      logging.error('Chrome args: %s' % self._cri.GetChromeProcess()['args'])
+      self._cri.TakeScreenShot('extension-timeout')
       raise
 
     # Workaround for crbug.com/329271, crbug.com/334726.

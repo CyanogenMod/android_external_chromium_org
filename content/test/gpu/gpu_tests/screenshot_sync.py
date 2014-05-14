@@ -17,9 +17,6 @@ data_path = os.path.join(
     util.GetChromiumSrcDir(), 'content', 'test', 'data', 'gpu')
 
 class _ScreenshotSyncValidator(page_test.PageTest):
-  def __init__(self):
-    super(_ScreenshotSyncValidator, self).__init__('ValidatePage')
-
   def CustomizeBrowserOptions(self, options):
     options.AppendExtraBrowserArgs('--enable-gpu-benchmarking')
 
@@ -35,8 +32,8 @@ class ScreenshotSyncPage(page.Page):
     super(ScreenshotSyncPage, self).__init__(
       url='file://screenshot_sync.html',
       page_set=page_set,
-      base_dir=base_dir)
-    self.name = 'ScreenshotSync'
+      base_dir=base_dir,
+      name='ScreenshotSync')
     self.user_agent_type = 'desktop'
 
   def RunNavigateSteps(self, action_runner):

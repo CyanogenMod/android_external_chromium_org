@@ -139,6 +139,10 @@ struct PP_PNaClOptions {
   int32_t opt_level;
 };
 
+/* Callback invoked upon completion of PPP_ManifestService::OpenResource(). */
+typedef void PP_OpenResourceCompletionCallback([inout] mem_t user_data,
+                                               [in] PP_FileHandle file_handle);
+
 /* ManifestService to support irt_open_resource() function.
  * All functions of the service should have PP_Bool return value. It represents
  * whether the service is still alive or not. Trivially Quit() should always
@@ -146,12 +150,20 @@ struct PP_PNaClOptions {
  * Once false is called, as the service has been destructed, all functions
  * should never be called afterwords.
  */
-interface PP_ManifestService {
+interface PPP_ManifestService {
   /* Called when ManifestService should be destructed. */
   PP_Bool Quit([inout] mem_t user_data);
 
   /* Called when PPAPI initialization in the NaCl plugin is finished. */
   PP_Bool StartupInitializationComplete([inout] mem_t user_data);
+
+  /* Called when irt_open_resource() is invoked in the NaCl plugin.
+   * Upon completion, callback will be invoked with given callback_user_data
+   * and the result file handle (or PP_kInvalidFileHandle on error). */
+  PP_Bool OpenResource([inout] mem_t user_data,
+                       [in] str_t entry_key,
+                       [in] PP_OpenResourceCompletionCallback callback,
+                       [inout] mem_t callback_user_data);
 };
 
 /* PPB_NaCl_Private */
@@ -184,7 +196,7 @@ interface PPB_NaCl_Private {
                     [in] PP_Bool enable_dyncode_syscalls,
                     [in] PP_Bool enable_exception_handling,
                     [in] PP_Bool enable_crash_throttling,
-                    [in] PP_ManifestService manifest_service_interface,
+                    [in] PPP_ManifestService manifest_service_interface,
                     [inout] mem_t manifest_service_user_data,
                     [out] mem_t imc_handle,
                     [out] PP_Var error_message,
@@ -376,6 +388,7 @@ interface PPB_NaCl_Private {
   PP_Bool ResolvesRelativeToPluginBaseUrl([in] PP_Instance instance,
                                           [in] str_t url);
 
+  /* Returns the parsed contents of a data URL. */
   PP_Var ParseDataURL([in] str_t data_url);
 
   /* Processes the NaCl manifest once it's been retrieved.
@@ -391,4 +404,46 @@ interface PPB_NaCl_Private {
   PP_Bool IsPNaCl([in] PP_Instance instance);
 
   PP_Bool DevInterfacesEnabled([in] PP_Instance instance);
+
+  /* Downloads the manifest into the buffer |data|, invoking
+   * |callback| when finished.
+   * TODO(teravest): Merge data URL parsing into this. */
+  void DownloadManifestToBuffer([in] PP_Instance instance,
+                                [out] PP_Var data,
+                                [in] PP_CompletionCallback callback);
+
+  int32_t CreatePnaclManifest([in] PP_Instance instance);
+  int32_t CreateJsonManifest([in] PP_Instance instance,
+                             [in] str_t manifest_base_url,
+                             [in] str_t sandbox_isa,
+                             [in] str_t manifest_data);
+
+  void DestroyManifest([in] PP_Instance instance,
+                       [in] int32_t manifest_id);
+
+  PP_Bool GetManifestProgramURL([in] PP_Instance instance,
+                                [in] int32_t manifest_id,
+                                [out] PP_Var full_url,
+                                [out] PP_PNaClOptions pnacl_options,
+                                [out] PP_Bool uses_nonsfi_mode);
+
+  PP_Bool ManifestResolveKey([in] PP_Instance instance,
+                             [in] int32_t manifest_id,
+                             [in] str_t key,
+                             [out] PP_Var full_url,
+                             [out] PP_PNaClOptions pnacl_options);
+
+  /* Returns the filenames for the llc and ld tools, parsing that information
+   * from the file given in |filename|.
+   */
+  PP_Bool GetPnaclResourceInfo([in] PP_Instance instance,
+                               [in] str_t filename,
+                               [out] PP_Var llc_tool_name,
+                               [out] PP_Var ld_tool_name);
+
+  // PP_Var string of attributes describing the CPU features supported
+  // by the current architecture. The string is a comma-delimited list
+  // of attributes supported by LLVM in its -mattr= option:
+  //   http://llvm.org/docs/CommandGuide/llc.html#cmdoption-mattr
+  PP_Var GetCpuFeatureAttrs();
 };

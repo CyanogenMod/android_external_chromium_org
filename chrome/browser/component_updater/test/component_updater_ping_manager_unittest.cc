@@ -25,9 +25,9 @@ class ComponentUpdaterPingManagerTest : public testing::Test {
 
   void RunThreadsUntilIdle();
 
- // Overrides from testing::Test.
- virtual void SetUp() OVERRIDE;
- virtual void TearDown() OVERRIDE;
+  // Overrides from testing::Test.
+  virtual void SetUp() OVERRIDE;
+  virtual void TearDown() OVERRIDE;
 
  protected:
   scoped_ptr<PingManager> ping_manager_;
@@ -36,7 +36,6 @@ class ComponentUpdaterPingManagerTest : public testing::Test {
   scoped_refptr<net::TestURLRequestContextGetter> context_;
   content::TestBrowserThreadBundle thread_bundle_;
 };
-
 
 ComponentUpdaterPingManagerTest::ComponentUpdaterPingManagerTest()
     : context_(new net::TestURLRequestContextGetter(
@@ -49,8 +48,8 @@ ComponentUpdaterPingManagerTest::~ComponentUpdaterPingManagerTest() {
 }
 
 void ComponentUpdaterPingManagerTest::SetUp() {
-  ping_manager_.reset(new PingManager(
-      GURL("http://localhost2/update2"), context_));
+  ping_manager_.reset(
+      new PingManager(GURL("http://localhost2/update2"), context_));
 }
 
 void ComponentUpdaterPingManagerTest::TearDown() {
@@ -79,9 +78,10 @@ TEST_F(ComponentUpdaterPingManagerTest, DISABLED_PingManagerTest) {
   base::RunLoop().RunUntilIdle();
 
   EXPECT_EQ(1, interceptor->GetCount()) << interceptor->GetRequestsAsString();
-  EXPECT_NE(string::npos, interceptor->GetRequests()[0].find(
-      "<app appid=\"abc\" version=\"1.0\" nextversion=\"2.0\">"
-      "<event eventtype=\"3\" eventresult=\"1\"/></app>"))
+  EXPECT_NE(string::npos,
+            interceptor->GetRequests()[0].find(
+                "<app appid=\"abc\" version=\"1.0\" nextversion=\"2.0\">"
+                "<event eventtype=\"3\" eventresult=\"1\"/></app>"))
       << interceptor->GetRequestsAsString();
   interceptor->Reset();
 
@@ -96,9 +96,10 @@ TEST_F(ComponentUpdaterPingManagerTest, DISABLED_PingManagerTest) {
   base::RunLoop().RunUntilIdle();
 
   EXPECT_EQ(1, interceptor->GetCount()) << interceptor->GetRequestsAsString();
-  EXPECT_NE(string::npos, interceptor->GetRequests()[0].find(
-      "<app appid=\"abc\" version=\"1.0\" nextversion=\"2.0\">"
-      "<event eventtype=\"3\" eventresult=\"0\"/></app>"))
+  EXPECT_NE(string::npos,
+            interceptor->GetRequests()[0].find(
+                "<app appid=\"abc\" version=\"1.0\" nextversion=\"2.0\">"
+                "<event eventtype=\"3\" eventresult=\"0\"/></app>"))
       << interceptor->GetRequestsAsString();
   interceptor->Reset();
 
@@ -123,12 +124,14 @@ TEST_F(ComponentUpdaterPingManagerTest, DISABLED_PingManagerTest) {
   base::RunLoop().RunUntilIdle();
 
   EXPECT_EQ(1, interceptor->GetCount()) << interceptor->GetRequestsAsString();
-  EXPECT_NE(string::npos, interceptor->GetRequests()[0].find(
-      "<app appid=\"abc\" version=\"1.0\" nextversion=\"2.0\">"
-      "<event eventtype=\"3\" eventresult=\"0\" errorcat=\"1\" "
-      "errorcode=\"2\" extracode1=\"-1\" diffresult=\"0\" differrorcat=\"10\" "
-      "differrorcode=\"20\" diffextracode1=\"-10\" "
-      "previousfp=\"prev fp\" nextfp=\"next fp\"/></app>"))
+  EXPECT_NE(string::npos,
+            interceptor->GetRequests()[0].find(
+                "<app appid=\"abc\" version=\"1.0\" nextversion=\"2.0\">"
+                "<event eventtype=\"3\" eventresult=\"0\" errorcat=\"1\" "
+                "errorcode=\"2\" extracode1=\"-1\" diffresult=\"0\" "
+                "differrorcat=\"10\" "
+                "differrorcode=\"20\" diffextracode1=\"-10\" "
+                "previousfp=\"prev fp\" nextfp=\"next fp\"/></app>"))
       << interceptor->GetRequestsAsString();
   interceptor->Reset();
 
@@ -143,8 +146,8 @@ TEST_F(ComponentUpdaterPingManagerTest, DISABLED_PingManagerTest) {
   download_metrics.url = GURL("http://host1/path1");
   download_metrics.downloader = CrxDownloader::DownloadMetrics::kUrlFetcher;
   download_metrics.error = -1;
-  download_metrics.bytes_downloaded = 123;
-  download_metrics.bytes_total = 456;
+  download_metrics.downloaded_bytes = 123;
+  download_metrics.total_bytes = 456;
   download_metrics.download_time_ms = 987;
   item.download_metrics.push_back(download_metrics);
 
@@ -152,8 +155,8 @@ TEST_F(ComponentUpdaterPingManagerTest, DISABLED_PingManagerTest) {
   download_metrics.url = GURL("http://host2/path2");
   download_metrics.downloader = CrxDownloader::DownloadMetrics::kBits;
   download_metrics.error = 0;
-  download_metrics.bytes_downloaded = 1230;
-  download_metrics.bytes_total = 4560;
+  download_metrics.downloaded_bytes = 1230;
+  download_metrics.total_bytes = 4560;
   download_metrics.download_time_ms = 9870;
   item.download_metrics.push_back(download_metrics);
 
@@ -161,18 +164,19 @@ TEST_F(ComponentUpdaterPingManagerTest, DISABLED_PingManagerTest) {
   base::RunLoop().RunUntilIdle();
 
   EXPECT_EQ(1, interceptor->GetCount()) << interceptor->GetRequestsAsString();
-  EXPECT_NE(string::npos, interceptor->GetRequests()[0].find(
-      "<app appid=\"abc\" version=\"1.0\" nextversion=\"2.0\">"
-      "<event eventtype=\"3\" eventresult=\"1\"/>"
-      "<event eventtype=\"14\" eventresult=\"0\" downloader=\"direct\" "
-      "errorcode=\"-1\" url=\"http://host1/path1\" downloaded=\"123\" "
-      "total=\"456\" download_time_ms=\"987\"/>"
-      "<event eventtype=\"14\" eventresult=\"1\" downloader=\"bits\" "
-      "url=\"http://host2/path2\" downloaded=\"1230\" total=\"4560\" "
-      "download_time_ms=\"9870\"/></app>"))
+  EXPECT_NE(
+      string::npos,
+      interceptor->GetRequests()[0].find(
+          "<app appid=\"abc\" version=\"1.0\" nextversion=\"2.0\">"
+          "<event eventtype=\"3\" eventresult=\"1\"/>"
+          "<event eventtype=\"14\" eventresult=\"0\" downloader=\"direct\" "
+          "errorcode=\"-1\" url=\"http://host1/path1\" downloaded=\"123\" "
+          "total=\"456\" download_time_ms=\"987\"/>"
+          "<event eventtype=\"14\" eventresult=\"1\" downloader=\"bits\" "
+          "url=\"http://host2/path2\" downloaded=\"1230\" total=\"4560\" "
+          "download_time_ms=\"9870\"/></app>"))
       << interceptor->GetRequestsAsString();
   interceptor->Reset();
 }
 
 }  // namespace component_updater
-

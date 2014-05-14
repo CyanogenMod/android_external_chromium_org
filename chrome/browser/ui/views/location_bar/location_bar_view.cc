@@ -38,12 +38,11 @@
 #include "chrome/browser/ui/omnibox/location_bar_util.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_view.h"
-#include "chrome/browser/ui/passwords/manage_passwords_bubble_ui_controller.h"
 #include "chrome/browser/ui/passwords/manage_passwords_icon.h"
+#include "chrome/browser/ui/passwords/manage_passwords_ui_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/origin_chip_info.h"
 #include "chrome/browser/ui/view_ids.h"
-#include "chrome/browser/ui/views/bookmarks/bookmark_prompt_view.h"
 #include "chrome/browser/ui/views/browser_dialogs.h"
 #include "chrome/browser/ui/views/location_bar/content_setting_image_view.h"
 #include "chrome/browser/ui/views/location_bar/ev_bubble_view.h"
@@ -378,8 +377,7 @@ void LocationBarView::Init() {
   open_pdf_in_reader_view_ = new OpenPDFInReaderView();
   AddChildView(open_pdf_in_reader_view_);
 
-  manage_passwords_icon_view_ = new ManagePasswordsIconView(delegate_);
-  manage_passwords_icon_view_->SetState(ManagePasswordsIcon::INACTIVE_STATE);
+  manage_passwords_icon_view_ = new ManagePasswordsIconView(command_updater());
   AddChildView(manage_passwords_icon_view_);
 
   translate_icon_view_ = new TranslateIconView(command_updater());
@@ -555,11 +553,6 @@ void LocationBarView::SetStarToggled(bool on) {
 
 void LocationBarView::SetTranslateIconToggled(bool on) {
   translate_icon_view_->SetToggled(on);
-}
-
-void LocationBarView::ShowBookmarkPrompt() {
-  if (star_view_ && star_view_->visible())
-    BookmarkPromptView::ShowPrompt(star_view_, profile()->GetPrefs());
 }
 
 gfx::Point LocationBarView::GetOmniboxViewOrigin() const {
@@ -1193,7 +1186,7 @@ bool LocationBarView::RefreshManagePasswordsIconView() {
   if (!web_contents)
     return false;
   const bool was_visible = manage_passwords_icon_view_->visible();
-  ManagePasswordsBubbleUIController::FromWebContents(
+  ManagePasswordsUIController::FromWebContents(
       web_contents)->UpdateIconAndBubbleState(manage_passwords_icon_view_);
   return was_visible != manage_passwords_icon_view_->visible();
 }

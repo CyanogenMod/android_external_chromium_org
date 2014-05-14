@@ -10,6 +10,7 @@
 #include "chrome/browser/sync/glue/shared_change_processor_ref.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "components/sync_driver/generic_change_processor_factory.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/api/sync_error.h"
 #include "sync/api/syncable_service.h"
@@ -41,12 +42,19 @@ UIDataTypeController::UIDataTypeController(
       profile_(profile),
       sync_service_(sync_service),
       state_(NOT_RUNNING),
-      type_(type) {
+      type_(type),
+      processor_factory_(new GenericChangeProcessorFactory()) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(profile_sync_factory);
   DCHECK(profile);
   DCHECK(sync_service);
   DCHECK(syncer::IsRealDataType(type_));
+}
+
+void UIDataTypeController::SetGenericChangeProcessorFactoryForTest(
+      scoped_ptr<GenericChangeProcessorFactory> factory) {
+  DCHECK_EQ(state_, NOT_RUNNING);
+  processor_factory_ = factory.Pass();
 }
 
 UIDataTypeController::~UIDataTypeController() {
@@ -129,7 +137,8 @@ void UIDataTypeController::Associate() {
   // syncer::SyncableService associated with type().
   local_service_ = shared_change_processor_->Connect(
       profile_sync_factory_,
-      sync_service_,
+      processor_factory_.get(),
+      sync_service_->GetUserShare(),
       this,
       type(),
       weak_ptr_factory.GetWeakPtr());
@@ -206,11 +215,15 @@ void UIDataTypeController::Associate() {
   syncer_merge_result.set_num_items_after_association(
       shared_change_processor_->GetSyncCount());
 
-  shared_change_processor_->ActivateDataType(model_safe_group());
   state_ = RUNNING;
   StartDone(sync_has_nodes ? OK : OK_FIRST_RUN,
             local_merge_result,
             syncer_merge_result);
+}
+
+ChangeProcessor* UIDataTypeController::GetChangeProcessor() const {
+  DCHECK_EQ(state_, RUNNING);
+  return shared_change_processor_->generic_change_processor();
 }
 
 void UIDataTypeController::AbortModelLoad() {

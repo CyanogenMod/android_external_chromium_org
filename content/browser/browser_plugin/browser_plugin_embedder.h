@@ -45,7 +45,7 @@ class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
   static BrowserPluginEmbedder* Create(WebContentsImpl* web_contents);
 
   // Returns this embedder's WebContentsImpl.
-  WebContentsImpl* GetWebContents();
+  WebContentsImpl* GetWebContents() const;
 
   // Called when embedder's |rwh| has sent screen rects to renderer.
   void DidSendScreenRects();
@@ -86,9 +86,9 @@ class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
  private:
   friend class TestBrowserPluginEmbedder;
 
-  BrowserPluginEmbedder(WebContentsImpl* web_contents);
+  explicit BrowserPluginEmbedder(WebContentsImpl* web_contents);
 
-  BrowserPluginGuestManager* GetBrowserPluginGuestManager();
+  BrowserPluginGuestManager* GetBrowserPluginGuestManager() const;
 
   bool DidSendScreenRectsCallback(BrowserPluginGuest* guest);
 
@@ -96,6 +96,13 @@ class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
 
   bool UnlockMouseIfNecessaryCallback(const NativeWebKeyboardEvent& event,
                                       BrowserPluginGuest* guest);
+
+  // Called by the content embedder when a guest exists with the provided
+  // |instance_id|.
+  void OnGuestCallback(int instance_id,
+                       const BrowserPluginHostMsg_Attach_Params& params,
+                       const base::DictionaryValue* extra_params,
+                       BrowserPluginGuest* guest);
 
   // Message handlers.
 
@@ -120,6 +127,8 @@ class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
   // Pointer to the guest that started the drag, used to forward necessary drag
   // status messages to the correct guest.
   base::WeakPtr<BrowserPluginGuest> guest_started_drag_;
+
+  base::WeakPtrFactory<BrowserPluginEmbedder> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserPluginEmbedder);
 };

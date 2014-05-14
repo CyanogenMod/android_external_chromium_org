@@ -18,6 +18,7 @@ GYP_TARGET_DEPENDENCIES := \
 ### Generated for rule "content_browser_speech_proto_speech_proto_gyp_speech_proto_target_genproto":
 # "{'inputs': ['../../../../tools/protoc_wrapper/protoc_wrapper.py', '$(gyp_shared_intermediate_dir)/protoc'], 'process_outputs_as_sources': '1', 'extension': 'proto', 'outputs': ['$(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto/%(INPUT_ROOT)s_pb2.py', '$(gyp_shared_intermediate_dir)/protoc_out/content/browser/speech/proto/%(INPUT_ROOT)s.pb.cc', '$(gyp_shared_intermediate_dir)/protoc_out/content/browser/speech/proto/%(INPUT_ROOT)s.pb.h'], 'rule_name': 'genproto', 'rule_sources': ['google_streaming_api.proto'], 'action': ['python', '../../../../tools/protoc_wrapper/protoc_wrapper.py', '--include', '', '--protobuf', '$(gyp_shared_intermediate_dir)/protoc_out/content/browser/speech/proto/%(INPUT_ROOT)s.pb.h', '--proto-in-dir', '.', '--proto-in-file', '%(INPUT_ROOT)s$(suffix $<)', '--use-system-protobuf=0', '--', '$(gyp_shared_intermediate_dir)/protoc', '--cpp_out', '$(gyp_shared_intermediate_dir)/protoc_out/content/browser/speech/proto', '--python_out', '$(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto'], 'message': 'Generating C++ and Python code from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto/google_streaming_api_pb2.py: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto/google_streaming_api_pb2.py: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto/google_streaming_api_pb2.py: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto/google_streaming_api_pb2.py: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/pyproto/content/browser/speech/proto/google_streaming_api_pb2.py: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -63,7 +64,6 @@ MY_CFLAGS_Debug := \
 	-fPIC \
 	-Wno-format \
 	-fno-tree-sra \
-	-fuse-ld=gold \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \
@@ -156,7 +156,6 @@ MY_CFLAGS_Release := \
 	-fPIC \
 	-Wno-format \
 	-fno-tree-sra \
-	-fuse-ld=gold \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \

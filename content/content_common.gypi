@@ -175,7 +175,6 @@
     'common/cursors/webcursor_aurax11.cc',
     'common/cursors/webcursor_mac.mm',
     'common/cursors/webcursor_ozone.cc',
-    'common/cursors/webcursor_win.cc',
     'common/database_messages.h',
     'common/date_time_suggestion.h',
     'common/desktop_notification_messages.h',
@@ -212,9 +211,12 @@
     'common/frame_param_macros.h',
     'common/gamepad_hardware_buffer.h',
     'common/gamepad_messages.h',
+    'common/gamepad_param_traits.cc',
+    'common/gamepad_param_traits.h',
     'common/gamepad_user_gesture.cc',
     'common/gamepad_user_gesture.h',
     'common/geolocation_messages.h',
+    'common/gin_java_bridge_messages.h',
     'common/gpu/client/command_buffer_proxy_impl.cc',
     'common/gpu/client/command_buffer_proxy_impl.h',
     'common/gpu/client/context_provider_command_buffer.cc',
@@ -302,6 +304,7 @@
     'common/input/gesture_event_stream_validator.h',
     'common/input/input_event.cc',
     'common/input/input_event.h',
+    'common/input/input_event_ack_state.h',
     'common/input/input_event_stream_validator.cc',
     'common/input/input_event_stream_validator.h',
     'common/input/input_param_traits.cc',
@@ -452,7 +455,6 @@
     'common/websocket_messages.h',
     'common/worker_messages.h',
     'common/zygote_commands_linux.h',
-    'port/common/input_event_ack_state.h',
   ],
   'target_conditions': [
     ['OS=="android" and <(use_seccomp_bpf)==1', {
@@ -466,7 +468,6 @@
     ['use_aura==1', {
       'sources!': [
         'common/cursors/webcursor_mac.mm',
-        'common/cursors/webcursor_win.cc',
       ],
     }],
     ['OS=="ios"', {
@@ -616,14 +617,16 @@
       'sources': [
         'common/gpu/media/exynos_v4l2_video_device.cc',
         'common/gpu/media/exynos_v4l2_video_device.h',
-        'common/gpu/media/exynos_video_encode_accelerator.cc',
-        'common/gpu/media/exynos_video_encode_accelerator.h',
         'common/gpu/media/tegra_v4l2_video_device.cc',
         'common/gpu/media/tegra_v4l2_video_device.h',
+        'common/gpu/media/v4l2_image_processor.cc',
+        'common/gpu/media/v4l2_image_processor.h',
         'common/gpu/media/v4l2_video_decode_accelerator.cc',
         'common/gpu/media/v4l2_video_decode_accelerator.h',
         'common/gpu/media/v4l2_video_device.cc',
         'common/gpu/media/v4l2_video_device.h',
+        'common/gpu/media/v4l2_video_encode_accelerator.cc',
+        'common/gpu/media/v4l2_video_encode_accelerator.h',
       ],
       'include_dirs': [
         '<(DEPTH)/third_party/khronos',

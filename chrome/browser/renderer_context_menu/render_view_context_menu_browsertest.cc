@@ -21,7 +21,6 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/test/browser_test_utils.h"
 #include "third_party/WebKit/public/web/WebContextMenuData.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
@@ -77,6 +76,19 @@ IN_PROC_BROWSER_TEST_F(ContextMenuBrowserTest,
   ASSERT_TRUE(menu->IsItemPresent(IDC_CONTENT_CONTEXT_COPYLINKLOCATION));
 }
 
+IN_PROC_BROWSER_TEST_F(ContextMenuBrowserTest,
+                       SaveAsImageForCanvas) {
+  content::ContextMenuParams params;
+  params.media_type = blink::WebContextMenuData::MediaTypeCanvas;
+
+  TestRenderViewContextMenu menu(
+      browser()->tab_strip_model()->GetActiveWebContents()->GetMainFrame(),
+      params);
+  menu.Init();
+
+  ASSERT_TRUE(menu.IsItemPresent(IDC_CONTENT_CONTEXT_SAVEIMAGEAS));
+}
+
 // GTK requires a X11-level mouse event to open a context menu correctly.
 #if defined(TOOLKIT_GTK)
 #define MAYBE_RealMenu DISABLED_RealMenu
@@ -101,10 +113,9 @@ IN_PROC_BROWSER_TEST_F(ContextMenuBrowserTest,
   mouse_event.button = blink::WebMouseEvent::ButtonRight;
   mouse_event.x = 15;
   mouse_event.y = 15;
-  gfx::Rect offset;
   content::WebContents* tab =
       browser()->tab_strip_model()->GetActiveWebContents();
-  tab->GetView()->GetContainerBounds(&offset);
+  gfx::Rect offset = tab->GetContainerBounds();
   mouse_event.globalX = 15 + offset.x();
   mouse_event.globalY = 15 + offset.y();
   mouse_event.clickCount = 1;

@@ -5,6 +5,7 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/threading/platform_thread.h"
 #include "base/values.h"
 #include "content/browser/media/webrtc_internals.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -45,6 +46,18 @@ class WebRtcBrowserTest : public WebRtcContentBrowserTest,
       command_line->AppendSwitch(switches::kEnableAudioTrackProcessing);
   }
 
+  virtual void TearDownOnMainThread() OVERRIDE {
+#if defined(OS_ANDROID)
+    // TODO(phoglund): this is a ugly workaround to let the IO thread
+    // finish its work. The reason we need this on Android is that
+    // content_browsertests tearDown logic is broken with respect
+    // to threading, which causes the IO thread to compete with the
+    // teardown. See http://crbug.com/362852. I also tried with 2
+    // seconds, but that isn't enough.
+    base::PlatformThread::Sleep(base::TimeDelta::FromSeconds(5));
+#endif
+  }
+
   // Convenience function since most peerconnection-call.html tests just load
   // the page, kick off some javascript and wait for the title to change to OK.
   void MakeTypicalPeerConnectionCall(const std::string& javascript) {
@@ -58,7 +71,7 @@ class WebRtcBrowserTest : public WebRtcContentBrowserTest,
   }
 
   void DisableOpusIfOnAndroid() {
-#if defined (OS_ANDROID)
+#if defined(OS_ANDROID)
     // Always force iSAC 16K on Android for now (Opus is broken).
     EXPECT_EQ("isac-forced",
               ExecuteJavascriptAndReturnResult("forceIsac16KInSdp();"));
@@ -172,29 +185,13 @@ IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
 
 // This test will modify the SDP offer to an unsupported codec, which should
 // cause SetLocalDescription to fail.
-#if defined(USE_OZONE)
-// Disabled for Ozone, see http://crbug.com/315392#c15
-#define MAYBE_NegotiateUnsupportedVideoCodec\
-    DISABLED_NegotiateUnsupportedVideoCodec
-#else
-#define MAYBE_NegotiateUnsupportedVideoCodec NegotiateUnsupportedVideoCodec
-#endif
-
-IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
-                       MAYBE_NegotiateUnsupportedVideoCodec) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, NegotiateUnsupportedVideoCodec) {
   MakeTypicalPeerConnectionCall("negotiateUnsupportedVideoCodec();");
 }
 
 // This test will modify the SDP offer to use no encryption, which should
 // cause SetLocalDescription to fail.
-#if defined(USE_OZONE)
-// Disabled for Ozone, see http://crbug.com/315392#c15
-#define MAYBE_NegotiateNonCryptoCall DISABLED_NegotiateNonCryptoCall
-#else
-#define MAYBE_NegotiateNonCryptoCall NegotiateNonCryptoCall
-#endif
-
-IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_NegotiateNonCryptoCall) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, NegotiateNonCryptoCall) {
   MakeTypicalPeerConnectionCall("negotiateNonCryptoCall();");
 }
 

@@ -37,6 +37,9 @@ class BookmarkClient {
   typedef std::pair<const BookmarkNode*, int> NodeTypedCountPair;
   typedef std::vector<NodeTypedCountPair> NodeTypedCountPairs;
 
+  // Returns true if the embedder favors touch icons over favicons.
+  virtual bool PreferTouchIcon() = 0;
+
   // Requests the favicon of any of |icon_types| whose pixel sizes most
   // closely match |desired_size_in_dip| (if value is 0, the largest favicon
   // is returned) and desired scale factor for |page_url|. |callback| is run
@@ -47,27 +50,20 @@ class BookmarkClient {
       int icon_types,
       int desired_size_in_dip,
       const FaviconImageCallback& callback,
-      base::CancelableTaskTracker* tracker) = 0;
+      base::CancelableTaskTracker* tracker);
 
   // Returns true if the embedder supports typed count for URL.
-  virtual bool SupportsTypedCountForNodes() = 0;
+  virtual bool SupportsTypedCountForNodes();
 
   // Retrieves the number of time each BookmarkNode URL has been typed in
   // the Omnibox by the user.
   virtual void GetTypedCountForNodes(
       const NodeSet& nodes,
-      NodeTypedCountPairs* node_typed_count_pairs) = 0;
+      NodeTypedCountPairs* node_typed_count_pairs);
 
   // Wrapper around RecordAction defined in base/metrics/user_metrics.h
   // that ensure that the action is posted from the correct thread.
   virtual void RecordAction(const base::UserMetricsAction& action) = 0;
-
-  // Notifies the history backend about urls of removed bookmarks.
-  // TODO(sdefresne): remove this method from the BookmarkClient (by having
-  // the client register itself as a BookmarkModelObserver if it is interested
-  // in the events), http://crbug.com/364433
-  virtual void NotifyHistoryAboutRemovedBookmarks(
-      const std::set<GURL>& removed_bookmark_urls) = 0;
 
  protected:
   virtual ~BookmarkClient() {}

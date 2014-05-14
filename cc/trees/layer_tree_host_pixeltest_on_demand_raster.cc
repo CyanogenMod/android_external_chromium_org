@@ -41,15 +41,14 @@ class LayerTreeHostOnDemandRasterPixelTest : public LayerTreePixelTest {
     PictureLayerImpl* picture_layer = static_cast<PictureLayerImpl*>(
         host_impl->active_tree()->root_layer()->child_at(0));
 
-    QuadList quads;
-    SharedQuadStateList shared_states;
-    MockQuadCuller quad_culler(&quads, &shared_states);
+    scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+    MockQuadCuller quad_culler(render_pass.get());
 
     AppendQuadsData data;
     picture_layer->AppendQuads(&quad_culler, &data);
 
-    for (size_t i = 0; i < quads.size(); ++i)
-      EXPECT_EQ(quads[i]->material, DrawQuad::PICTURE_CONTENT);
+    for (size_t i = 0; i < render_pass->quad_list.size(); ++i)
+      EXPECT_EQ(render_pass->quad_list[i]->material, DrawQuad::PICTURE_CONTENT);
 
     // Triggers pixel readback and ends the test.
     LayerTreePixelTest::SwapBuffersOnThread(host_impl, result);
@@ -65,9 +64,11 @@ class BlueYellowLayerClient : public ContentLayerClient {
 
   virtual bool FillsBoundsCompletely() const OVERRIDE { return false; }
 
-  virtual void PaintContents(SkCanvas* canvas,
-                             const gfx::Rect& clip,
-                             gfx::RectF* opaque) OVERRIDE {
+  virtual void PaintContents(
+      SkCanvas* canvas,
+      const gfx::Rect& clip,
+      gfx::RectF* opaque,
+      ContentLayerClient::GraphicsContextStatus gc_status) OVERRIDE {
     *opaque = gfx::RectF(layer_rect_.width(), layer_rect_.height());
 
     SkPaint paint;

@@ -7,16 +7,16 @@ from telemetry.page import page as page_module
 from telemetry.page import page_set as page_set_module
 
 
-class IndexeddbOfflinePage(page_module.PageWithDefaultRunNavigate):
+class IndexeddbOfflinePage(page_module.Page):
 
   """ Why: Simulates user input while offline and sync while online. """
 
   def __init__(self, page_set):
     super(IndexeddbOfflinePage, self).__init__(
       url='file://endure/indexeddb_app.html',
-      page_set=page_set)
+      page_set=page_set,
+      name='indexeddb_offline')
     self.user_agent_type = 'desktop'
-    self.name = 'indexeddb_offline'
 
   def RunNavigateSteps(self, action_runner):
     action_runner.RunAction(NavigateAction())

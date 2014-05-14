@@ -53,7 +53,13 @@ CommandBufferImpl::CommandBufferImpl(ScopedCommandBufferClientHandle client,
                                      const gfx::Size& size)
     : client_(client.Pass(), this), widget_(widget), size_(size) {}
 
-CommandBufferImpl::~CommandBufferImpl() { client_->DidDestroy(); }
+CommandBufferImpl::~CommandBufferImpl() {
+  client_->DidDestroy();
+  if (decoder_.get()) {
+    bool have_context = decoder_->MakeCurrent();
+    decoder_->Destroy(have_context);
+  }
+}
 
 void CommandBufferImpl::Initialize(
     ScopedCommandBufferSyncClientHandle sync_client,
@@ -112,11 +118,7 @@ bool CommandBufferImpl::DoInitialize(
     return false;
 
   gpu_control_.reset(
-      new gpu::GpuControlService(context_group->image_manager(),
-                                 NULL,
-                                 context_group->mailbox_manager(),
-                                 NULL,
-                                 decoder_->GetCapabilities()));
+      new gpu::GpuControlService(context_group->image_manager(), NULL));
 
   command_buffer_->SetPutOffsetChangeCallback(base::Bind(
       &gpu::GpuScheduler::PutChanged, base::Unretained(scheduler_.get())));

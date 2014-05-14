@@ -91,7 +91,6 @@ enum MountEventType {
   CROS_DISKS_DEVICE_ADDED,
   CROS_DISKS_DEVICE_REMOVED,
   CROS_DISKS_DEVICE_SCANNED,
-  CROS_DISKS_FORMATTING_FINISHED,
 };
 
 // Additional unmount flags to be added to unmount request.
@@ -192,17 +191,13 @@ class CHROMEOS_EXPORT CrosDisksClient : public DBusClient {
  public:
   // A callback to handle the result of EnumerateAutoMountableDevices.
   // The argument is the enumerated device paths.
-  typedef base::Callback<void(const std::vector<std::string>& device_paths)
-                         > EnumerateAutoMountableDevicesCallback;
-
-  // A callback to handle the result of FormatDevice.
-  // The argument is true when formatting succeeded.
-  typedef base::Callback<void(bool format_succeeded)> FormatDeviceCallback;
+  typedef base::Callback<void(const std::vector<std::string>& device_paths)>
+      EnumerateAutoMountableDevicesCallback;
 
   // A callback to handle the result of GetDeviceProperties.
   // The argument is the information about the specified device.
-  typedef base::Callback<void(const DiskInfo& disk_info)
-                         > GetDevicePropertiesCallback;
+  typedef base::Callback<void(const DiskInfo& disk_info)>
+      GetDevicePropertiesCallback;
 
   // A callback to handle MountCompleted signal.
   // The first argument is the error code.
@@ -212,15 +207,22 @@ class CHROMEOS_EXPORT CrosDisksClient : public DBusClient {
   typedef base::Callback<void(MountError error_code,
                               const std::string& source_path,
                               MountType mount_type,
-                              const std::string& mount_path)
-                         > MountCompletedHandler;
+                              const std::string& mount_path)>
+      MountCompletedHandler;
+
+  // A callback to handle FormatCompleted signal.
+  // The first argument is the error code.
+  // The second argument is the device path.
+  typedef base::Callback<void(FormatError error_code,
+                              const std::string& device_path)>
+      FormatCompletedHandler;
 
   // A callback to handle mount events.
   // The first argument is the event type.
   // The second argument is the device path.
   typedef base::Callback<void(MountEventType event_type,
-                              const std::string& device_path)
-                         > MountEventHandler;
+                              const std::string& device_path)>
+      MountEventHandler;
 
   virtual ~CrosDisksClient();
 
@@ -252,12 +254,12 @@ class CHROMEOS_EXPORT CrosDisksClient : public DBusClient {
       const EnumerateAutoMountableDevicesCallback& callback,
       const base::Closure& error_callback) = 0;
 
-  // Calls FormatDevice method.  |callback| is called after the method call
-  // succeeds, otherwise, |error_callback| is called.
-  virtual void FormatDevice(const std::string& device_path,
-                            const std::string& filesystem,
-                            const FormatDeviceCallback& callback,
-                            const base::Closure& error_callback) = 0;
+  // Calls Format method.  |callback| is called after the method call succeeds,
+  // otherwise, |error_callback| is called.
+  virtual void Format(const std::string& device_path,
+                      const std::string& filesystem,
+                      const base::Closure& callback,
+                      const base::Closure& error_callback) = 0;
 
   // Calls GetDeviceProperties method.  |callback| is called after the method
   // call succeeds, otherwise, |error_callback| is called.
@@ -265,12 +267,20 @@ class CHROMEOS_EXPORT CrosDisksClient : public DBusClient {
                                    const GetDevicePropertiesCallback& callback,
                                    const base::Closure& error_callback) = 0;
 
-  // Registers given callback for events.
-  // |mount_event_handler| is called when mount event signal is received.
-  // |mount_completed_handler| is called when MountCompleted signal is received.
-  virtual void SetUpConnections(
-      const MountEventHandler& mount_event_handler,
+  // Registers |mount_event_handler| as a callback to be invoked when a mount
+  // event signal is received.
+  virtual void SetMountEventHandler(
+      const MountEventHandler& mount_event_handler) = 0;
+
+  // Registers |mount_completed_handler| as a callback to be invoked when a
+  // MountCompleted signal is received.
+  virtual void SetMountCompletedHandler(
       const MountCompletedHandler& mount_completed_handler) = 0;
+
+  // Registers |format_completed_handler| as a callback to be invoked when a
+  // FormatCompleted signal is received.
+  virtual void SetFormatCompletedHandler(
+      const FormatCompletedHandler& format_completed_handler) = 0;
 
   // Factory function, creates a new instance and returns ownership.
   // For normal usage, access the singleton via DBusThreadManager::Get().

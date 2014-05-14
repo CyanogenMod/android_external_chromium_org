@@ -40,6 +40,10 @@
   "mojo_public_utility_unittests",
   "mojo_service_manager_unittests",
   "mojo_system_unittests",
+  {
+    "test": "nacl_loader_unittests",
+    "platforms": ["linux"]
+  },
   "net_unittests",
   "ppapi_unittests",
   "printing_unittests",
@@ -54,9 +58,17 @@
     "chromium_configs": ["chromium_chromeos", "chromium_chromeos_clang"]
   },
   {
+    "test": "mojo_view_manager_unittests",
+    "platforms": ["linux"]
+  },
+  {
     "test": "sandbox_linux_unittests",
     "platforms": ["linux"],
     "args": ["--test-launcher-print-test-stdio=always"]
+  },
+  {
+    "test": "sandbox_mac_unittests",
+    "platforms": ["mac"]
   },
   {
     "test": "views_unittests",

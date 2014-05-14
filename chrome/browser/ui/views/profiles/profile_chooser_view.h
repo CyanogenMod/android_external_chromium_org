@@ -141,7 +141,7 @@ class ProfileChooserView : public views::BubbleDelegateView,
   // Creates the profile chooser view. |tutorial_shown| indicates if the "mirror
   // enabled" tutorial was shown or not in the last active view.
   views::View* CreateProfileChooserView(AvatarMenu* avatar_menu,
-                                        TutorialMode tutorial_mode);
+                                        TutorialMode last_tutorial_mode);
 
   // Creates the main profile card for the profile |avatar_item|. |is_guest|
   // is used to determine whether to show any Sign in/Sign out/Manage accounts
@@ -236,7 +236,7 @@ class ProfileChooserView : public views::BubbleDelegateView,
   views::ImageButton* gaia_signin_cancel_button_;
 
   // Links and buttons displayed in the account removal view.
-  views::LabelButton* remove_account_and_relaunch_button_;
+  views::LabelButton* remove_account_button_;
   views::ImageButton* account_removal_cancel_button_;
 
   // Links and buttons displayed in the end-preview view.

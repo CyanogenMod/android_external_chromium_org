@@ -158,6 +158,7 @@ static const MimeInfo secondary_mappings[] = {
   { "image/tiff", "tiff,tif" },
   { "image/x-xbitmap", "xbm" },
   { "image/svg+xml", "svg,svgz" },
+  { "image/x-png", "png"},
   { "message/rfc822", "eml" },
   { "text/plain", "txt,text" },
   { "text/html", "ehtml" },
@@ -260,7 +261,8 @@ static const char* const supported_image_types[] = {
   "image/bmp",
   "image/vnd.microsoft.icon",    // ico
   "image/x-icon",    // ico
-  "image/x-xbitmap"  // xbm
+  "image/x-xbitmap",  // xbm
+  "image/x-png"
 };
 
 // A list of media types: http://en.wikipedia.org/wiki/Internet_media_type
@@ -650,7 +652,7 @@ static const char* legal_top_level_types[] = {
 bool MimeUtil::IsMimeType(const std::string& type_string) const {
   // MIME types are always ASCII and case-insensitive (at least, the top-level
   // and secondary types we care about).
-  if (!IsStringASCII(type_string))
+  if (!base::IsStringASCII(type_string))
     return false;
 
   if (type_string == "*/*" || type_string == "*")

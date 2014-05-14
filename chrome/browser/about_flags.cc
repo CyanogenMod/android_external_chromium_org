@@ -203,6 +203,14 @@ const Experiment::Choice kLCDTextChoices[] = {
   { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED, switches::kDisableLCDText, ""}
 };
 
+const Experiment::Choice kDistanceFieldTextChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED,
+    switches::kEnableDistanceFieldText, "" },
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
+    switches::kDisableDistanceFieldText, "" }
+};
+
 #ifndef USE_AURA
 const Experiment::Choice kDelegatedRendererChoices[] = {
   { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
@@ -391,6 +399,19 @@ const Experiment::Choice kEnableSyncAppListChoices[] = {
     app_list::switches::kDisableSyncAppList, "" },
 };
 #endif
+
+const Experiment::Choice kExtensionContentVerificationChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_FLAGS_EXTENSION_CONTENT_VERIFICATION_BOOTSTRAP,
+    extensions::switches::kExtensionContentVerification,
+    extensions::switches::kExtensionContentVerificationBootstrap },
+  { IDS_FLAGS_EXTENSION_CONTENT_VERIFICATION_ENFORCE,
+    extensions::switches::kExtensionContentVerification,
+    extensions::switches::kExtensionContentVerificationEnforce },
+  { IDS_FLAGS_EXTENSION_CONTENT_VERIFICATION_ENFORCE_STRICT,
+    extensions::switches::kExtensionContentVerification,
+    extensions::switches::kExtensionContentVerificationEnforceStrict },
+};
 
 // RECORDING USER METRICS FOR FLAGS:
 // -----------------------------------------------------------------------------
@@ -1042,14 +1063,6 @@ const Experiment kExperiments[] = {
     kOsAll,
     SINGLE_VALUE_TYPE(ash::switches::kAshDebugShortcuts),
   },
-  { "ash-alternate-caption-button",
-    IDS_FLAGS_ASH_FRAME_CAPTION_BUTTON_STYLE_NAME,
-    IDS_FLAGS_ASH_FRAME_CAPTION_BUTTON_STYLE_DESCRIPTION,
-    kOsCrOS,
-    ENABLE_DISABLE_VALUE_TYPE(
-        ash::switches::kAshEnableAlternateFrameCaptionButtonStyle,
-        ash::switches::kAshDisableAlternateFrameCaptionButtonStyle),
-  },
   { "ash-enable-touch-view-testing",
     IDS_FLAGS_ASH_ENABLE_TOUCH_VIEW_TESTING_NAME,
     IDS_FLAGS_ASH_ENABLE_TOUCH_VIEW_TESTING_DESCRIPTION,
@@ -1243,7 +1256,16 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_OFFLINE_AUTO_RELOAD_NAME,
     IDS_FLAGS_ENABLE_OFFLINE_AUTO_RELOAD_DESCRIPTION,
     kOsAll,
-    SINGLE_VALUE_TYPE(switches::kEnableOfflineAutoReload)
+    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableOfflineAutoReload,
+                              switches::kDisableOfflineAutoReload)
+  },
+  {
+    "enable-offline-load-stale-cache",
+    IDS_FLAGS_ENABLE_OFFLINE_LOAD_STALE_NAME,
+    IDS_FLAGS_ENABLE_OFFLINE_LOAD_STALE_DESCRIPTION,
+    kOsLinux | kOsMac | kOsWin | kOsAndroid,
+    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableOfflineLoadStaleCache,
+                              switches::kDisableOfflineLoadStaleCache)
   },
   {
     "default-tile-width",
@@ -1668,7 +1690,7 @@ const Experiment kExperiments[] = {
     "search-button-in-omnibox",
     IDS_FLAGS_SEARCH_BUTTON_IN_OMNIBOX_NAME,
     IDS_FLAGS_SEARCH_BUTTON_IN_OMNIBOX_DESCRIPTION,
-    kOsCrOS | kOsMac | kOsWin,
+    kOsCrOS | kOsMac | kOsWin | kOsLinux,
     MULTI_VALUE_TYPE(kSearchButtonInOmniboxChoices)
   },
   {
@@ -1732,11 +1754,11 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(app_list::switches::kEnableExperimentalAppList)
   },
   {
-    "enable-experimental-app-list-position",
-    IDS_FLAGS_ENABLE_EXPERIMENTAL_APP_LIST_POSITION_NAME,
-    IDS_FLAGS_ENABLE_EXPERIMENTAL_APP_LIST_POSITION_DESCRIPTION,
+    "enable-centered-app-list",
+    IDS_FLAGS_ENABLE_CENTERED_APP_LIST_NAME,
+    IDS_FLAGS_ENABLE_CENTERED_APP_LIST_DESCRIPTION,
     kOsWin | kOsLinux | kOsCrOS,
-    SINGLE_VALUE_TYPE(app_list::switches::kEnableExperimentalAppListPosition)
+    SINGLE_VALUE_TYPE(app_list::switches::kEnableCenteredAppList)
   },
 #endif
   {
@@ -1834,6 +1856,37 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_EMBEDDEDSEARCH_API_DESCRIPTION,
     kOsAndroid,
     SINGLE_VALUE_TYPE(switches::kEnableEmbeddedSearchAPI)
+  },
+  {
+    "enable-app-install-alerts",
+    IDS_FLAGS_ENABLE_APP_INSTALL_ALERTS_NAME,
+    IDS_FLAGS_ENABLE_APP_INSTALL_ALERTS_DESCRIPTION,
+    kOsAndroid,
+    SINGLE_VALUE_TYPE(switches::kEnableAppInstallAlerts)
+  },
+#endif
+  {
+    "distance-field-text",
+    IDS_FLAGS_DISTANCE_FIELD_TEXT_NAME,
+    IDS_FLAGS_DISTANCE_FIELD_TEXT_DESCRIPTION,
+    kOsAll,
+    MULTI_VALUE_TYPE(kDistanceFieldTextChoices)
+  },
+  {
+    "extension-content-verification",
+    IDS_FLAGS_EXTENSION_CONTENT_VERIFICATION_NAME,
+    IDS_FLAGS_EXTENSION_CONTENT_VERIFICATION_DESCRIPTION,
+    kOsDesktop,
+    MULTI_VALUE_TYPE(kExtensionContentVerificationChoices)
+  },
+#if defined(USE_AURA)
+  {
+    "text-input-focus-manager",
+    IDS_FLAGS_TEXT_INPUT_FOCUS_MANAGER_NAME,
+    IDS_FLAGS_TEXT_INPUT_FOCUS_MANAGER_DESCRIPTION,
+    kOsCrOS | kOsLinux | kOsWin,
+    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableTextInputFocusManager,
+                              switches::kDisableTextInputFocusManager)
   },
 #endif
 };

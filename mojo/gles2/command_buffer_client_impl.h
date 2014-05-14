@@ -9,9 +9,9 @@
 
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "gpu/command_buffer/client/gpu_control.h"
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/common/command_buffer_shared.h"
-#include "gpu/command_buffer/common/gpu_control.h"
 #include "mojo/public/cpp/bindings/error_handler.h"
 #include "mojo/public/cpp/bindings/remote_ptr.h"
 #include "mojo/services/gles2/command_buffer.mojom.h"
@@ -63,6 +63,7 @@ class CommandBufferClientImpl : public CommandBufferClient,
   virtual gfx::GpuMemoryBuffer* CreateGpuMemoryBuffer(size_t width,
                                                       size_t height,
                                                       unsigned internalformat,
+                                                      unsigned usage,
                                                       int32* id) OVERRIDE;
   virtual void DestroyGpuMemoryBuffer(int32 id) OVERRIDE;
   virtual uint32 InsertSyncPoint() OVERRIDE;

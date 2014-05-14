@@ -9,6 +9,7 @@
 #include "base/json/json_writer.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -34,6 +35,7 @@
 #include "content/public/browser/devtools_client_host.h"
 #include "content/public/browser/devtools_manager.h"
 #include "content/public/browser/favicon_status.h"
+#include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_source.h"
@@ -42,7 +44,6 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/url_constants.h"
@@ -63,6 +64,7 @@ base::LazyInstance<DevToolsUIBindingsList>::Leaky g_instances =
 static const char kFrontendHostId[] = "id";
 static const char kFrontendHostMethod[] = "method";
 static const char kFrontendHostParams[] = "params";
+static const char kTitleFormat[] = "Developer Tools - %s";
 
 std::string SkColorToRGBAString(SkColor color) {
   // We avoid StringPrintf because it will use locale specific formatters for
@@ -195,6 +197,8 @@ class DefaultBindingsDelegate : public DevToolsUIBindings::Delegate {
 
   virtual void InspectedContentsClosing() OVERRIDE;
   virtual void OnLoadCompleted() OVERRIDE {}
+  virtual InfoBarService* GetInfoBarService() OVERRIDE;
+  virtual void RenderProcessGone() OVERRIDE {}
 
   content::WebContents* web_contents_;
   DISALLOW_COPY_AND_ASSIGN(DefaultBindingsDelegate);
@@ -202,7 +206,7 @@ class DefaultBindingsDelegate : public DevToolsUIBindings::Delegate {
 
 void DefaultBindingsDelegate::ActivateWindow() {
   web_contents_->GetDelegate()->ActivateContents(web_contents_);
-  web_contents_->GetView()->Focus();
+  web_contents_->Focus();
 }
 
 void DefaultBindingsDelegate::OpenInNewTab(const std::string& url) {
@@ -217,6 +221,10 @@ void DefaultBindingsDelegate::InspectedContentsClosing() {
   web_contents_->GetRenderViewHost()->ClosePage();
 }
 
+InfoBarService* DefaultBindingsDelegate::GetInfoBarService() {
+  return InfoBarService::FromWebContents(web_contents_);
+}
+
 }  // namespace
 
 // DevToolsUIBindings::FrontendWebContentsObserver ----------------------------
@@ -229,9 +237,10 @@ class DevToolsUIBindings::FrontendWebContentsObserver
 
  private:
   // contents::WebContentsObserver:
+  virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
   virtual void AboutToNavigateRenderView(
       content::RenderViewHost* render_view_host) OVERRIDE;
-  virtual void DocumentOnLoadCompletedInMainFrame(int32 page_id) OVERRIDE;
+  virtual void DocumentOnLoadCompletedInMainFrame() OVERRIDE;
 
   DevToolsUIBindings* devtools_bindings_;
   DISALLOW_COPY_AND_ASSIGN(FrontendWebContentsObserver);
@@ -247,13 +256,18 @@ DevToolsUIBindings::FrontendWebContentsObserver::
     ~FrontendWebContentsObserver() {
 }
 
+void DevToolsUIBindings::FrontendWebContentsObserver::RenderProcessGone(
+    base::TerminationStatus status) {
+  devtools_bindings_->delegate_->RenderProcessGone();
+}
+
 void DevToolsUIBindings::FrontendWebContentsObserver::AboutToNavigateRenderView(
     content::RenderViewHost* render_view_host) {
   content::DevToolsClientHost::SetupDevToolsFrontendClient(render_view_host);
 }
 
 void DevToolsUIBindings::FrontendWebContentsObserver::
-    DocumentOnLoadCompletedInMainFrame(int32 page_id) {
+    DocumentOnLoadCompletedInMainFrame() {
   devtools_bindings_->DocumentOnLoadCompletedInMainFrame();
 }
 
@@ -389,7 +403,7 @@ void DevToolsUIBindings::ActivateWindow() {
 }
 
 void DevToolsUIBindings::CloseWindow() {
-  delegate_->ActivateWindow();
+  delegate_->CloseWindow();
 }
 
 void DevToolsUIBindings::SetContentsInsets(
@@ -412,6 +426,15 @@ void DevToolsUIBindings::SetIsDocked(bool dock_requested) {
 
 void DevToolsUIBindings::InspectElementCompleted() {
   delegate_->InspectElementCompleted();
+}
+
+void DevToolsUIBindings::InspectedURLChanged(const std::string& url) {
+  content::NavigationController& controller = web_contents()->GetController();
+  content::NavigationEntry* entry = controller.GetActiveEntry();
+  // DevTools UI is not localized.
+  entry->SetTitle(
+      base::UTF8ToUTF16(base::StringPrintf(kTitleFormat, url.c_str())));
+  web_contents()->NotifyNavigationStateChanged(content::INVALIDATE_TYPE_TITLE);
 }
 
 void DevToolsUIBindings::OpenInNewTab(const std::string& url) {
@@ -680,8 +703,7 @@ void DevToolsUIBindings::SearchCompleted(
 void DevToolsUIBindings::ShowDevToolsConfirmInfoBar(
     const base::string16& message,
     const InfoBarCallback& callback) {
-  DevToolsConfirmInfoBarDelegate::Create(
-      InfoBarService::FromWebContents(web_contents_),
+  DevToolsConfirmInfoBarDelegate::Create(delegate_->GetInfoBarService(),
       callback, message);
 }
 

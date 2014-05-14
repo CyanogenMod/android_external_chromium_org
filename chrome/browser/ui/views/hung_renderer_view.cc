@@ -21,7 +21,6 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/result_codes.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -156,8 +155,7 @@ void HungPagesTableModel::WebContentsObserverImpl::RenderProcessGone(
   model_->TabDestroyed(this);
 }
 
-void HungPagesTableModel::WebContentsObserverImpl::WebContentsDestroyed(
-    WebContents* tab) {
+void HungPagesTableModel::WebContentsObserverImpl::WebContentsDestroyed() {
   model_->TabDestroyed(this);
 }
 
@@ -197,7 +195,7 @@ HungRendererDialogView* HungRendererDialogView::GetInstance() {
 // static
 bool HungRendererDialogView::IsFrameActive(WebContents* contents) {
   gfx::NativeView frame_view =
-      platform_util::GetTopLevel(contents->GetView()->GetNativeView());
+      platform_util::GetTopLevel(contents->GetNativeView());
   return platform_util::IsWindowActive(frame_view);
 }
 
@@ -244,7 +242,7 @@ void HungRendererDialogView::ShowForWebContents(WebContents* contents) {
     }
 
     gfx::NativeView frame_view =
-        platform_util::GetTopLevel(contents->GetView()->GetNativeView());
+        platform_util::GetTopLevel(contents->GetNativeView());
     views::Widget* insert_after =
         views::Widget::GetWidgetForNativeView(frame_view);
     if (insert_after)
@@ -441,7 +439,7 @@ void ShowHungRendererDialog(WebContents* contents) {
     return;
 
   gfx::NativeView toplevel_view =
-      platform_util::GetTopLevel(contents->GetView()->GetNativeView());
+      platform_util::GetTopLevel(contents->GetNativeView());
   // Don't show the dialog if there is no root window for the renderer, because
   // it's invisible to the user (happens when the renderer is for prerendering
   // for example).

@@ -9,14 +9,13 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/feedback/feedback_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/common/url_constants.h"
+#include "components/feedback/feedback_util.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -239,7 +238,7 @@ void SadTabView::Show() {
   // It is not possible to create a native_widget_win that has no parent in
   // and later re-parent it.
   // TODO(avi): This is a cheat. Can this be made cleaner?
-  sad_tab_params.parent = web_contents_->GetView()->GetNativeView();
+  sad_tab_params.parent = web_contents_->GetNativeView();
 
   set_owned_by_client();
 
@@ -248,9 +247,8 @@ void SadTabView::Show() {
   sad_tab->SetContentsView(this);
 
   views::Widget::ReparentNativeView(sad_tab->GetNativeView(),
-                                    web_contents_->GetView()->GetNativeView());
-  gfx::Rect bounds;
-  web_contents_->GetView()->GetContainerBounds(&bounds);
+                                    web_contents_->GetNativeView());
+  gfx::Rect bounds = web_contents_->GetContainerBounds();
   sad_tab->SetBounds(gfx::Rect(bounds.size()));
 }
 

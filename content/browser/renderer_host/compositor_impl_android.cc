@@ -259,7 +259,8 @@ void CompositorImpl::Composite() {
 
 void CompositorImpl::SetRootLayer(scoped_refptr<cc::Layer> root_layer) {
   root_layer_->RemoveAllChildren();
-  root_layer_->AddChild(root_layer);
+  if (root_layer)
+    root_layer_->AddChild(root_layer);
 }
 
 void CompositorImpl::SetWindowSurface(ANativeWindow* window) {
@@ -326,6 +327,8 @@ void CompositorImpl::SetVisible(bool visible) {
     CommandLine* command_line = CommandLine::ForCurrentProcess();
     settings.initial_debug_state.SetRecordRenderingStats(
         command_line->HasSwitch(cc::switches::kEnableGpuBenchmarking));
+    settings.initial_debug_state.show_fps_counter =
+        command_line->HasSwitch(cc::switches::kUIShowFPSCounter);
 
     host_ = cc::LayerTreeHost::CreateSingleThreaded(
         this, this, HostSharedBitmapManager::current(), settings);

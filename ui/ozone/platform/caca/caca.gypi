@@ -4,16 +4,27 @@
 
 {
   'variables': {
-    'chromium_code': 1,
-    'ozone_platform_caca%': 0,
+    'internal_ozone_platform_deps': [
+      'ozone_platform_caca',
+    ],
+    'internal_ozone_platforms': [
+      'caca'
+    ],
   },
-  'conditions': [
-    ['<(ozone_platform_caca) == 1', {
-      'variables': {
-        'ozone_platforms': [
-          'caca'
-        ],
-      },
+  'targets': [
+    {
+      'target_name': 'ozone_platform_caca',
+      'type': 'static_library',
+      'defines': [
+        'OZONE_IMPLEMENTATION',
+      ],
+      'dependencies': [
+        '../../base/base.gyp:base',
+        '../../skia/skia.gyp:skia',
+        '../events/events.gyp:events',
+        '../gfx/gfx.gyp:gfx',
+        '../gfx/gfx.gyp:gfx_geometry',
+      ],
       'link_settings': {
         'libraries': [
           '-lcaca',
@@ -22,13 +33,13 @@
       'sources': [
         'caca_connection.cc',
         'caca_connection.h',
-        'ozone_platform_caca.cc',
-        'ozone_platform_caca.h',
         'caca_event_factory.cc',
         'caca_event_factory.h',
         'caca_surface_factory.cc',
         'caca_surface_factory.h',
+        'ozone_platform_caca.cc',
+        'ozone_platform_caca.h',
       ],
-    }],
+    },
   ],
 }

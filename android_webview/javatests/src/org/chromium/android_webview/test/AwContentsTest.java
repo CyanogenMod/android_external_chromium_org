@@ -94,6 +94,8 @@ public class AwContentsTest extends AwTestBase {
         }
     }
 
+    @LargeTest
+    @Feature({"AndroidWebView"})
     public void testCreateAndGcManyTimes() throws Throwable {
         final int CONCURRENT_INSTANCES = 4;
         final int REPETITIONS = 16;
@@ -132,6 +134,25 @@ public class AwContentsTest extends AwTestBase {
                 return AwContents.getNativeInstanceCount() <= MAX_IDLE_INSTANCES;
             }
         });
+    }
+
+    @SmallTest
+    @Feature({"AndroidWebView"})
+    public void testUseAwSettingsAfterDestroy() throws Throwable {
+        AwTestContainerView awTestContainerView =
+                createAwTestContainerViewOnMainSync(mContentsClient);
+        AwSettings awSettings = getAwSettingsOnUiThread(awTestContainerView.getAwContents());
+        loadUrlSync(awTestContainerView.getAwContents(),
+                mContentsClient.getOnPageFinishedHelper(), CommonResources.ABOUT_HTML);
+        destroyAwContentsOnMainSync(awTestContainerView.getAwContents());
+
+        // AwSettings should still be usable even after native side is destroyed.
+        String newFontFamily = "serif";
+        awSettings.setStandardFontFamily(newFontFamily);
+        assertEquals(newFontFamily, awSettings.getStandardFontFamily());
+        boolean newBlockNetworkLoads = !awSettings.getBlockNetworkLoads();
+        awSettings.setBlockNetworkLoads(newBlockNetworkLoads);
+        assertEquals(newBlockNetworkLoads, awSettings.getBlockNetworkLoads());
     }
 
     private int callDocumentHasImagesSync(final AwContents awContents)

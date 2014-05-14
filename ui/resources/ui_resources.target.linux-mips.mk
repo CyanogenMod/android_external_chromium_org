@@ -16,6 +16,7 @@ GYP_TARGET_DEPENDENCIES :=
 
 ### Rules for action "ui_resources":
 $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_resources.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_resources.h: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_resources.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_resources.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_resources.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -30,6 +31,7 @@ $(gyp_shared_intermediate_dir)/ui/ui_resources/ui_resources_200_percent.pak: $(g
 
 ### Rules for action "webui_resources":
 $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/webui_resources.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/ui/ui_resources/grit/webui_resources.h: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/webui_resources.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/webui_resources.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/webui_resources.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -43,6 +45,7 @@ $(gyp_shared_intermediate_dir)/ui/ui_resources/webui_resources.pak: $(gyp_shared
 
 ### Rules for action "ui_unscaled_resources":
 $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_unscaled_resources.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_unscaled_resources.h: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_unscaled_resources.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_unscaled_resources.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_unscaled_resources.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))

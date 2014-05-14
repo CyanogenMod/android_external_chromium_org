@@ -25,6 +25,7 @@
 #endif
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
+#include <net/if_media.h>
 #include <netinet/in_var.h>
 #include <sys/ioctl.h>
 #endif
@@ -83,6 +84,34 @@ void RemovePermanentIPv6AddressesWhereTemporaryExists(
 
 #endif
 
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+
+NetworkChangeNotifier::ConnectionType GetNetworkInterfaceType(
+    int addr_family, const std::string& interface_name) {
+  NetworkChangeNotifier::ConnectionType type =
+      NetworkChangeNotifier::CONNECTION_UNKNOWN;
+
+  struct ifmediareq ifmr = {};
+  strncpy(ifmr.ifm_name, interface_name.c_str(), sizeof(ifmr.ifm_name) - 1);
+
+  int s = socket(addr_family, SOCK_DGRAM, 0);
+  if (s == -1) {
+    return type;
+  }
+
+  if (ioctl(s, SIOCGIFMEDIA, &ifmr) != -1) {
+    if (ifmr.ifm_current & IFM_IEEE80211) {
+      type = NetworkChangeNotifier::CONNECTION_WIFI;
+    } else if (ifmr.ifm_current & IFM_ETHER) {
+      type = NetworkChangeNotifier::CONNECTION_ETHERNET;
+    }
+  }
+  close(s);
+  return type;
+}
+
+#endif
+
 }  // namespace
 
 bool GetNetworkList(NetworkInterfaceList* networks, int policy) {
@@ -111,7 +140,8 @@ bool GetNetworkList(NetworkInterfaceList* networks, int policy) {
     CHECK(base::StringToUint(network_tokenizer.token(), &index));
 
     networks->push_back(
-        NetworkInterface(name, name, index, NETWORK_INTERFACE_UNKNOWN,
+        NetworkInterface(name, name, index,
+                         NetworkChangeNotifier::CONNECTION_UNKNOWN,
                          address, network_prefix));
   }
   return true;
@@ -182,6 +212,8 @@ bool GetNetworkList(NetworkInterfaceList* networks, int policy) {
     }
 
     NetworkInterfaceInfo network_info;
+    NetworkChangeNotifier::ConnectionType connection_type =
+        NetworkChangeNotifier::CONNECTION_UNKNOWN;
 #if defined(OS_MACOSX) && !defined(OS_IOS)
     // Check if this is a temporary address. Currently this is only supported
     // on Mac.
@@ -196,6 +228,8 @@ bool GetNetworkList(NetworkInterfaceList* networks, int policy) {
         network_info.permanent = !(ifr.ifr_ifru.ifru_flags & IN6_IFF_TEMPORARY);
       }
     }
+
+    connection_type = GetNetworkInterfaceType(addr->sa_family, name);
 #endif
 
     IPEndPoint address;
@@ -212,8 +246,8 @@ bool GetNetworkList(NetworkInterfaceList* networks, int policy) {
         }
       }
       network_info.interface = NetworkInterface(
-          name, name, if_nametoindex(name.c_str()), NETWORK_INTERFACE_UNKNOWN,
-          address.address(), net_mask);
+          name, name, if_nametoindex(name.c_str()),
+          connection_type, address.address(), net_mask);
 
       network_infos.push_back(NetworkInterfaceInfo(network_info));
     }

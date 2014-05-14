@@ -260,7 +260,7 @@ void AutofillAgent::FocusedNodeChanged(const WebNode& node) {
   element_ = *element;
 }
 
-void AutofillAgent::OrientationChangeEvent(int orientation) {
+void AutofillAgent::OrientationChangeEvent() {
   HidePopup();
 }
 
@@ -280,7 +280,7 @@ void AutofillAgent::didRequestAutocomplete(
   GURL url(form.document().url());
   content::SSLStatus ssl_status =
       render_view()->GetSSLStatusOfFrame(form.document().frame());
-  bool is_safe = url.SchemeIs(content::kHttpsScheme) &&
+  bool is_safe = url.SchemeIs(url::kHttpsScheme) &&
       !net::IsCertStatusError(ssl_status.cert_status);
   bool allow_unsafe = CommandLine::ForCurrentProcess()->HasSwitch(
       ::switches::kReduceSecurityForTesting);
@@ -640,24 +640,24 @@ void AutofillAgent::QueryAutofillSuggestions(
   gfx::RectF bounding_box_scaled =
       GetScaledBoundingBox(web_view_->pageScaleFactor(), &element_);
 
+  std::vector<base::string16> data_list_values;
+  std::vector<base::string16> data_list_labels;
   const WebInputElement* input_element = toWebInputElement(&element);
   if (input_element) {
     // Find the datalist values and send them to the browser process.
-    std::vector<base::string16> data_list_values;
-    std::vector<base::string16> data_list_labels;
     GetDataListSuggestions(*input_element,
                            datalist_only,
                            &data_list_values,
                            &data_list_labels);
     TrimStringVectorForIPC(&data_list_values);
     TrimStringVectorForIPC(&data_list_labels);
-
-    Send(new AutofillHostMsg_SetDataList(routing_id(),
-                                         data_list_values,
-                                         data_list_labels));
   }
 
   is_popup_possibly_visible_ = true;
+  Send(new AutofillHostMsg_SetDataList(routing_id(),
+                                       data_list_values,
+                                       data_list_labels));
+
   Send(new AutofillHostMsg_QueryFormFieldAutofill(routing_id(),
                                                   autofill_query_id_,
                                                   form,

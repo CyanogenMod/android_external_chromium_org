@@ -75,6 +75,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,ui_gl_gl_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/gl_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,ui_gl_surface_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/surface_jni_headers.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_angle_src_translator_gyp,,,$(GYP_VAR_PREFIX))/third_party_angle_src_translator_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_angle_src_translator_lib_gyp,,,$(GYP_VAR_PREFIX))/third_party_angle_src_translator_lib_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_angle_src_preprocessor_gyp,,,$(GYP_VAR_PREFIX))/third_party_angle_src_preprocessor_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_gles2_cmd_helper_gyp,,,$(GYP_VAR_PREFIX))/gpu_gles2_cmd_helper_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,gpu_gpu_config_gyp,,,$(GYP_VAR_PREFIX))/gpu_gpu_config_gyp.a \
@@ -220,6 +221,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_frontend_protocol_sources_gyp,,,$(GYP_VAR_PREFIX))/frontend_protocol_sources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_build_audits_module_gyp,,,$(GYP_VAR_PREFIX))/build_audits_module.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_build_core_module_gyp,,,$(GYP_VAR_PREFIX))/build_core_module.stamp \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_concatenated_module_descriptors_gyp,,,$(GYP_VAR_PREFIX))/concatenated_module_descriptors.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_build_console_module_gyp,,,$(GYP_VAR_PREFIX))/build_console_module.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_build_devices_module_gyp,,,$(GYP_VAR_PREFIX))/build_devices_module.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_build_elements_module_gyp,,,$(GYP_VAR_PREFIX))/build_elements_module.stamp \
@@ -229,6 +231,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_build_profiler_module_gyp,,,$(GYP_VAR_PREFIX))/build_profiler_module.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_build_resources_module_gyp,,,$(GYP_VAR_PREFIX))/build_resources_module.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_build_search_module_gyp,,,$(GYP_VAR_PREFIX))/build_search_module.stamp \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_build_settings_module_gyp,,,$(GYP_VAR_PREFIX))/build_settings_module.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_build_source_frame_module_gyp,,,$(GYP_VAR_PREFIX))/build_source_frame_module.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_build_sources_module_gyp,,,$(GYP_VAR_PREFIX))/build_sources_module.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_devtools_build_timeline_module_gyp,,,$(GYP_VAR_PREFIX))/build_timeline_module.stamp \
@@ -242,6 +245,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_surface_surface_gyp,,,$(GYP_VAR_PREFIX))/ui_surface_surface_gyp.a \
 	$(call intermediates-dir-for,GYP,webkit_webkit_strings_gyp,,,$(GYP_VAR_PREFIX))/webkit_strings.stamp \
 	$(call intermediates-dir-for,GYP,third_party_angle_src_commit_id_gyp,,,$(GYP_VAR_PREFIX))/commit_id.stamp \
+	$(call intermediates-dir-for,GYP,third_party_angle_src_copy_scripts_gyp,,,$(GYP_VAR_PREFIX))/copy_scripts.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,printing_printing_gyp,,,$(GYP_VAR_PREFIX))/printing_printing_gyp.a \
 	$(call intermediates-dir-for,GYP,printing_printing_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/printing_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,sandbox_sandbox_gyp,,,$(GYP_VAR_PREFIX))/sandbox.stamp \
@@ -311,6 +315,11 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_audio_processing_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_audio_processing_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_audioproc_debug_proto_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_audioproc_debug_proto_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_webrtc_modules_audio_device_gyp,,,$(GYP_VAR_PREFIX))/third_party_webrtc_modules_audio_device_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,components_cdm_browser_gyp,,,$(GYP_VAR_PREFIX))/components_cdm_browser_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,components_cdm_common_gyp,,,$(GYP_VAR_PREFIX))/components_cdm_common_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,components_cdm_renderer_gyp,,,$(GYP_VAR_PREFIX))/components_cdm_renderer_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,components_data_reduction_proxy_browser_gyp,,,$(GYP_VAR_PREFIX))/components_data_reduction_proxy_browser_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,components_data_reduction_proxy_common_gyp,,,$(GYP_VAR_PREFIX))/components_data_reduction_proxy_common_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_navigation_interception_gyp,,,$(GYP_VAR_PREFIX))/components_navigation_interception_gyp.a \
 	$(call intermediates-dir-for,GYP,components_navigation_interception_jni_headers_gyp,,,$(GYP_VAR_PREFIX))/navigation_interception_jni_headers.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,components_visitedlink_browser_gyp,,,$(GYP_VAR_PREFIX))/components_visitedlink_browser_gyp.a \
@@ -598,6 +607,7 @@ LOCAL_STATIC_LIBRARIES := \
 	ui_gfx_gfx_geometry_gyp \
 	ui_gl_gl_gyp \
 	third_party_angle_src_translator_gyp \
+	third_party_angle_src_translator_lib_gyp \
 	third_party_angle_src_preprocessor_gyp \
 	gpu_gles2_cmd_helper_gyp \
 	gpu_gpu_config_gyp \
@@ -746,6 +756,11 @@ LOCAL_STATIC_LIBRARIES := \
 	third_party_webrtc_modules_audio_processing_gyp \
 	third_party_webrtc_modules_audioproc_debug_proto_gyp \
 	third_party_webrtc_modules_audio_device_gyp \
+	components_cdm_browser_gyp \
+	components_cdm_common_gyp \
+	components_cdm_renderer_gyp \
+	components_data_reduction_proxy_browser_gyp \
+	components_data_reduction_proxy_common_gyp \
 	components_navigation_interception_gyp \
 	components_visitedlink_browser_gyp \
 	components_visitedlink_common_gyp \

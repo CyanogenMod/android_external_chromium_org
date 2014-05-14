@@ -23,7 +23,6 @@
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
@@ -35,6 +34,10 @@
 namespace app_list {
 
 namespace {
+
+#if defined(OS_CHROMEOS)
+const char kOldHotwordExtensionVersionString[] = "0.1.1.5014_0";
+#endif
 
 scoped_ptr<base::DictionaryValue> CreateAppInfo(
     const extensions::Extension* app) {
@@ -132,11 +135,25 @@ void StartPageHandler::SendRecommendedApps() {
 
 #if defined(OS_CHROMEOS)
 void StartPageHandler::OnHotwordEnabledChanged() {
-  StartPageService* service = StartPageService::Get(
-      Profile::FromWebUI(web_ui()));
-  web_ui()->CallJavascriptFunction(
-      "appList.startPage.setHotwordEnabled",
-      base::FundamentalValue(service->HotwordEnabled()));
+  // If the hotword extension is new enough, we should use the new
+  // hotwordPrivate API to provide the feature.
+  // TODO(mukai): remove this after everything gets stable.
+  Profile* profile = Profile::FromWebUI(web_ui());
+  ExtensionService* extension_service =
+      extensions::ExtensionSystem::Get(profile)->extension_service();
+  if (!extension_service)
+    return;
+
+  const extensions::Extension* hotword_extension =
+      extension_service->GetExtensionById(
+          extension_misc::kHotwordExtensionId, false /* include_disabled */);
+  if (hotword_extension && hotword_extension->version()->CompareTo(
+          base::Version(kOldHotwordExtensionVersionString)) <= 0) {
+    StartPageService* service = StartPageService::Get(profile);
+    web_ui()->CallJavascriptFunction(
+        "appList.startPage.setHotwordEnabled",
+        base::FundamentalValue(service->HotwordEnabled()));
+  }
 }
 #endif
 
@@ -194,8 +211,8 @@ void StartPageHandler::HandleLaunchApp(const base::ListValue* args) {
 
   AppListControllerDelegate* controller = AppListService::Get(
       chrome::GetHostDesktopTypeForNativeView(
-          web_ui()->GetWebContents()->GetView()->GetNativeView()))
-      ->GetControllerDelegate();
+          web_ui()->GetWebContents()->GetNativeView()))->
+              GetControllerDelegate();
   controller->ActivateApp(profile,
                           app,
                           AppListControllerDelegate::LAUNCH_FROM_APP_LIST,

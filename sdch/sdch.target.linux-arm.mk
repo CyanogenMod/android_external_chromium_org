@@ -53,7 +53,6 @@ MY_CFLAGS_Debug := \
 	./sdch/logging_forward.h \
 	-Wno-deprecated-declarations \
 	-fno-tree-sra \
-	-fuse-ld=gold \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \
@@ -145,7 +144,6 @@ MY_CFLAGS_Release := \
 	./sdch/logging_forward.h \
 	-Wno-deprecated-declarations \
 	-fno-tree-sra \
-	-fuse-ld=gold \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \

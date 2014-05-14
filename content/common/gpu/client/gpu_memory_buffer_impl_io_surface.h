@@ -12,20 +12,21 @@ class IOSurfaceSupport;
 
 namespace content {
 
-// Provides implementation of a GPU memory buffer based
-// on an IO surface handle.
+// Implementation of GPU memory buffer based on IO surfaces.
 class GpuMemoryBufferImplIOSurface : public GpuMemoryBufferImpl {
  public:
-  GpuMemoryBufferImplIOSurface(gfx::Size size, unsigned internalformat);
+  GpuMemoryBufferImplIOSurface(const gfx::Size& size, unsigned internalformat);
   virtual ~GpuMemoryBufferImplIOSurface();
 
   static bool IsFormatSupported(unsigned internalformat);
+  static bool IsUsageSupported(unsigned usage);
+  static bool IsConfigurationSupported(unsigned internalformat, unsigned usage);
   static uint32 PixelFormat(unsigned internalformat);
 
-  bool Initialize(gfx::GpuMemoryBufferHandle handle);
+  bool InitializeFromHandle(gfx::GpuMemoryBufferHandle handle);
 
   // Overridden from gfx::GpuMemoryBuffer:
-  virtual void* Map(AccessMode mode) OVERRIDE;
+  virtual void* Map() OVERRIDE;
   virtual void Unmap() OVERRIDE;
   virtual uint32 GetStride() const OVERRIDE;
   virtual gfx::GpuMemoryBufferHandle GetHandle() const OVERRIDE;

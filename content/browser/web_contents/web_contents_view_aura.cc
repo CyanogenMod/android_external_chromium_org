@@ -70,7 +70,7 @@
 #include "ui/wm/public/drag_drop_delegate.h"
 
 namespace content {
-WebContentsViewPort* CreateWebContentsView(
+WebContentsView* CreateWebContentsView(
     WebContentsImpl* web_contents,
     WebContentsViewDelegate* delegate,
     RenderViewHostDelegateView** render_view_host_delegate_view) {
@@ -159,7 +159,7 @@ class OverscrollWindowDelegate : public ImageWindowDelegate {
       web_contents_window()->delegate()->OnGestureEvent(event);
   }
 
-  WebContents* web_contents_;
+  WebContentsImpl* web_contents_;
 
   // The window is displayed both during the gesture, and after the gesture
   // while the navigation is in progress. During the gesture, it is necessary to
@@ -979,10 +979,6 @@ void WebContentsViewAura::GetContainerBounds(gfx::Rect *out) const {
   *out = window_->GetBoundsInScreen();
 }
 
-void WebContentsViewAura::OnTabCrashed(base::TerminationStatus status,
-                                       int error_code) {
-}
-
 void WebContentsViewAura::SizeContents(const gfx::Size& size) {
   gfx::Rect bounds = window_->bounds();
   if (bounds.size() != size) {
@@ -1035,7 +1031,7 @@ gfx::Rect WebContentsViewAura::GetViewBounds() const {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// WebContentsViewAura, WebContentsViewPort implementation:
+// WebContentsViewAura, WebContentsView implementation:
 
 void WebContentsViewAura::CreateView(
     const gfx::Size& initial_size, gfx::NativeView context) {
@@ -1043,7 +1039,7 @@ void WebContentsViewAura::CreateView(
   // if the bookmark bar is not shown and you create a new tab). The right
   // value is set shortly after this, so its safe to ignore.
 
-  aura::Env::CreateInstance();
+  aura::Env::CreateInstance(true);
   window_.reset(new aura::Window(this));
   window_->set_owned_by_parent(false);
   window_->SetType(ui::wm::WINDOW_TYPE_CONTROL);
@@ -1082,7 +1078,7 @@ void WebContentsViewAura::CreateView(
     drag_dest_delegate_ = delegate_->GetDragDestDelegate();
 }
 
-RenderWidgetHostView* WebContentsViewAura::CreateViewForWidget(
+RenderWidgetHostViewBase* WebContentsViewAura::CreateViewForWidget(
     RenderWidgetHost* render_widget_host) {
   if (render_widget_host->GetView()) {
     // During testing, the view will already be set up in most cases to the
@@ -1091,11 +1087,12 @@ RenderWidgetHostView* WebContentsViewAura::CreateViewForWidget(
     // view twice), we check for the RVH Factory, which will be set when we're
     // making special ones (which go along with the special views).
     DCHECK(RenderViewHostFactory::has_factory());
-    return render_widget_host->GetView();
+    return static_cast<RenderWidgetHostViewBase*>(
+        render_widget_host->GetView());
   }
 
-  RenderWidgetHostView* view =
-      RenderWidgetHostView::CreateViewForWidget(render_widget_host);
+  RenderWidgetHostViewBase* view = new RenderWidgetHostViewAura(
+      render_widget_host);
   view->InitAsChild(NULL);
   GetNativeView()->AddChild(view->GetNativeView());
 
@@ -1122,9 +1119,9 @@ RenderWidgetHostView* WebContentsViewAura::CreateViewForWidget(
   return view;
 }
 
-RenderWidgetHostView* WebContentsViewAura::CreateViewForPopupWidget(
+RenderWidgetHostViewBase* WebContentsViewAura::CreateViewForPopupWidget(
     RenderWidgetHost* render_widget_host) {
-  return RenderWidgetHostViewPort::CreateViewForWidget(render_widget_host);
+  return new RenderWidgetHostViewAura(render_widget_host);
 }
 
 void WebContentsViewAura::SetPageTitle(const base::string16& title) {

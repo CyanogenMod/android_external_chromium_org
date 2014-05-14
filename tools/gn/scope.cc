@@ -22,27 +22,29 @@ Scope::Scope(const Settings* settings)
     : const_containing_(NULL),
       mutable_containing_(NULL),
       settings_(settings),
-      mode_flags_(0) {
+      mode_flags_(0),
+      item_collector_(NULL) {
 }
 
 Scope::Scope(Scope* parent)
     : const_containing_(NULL),
       mutable_containing_(parent),
       settings_(parent->settings()),
-      mode_flags_(0) {
+      mode_flags_(0),
+      item_collector_(NULL) {
 }
 
 Scope::Scope(const Scope* parent)
     : const_containing_(parent),
       mutable_containing_(NULL),
       settings_(parent->settings()),
-      mode_flags_(0) {
+      mode_flags_(0),
+      item_collector_(NULL) {
 }
 
 Scope::~Scope() {
   STLDeleteContainerPairSecondPointers(target_defaults_.begin(),
                                        target_defaults_.end());
-  STLDeleteContainerPairSecondPointers(templates_.begin(), templates_.end());
 }
 
 const Value* Scope::GetValue(const base::StringPiece& ident,
@@ -121,17 +123,17 @@ Value* Scope::SetValue(const base::StringPiece& ident,
   return &r.value;
 }
 
-bool Scope::AddTemplate(const std::string& name, scoped_ptr<Template> templ) {
+bool Scope::AddTemplate(const std::string& name, const Template* templ) {
   if (GetTemplate(name))
     return false;
-  templates_[name] = templ.release();
+  templates_[name] = templ;
   return true;
 }
 
 const Template* Scope::GetTemplate(const std::string& name) const {
   TemplateMap::const_iterator found = templates_.find(name);
   if (found != templates_.end())
-    return found->second;
+    return found->second.get();
   if (containing())
     return containing()->GetTemplate(name);
   return NULL;
@@ -285,10 +287,7 @@ bool Scope::NonRecursiveMergeTo(Scope* dest,
     }
 
     // Be careful to delete any pointer we're about to clobber.
-    const Template** dest_template = &dest->templates_[i->first];
-    if (*dest_template)
-      delete *dest_template;
-    *dest_template = i->second->Clone().release();
+    dest->templates_[i->first] = i->second;
   }
 
   return true;
@@ -388,6 +387,14 @@ const SourceDir& Scope::GetSourceDir() const {
   if (containing())
     return containing()->GetSourceDir();
   return source_dir_;
+}
+
+Scope::ItemVector* Scope::GetItemCollector() {
+  if (item_collector_)
+    return item_collector_;
+  if (mutable_containing())
+    return mutable_containing()->GetItemCollector();
+  return NULL;
 }
 
 void Scope::SetProperty(const void* key, void* value) {

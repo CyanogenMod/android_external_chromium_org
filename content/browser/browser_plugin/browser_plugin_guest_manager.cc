@@ -11,8 +11,12 @@
 #include "content/common/browser_plugin/browser_plugin_constants.h"
 #include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/browser_context.h"
+#include "content/public/browser/browser_plugin_guest_manager_delegate.h"
+#include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/user_metrics.h"
+#include "content/public/common/content_client.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
@@ -23,18 +27,44 @@ namespace content {
 // static
 BrowserPluginHostFactory* BrowserPluginGuestManager::factory_ = NULL;
 
-BrowserPluginGuestManager::BrowserPluginGuestManager()
-    : next_instance_id_(browser_plugin::kInstanceIDNone) {
+BrowserPluginGuestManager::BrowserPluginGuestManager(BrowserContext* context)
+    : context_(context) {}
+
+BrowserPluginGuestManagerDelegate*
+BrowserPluginGuestManager::GetDelegate() const {
+  return context_->GetGuestManagerDelegate();
 }
 
 BrowserPluginGuestManager::~BrowserPluginGuestManager() {
 }
 
+// static.
+BrowserPluginGuestManager* BrowserPluginGuestManager::FromBrowserContext(
+    BrowserContext* context) {
+  BrowserPluginGuestManager* guest_manager =
+      static_cast<BrowserPluginGuestManager*>(
+        context->GetUserData(
+            browser_plugin::kBrowserPluginGuestManagerKeyName));
+  if (!guest_manager) {
+    guest_manager = BrowserPluginGuestManager::Create(context);
+    context->SetUserData(browser_plugin::kBrowserPluginGuestManagerKeyName,
+                         guest_manager);
+  }
+  return guest_manager;
+}
+
 // static
-BrowserPluginGuestManager* BrowserPluginGuestManager::Create() {
+BrowserPluginGuestManager* BrowserPluginGuestManager::Create(
+    BrowserContext* context) {
   if (factory_)
-    return factory_->CreateBrowserPluginGuestManager();
-  return new BrowserPluginGuestManager();
+    return factory_->CreateBrowserPluginGuestManager(context);
+  return new BrowserPluginGuestManager(context);
+}
+
+int BrowserPluginGuestManager::GetNextInstanceID() {
+  if (!GetDelegate())
+    return 0;
+  return GetDelegate()->GetNextInstanceID();
 }
 
 BrowserPluginGuest* BrowserPluginGuestManager::CreateGuest(
@@ -48,7 +78,7 @@ BrowserPluginGuest* BrowserPluginGuestManager::CreateGuest(
   // since we depend on this in other parts of the code, such as FilePath
   // creation. If the validation fails, treat it as a bad message and kill the
   // renderer process.
-  if (!IsStringUTF8(params.storage_partition_id)) {
+  if (!base::IsStringUTF8(params.storage_partition_id)) {
     content::RecordAction(
         base::UserMetricsAction("BadMessageTerminate_BPGM"));
     base::KillProcess(
@@ -57,15 +87,8 @@ BrowserPluginGuest* BrowserPluginGuestManager::CreateGuest(
     return NULL;
   }
 
-  // We usually require BrowserPlugins to be hosted by a storage isolated
-  // extension. We treat WebUI pages as a special case if they host the
-  // BrowserPlugin in a component extension iframe. In that case, we use the
-  // iframe's URL to determine the extension.
   const GURL& embedder_site_url = embedder_site_instance->GetSiteURL();
-  GURL validated_frame_url(params.embedder_frame_url);
-  embedder_process_host->FilterURL(false, &validated_frame_url);
-  const std::string& host = content::HasWebUIScheme(embedder_site_url) ?
-       validated_frame_url.host() : embedder_site_url.host();
+  const std::string& host = embedder_site_url.host();
 
   std::string url_encoded_partition = net::EscapeQueryParamValue(
       params.storage_partition_id, false);
@@ -98,46 +121,51 @@ BrowserPluginGuest* BrowserPluginGuestManager::CreateGuest(
       extra_params.Pass());
 }
 
-BrowserPluginGuest* BrowserPluginGuestManager::GetGuestByInstanceID(
-    int instance_id,
-    int embedder_render_process_id) const {
-  if (!CanEmbedderAccessInstanceIDMaybeKill(embedder_render_process_id,
-                                            instance_id)) {
-    return NULL;
+static void BrowserPluginGuestByInstanceIDCallback(
+    const BrowserPluginGuestManager::GuestByInstanceIDCallback& callback,
+    WebContents* guest_web_contents) {
+  if (!guest_web_contents) {
+    callback.Run(NULL);
+    return;
   }
-  GuestInstanceMap::const_iterator it =
-      guest_web_contents_by_instance_id_.find(instance_id);
-  if (it == guest_web_contents_by_instance_id_.end())
-    return NULL;
-  return static_cast<WebContentsImpl*>(it->second)->GetBrowserPluginGuest();
+  callback.Run(static_cast<WebContentsImpl*>(guest_web_contents)->
+                   GetBrowserPluginGuest());
+}
+
+void BrowserPluginGuestManager::MaybeGetGuestByInstanceIDOrKill(
+    int instance_id,
+    int embedder_render_process_id,
+    const GuestByInstanceIDCallback& callback) const {
+  if (!GetDelegate()) {
+    callback.Run(NULL);
+    return;
+  }
+
+  GetDelegate()->MaybeGetGuestByInstanceIDOrKill(
+      instance_id,
+      embedder_render_process_id,
+      base::Bind(&BrowserPluginGuestByInstanceIDCallback,
+                 callback));
 }
 
 void BrowserPluginGuestManager::AddGuest(int instance_id,
-                                         WebContentsImpl* guest_web_contents) {
-  DCHECK(guest_web_contents_by_instance_id_.find(instance_id) ==
-         guest_web_contents_by_instance_id_.end());
-  guest_web_contents_by_instance_id_[instance_id] = guest_web_contents;
+                                         WebContents* guest_web_contents) {
+  if (!GetDelegate())
+    return;
+  GetDelegate()->AddGuest(instance_id, guest_web_contents);
 }
 
 void BrowserPluginGuestManager::RemoveGuest(int instance_id) {
-  DCHECK(guest_web_contents_by_instance_id_.find(instance_id) !=
-         guest_web_contents_by_instance_id_.end());
-  guest_web_contents_by_instance_id_.erase(instance_id);
+  if (!GetDelegate())
+    return;
+  GetDelegate()->RemoveGuest(instance_id);
 }
 
-bool BrowserPluginGuestManager::CanEmbedderAccessInstanceIDMaybeKill(
-    int embedder_render_process_id,
-    int instance_id) const {
-  if (!CanEmbedderAccessInstanceID(embedder_render_process_id, instance_id)) {
-    // The embedder process is trying to access a guest it does not own.
-    content::RecordAction(
-        base::UserMetricsAction("BadMessageTerminate_BPGM"));
-    base::KillProcess(
-        RenderProcessHost::FromID(embedder_render_process_id)->GetHandle(),
-        content::RESULT_CODE_KILLED_BAD_MESSAGE, false);
-    return false;
-  }
-  return true;
+static void BrowserPluginGuestMessageCallback(const IPC::Message& message,
+                                              BrowserPluginGuest* guest) {
+  if (!guest)
+    return;
+  guest->OnMessageReceivedFromEmbedder(message);
 }
 
 void BrowserPluginGuestManager::OnMessageReceived(const IPC::Message& message,
@@ -148,81 +176,33 @@ void BrowserPluginGuestManager::OnMessageReceived(const IPC::Message& message,
   PickleIterator iter(message);
   bool success = iter.ReadInt(&instance_id);
   DCHECK(success);
-  BrowserPluginGuest* guest =
-      GetGuestByInstanceID(instance_id, render_process_id);
-  if (!guest)
-    return;
-  guest->OnMessageReceivedFromEmbedder(message);
-}
-
-// static
-bool BrowserPluginGuestManager::CanEmbedderAccessGuest(
-    int embedder_render_process_id,
-    BrowserPluginGuest* guest) {
-  // The embedder can access the guest if it has not been attached and its
-  // opener's embedder lives in the same process as the given embedder.
-  if (!guest->attached()) {
-    if (!guest->opener())
-      return false;
-
-    return embedder_render_process_id ==
-        guest->opener()->embedder_web_contents()->GetRenderProcessHost()->
-            GetID();
-  }
-
-  return embedder_render_process_id ==
-      guest->embedder_web_contents()->GetRenderProcessHost()->GetID();
-}
-
-bool BrowserPluginGuestManager::CanEmbedderAccessInstanceID(
-    int embedder_render_process_id,
-    int instance_id) const {
-  // The embedder is trying to access a guest with a negative or zero
-  // instance ID.
-  if (instance_id <= browser_plugin::kInstanceIDNone)
-    return false;
-
-  // The embedder is trying to access an instance ID that has not yet been
-  // allocated by BrowserPluginGuestManager. This could cause instance ID
-  // collisions in the future, and potentially give one embedder access to a
-  // guest it does not own.
-  if (instance_id > next_instance_id_)
-    return false;
-
-  GuestInstanceMap::const_iterator it =
-      guest_web_contents_by_instance_id_.find(instance_id);
-  if (it == guest_web_contents_by_instance_id_.end())
-    return true;
-  BrowserPluginGuest* guest =
-      static_cast<WebContentsImpl*>(it->second)->GetBrowserPluginGuest();
-
-  return CanEmbedderAccessGuest(embedder_render_process_id, guest);
+  MaybeGetGuestByInstanceIDOrKill(instance_id,
+                                  render_process_id,
+                                  base::Bind(&BrowserPluginGuestMessageCallback,
+                                             message));
 }
 
 SiteInstance* BrowserPluginGuestManager::GetGuestSiteInstance(
     const GURL& guest_site) {
-  for (GuestInstanceMap::const_iterator it =
-       guest_web_contents_by_instance_id_.begin();
-       it != guest_web_contents_by_instance_id_.end(); ++it) {
-    if (it->second->GetSiteInstance()->GetSiteURL() == guest_site)
-      return it->second->GetSiteInstance();
-  }
-  return NULL;
+  if (!GetDelegate())
+    return NULL;
+  return GetDelegate()->GetGuestSiteInstance(guest_site);
+}
+
+static bool BrowserPluginGuestCallback(
+    const BrowserPluginGuestManager::GuestCallback& callback,
+    WebContents* guest_web_contents) {
+  return callback.Run(static_cast<WebContentsImpl*>(guest_web_contents)
+                          ->GetBrowserPluginGuest());
 }
 
 bool BrowserPluginGuestManager::ForEachGuest(
-    WebContentsImpl* embedder_web_contents, const GuestCallback& callback) {
-  for (GuestInstanceMap::iterator it =
-           guest_web_contents_by_instance_id_.begin();
-       it != guest_web_contents_by_instance_id_.end(); ++it) {
-    BrowserPluginGuest* guest = it->second->GetBrowserPluginGuest();
-    if (embedder_web_contents != guest->embedder_web_contents())
-      continue;
-
-    if (callback.Run(guest))
-      return true;
-  }
-  return false;
+    WebContents* embedder_web_contents, const GuestCallback& callback) {
+  if (!GetDelegate())
+    return false;
+  return GetDelegate()->ForEachGuest(embedder_web_contents,
+                                     base::Bind(&BrowserPluginGuestCallback,
+                                                callback));
 }
 
 }  // namespace content

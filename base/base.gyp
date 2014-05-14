@@ -143,8 +143,7 @@
             ],
           },
           'conditions': [
-            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-            ['use_allocator!="tcmalloc" and (use_allocator!="see_use_tcmalloc" or linux_use_tcmalloc==0)', {
+            ['use_allocator!="tcmalloc"', {
               'defines': [
                 'NO_TCMALLOC',
               ],
@@ -700,8 +699,7 @@
             'message_loop/message_pump_glib_unittest.cc',
           ]
         }],
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        ['OS == "linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
+        ['OS == "linux" and use_allocator!="none"', {
             'dependencies': [
               'allocator/allocator.gyp:allocator',
             ],
@@ -978,8 +976,7 @@
       'conditions': [
         ['use_custom_libcxx==1', {
           'dependencies!': [
-            '../third_party/libc++/libc++.gyp:libc++',
-            '../third_party/libc++abi/libc++abi.gyp:libc++abi',
+            '../third_party/libc++/libc++.gyp:libcxx_proxy',
           ],
         }],
       ],

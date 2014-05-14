@@ -15,6 +15,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "cc/layers/layer.h"
+#include "cc/layers/solid_color_layer.h"
 #include "cc/output/begin_frame_args.h"
 #include "content/browser/android/gesture_event_type.h"
 #include "content/browser/android/interstitial_page_delegate_android.h"
@@ -217,14 +218,22 @@ ContentViewCoreImpl::ContentViewCoreImpl(JNIEnv* env,
     : WebContentsObserver(web_contents),
       java_ref_(env, obj),
       web_contents_(static_cast<WebContentsImpl*>(web_contents)),
-      root_layer_(cc::Layer::Create()),
+      root_layer_(cc::SolidColorLayer::Create()),
       dpi_scale_(GetPrimaryDisplayDeviceScaleFactor()),
       view_android_(view_android),
       window_android_(window_android),
       device_orientation_(0),
-      geolocation_needs_pause_(false) {
+      geolocation_needs_pause_(false),
+      accessibility_enabled_(false) {
   CHECK(web_contents) <<
       "A ContentViewCoreImpl should be created with a valid WebContents.";
+
+  root_layer_->SetBackgroundColor(GetBackgroundColor(env, obj));
+  gfx::Size physical_size(
+      Java_ContentViewCore_getPhysicalBackingWidthPix(env, obj),
+      Java_ContentViewCore_getPhysicalBackingHeightPix(env, obj));
+  root_layer_->SetBounds(physical_size);
+  root_layer_->SetIsDrawable(true);
 
   // Currently, the only use case we have for overriding a user agent involves
   // spoofing a desktop Linux user agent for "Request desktop site".
@@ -275,8 +284,9 @@ void ContentViewCoreImpl::InitWebContents() {
       this, NOTIFICATION_WEB_CONTENTS_CONNECTED,
       Source<WebContents>(web_contents_));
 
-  static_cast<WebContentsViewAndroid*>(web_contents_->GetView())->
-      SetContentViewCore(this);
+  static_cast<WebContentsViewAndroid*>(
+      static_cast<WebContentsImpl*>(web_contents_)->GetView())->
+          SetContentViewCore(this);
   DCHECK(!web_contents_->GetUserData(kContentViewUserDataKey));
   web_contents_->SetUserData(kContentViewUserDataKey,
                              new ContentViewUserData(this));
@@ -319,6 +329,8 @@ void ContentViewCoreImpl::Observe(int type,
       SetFocusInternal(HasFocus());
       if (geolocation_needs_pause_)
         PauseOrResumeGeolocation(true);
+
+      SetAccessibilityEnabledInternal(accessibility_enabled_);
       break;
     }
     case NOTIFICATION_RENDERER_PROCESS_CREATED: {
@@ -422,13 +434,6 @@ void ContentViewCoreImpl::PauseOrResumeGeolocation(bool should_pause) {
   }
 }
 
-void ContentViewCoreImpl::OnTabCrashed() {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  if (obj.is_null())
-    return;
-}
-
 // All positions and sizes are in CSS pixels.
 // Note that viewport_width/height is a best effort based.
 // ContentViewCore has the actual information about the physical viewport size.
@@ -481,6 +486,8 @@ void ContentViewCoreImpl::SetTitle(const base::string16& title) {
 }
 
 void ContentViewCoreImpl::OnBackgroundColorChanged(SkColor color) {
+  root_layer_->SetBackgroundColor(color);
+
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
@@ -488,12 +495,14 @@ void ContentViewCoreImpl::OnBackgroundColorChanged(SkColor color) {
   Java_ContentViewCore_onBackgroundColorChanged(env, obj.obj(), color);
 }
 
-void ContentViewCoreImpl::ShowSelectPopupMenu(
+void ContentViewCoreImpl::ShowSelectPopupMenu(const gfx::Rect& bounds,
     const std::vector<MenuItem>& items, int selected_item, bool multiple) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> j_obj = java_ref_.get(env);
   if (j_obj.is_null())
     return;
+
+  ScopedJavaLocalRef<jobject> bounds_rect(CreateJavaRect(env, bounds));
 
   // For multi-select list popups we find the list of previous selections by
   // iterating through the items. But for single selection popups we take the
@@ -532,8 +541,11 @@ void ContentViewCoreImpl::ShowSelectPopupMenu(
   ScopedJavaLocalRef<jobjectArray> items_array(
       base::android::ToJavaArrayOfStrings(env, labels));
   Java_ContentViewCore_showSelectPopup(env, j_obj.obj(),
-                                       items_array.obj(), enabled_array.obj(),
-                                       multiple, selected_array.obj());
+                                       bounds_rect.obj(),
+                                       items_array.obj(),
+                                       enabled_array.obj(),
+                                       multiple,
+                                       selected_array.obj());
 }
 
 void ContentViewCoreImpl::HideSelectPopupMenu() {
@@ -841,10 +853,14 @@ float ContentViewCoreImpl::GetOverdrawBottomHeightDip() const {
 
 void ContentViewCoreImpl::AttachLayer(scoped_refptr<cc::Layer> layer) {
   root_layer_->AddChild(layer);
+  root_layer_->SetIsDrawable(false);
 }
 
 void ContentViewCoreImpl::RemoveLayer(scoped_refptr<cc::Layer> layer) {
   layer->RemoveFromParent();
+
+  if (!root_layer_->children().size())
+    root_layer_->SetIsDrawable(true);
 }
 
 void ContentViewCoreImpl::LoadUrl(
@@ -1301,6 +1317,11 @@ void ContentViewCoreImpl::RemoveJavascriptInterface(JNIEnv* env,
 
 void ContentViewCoreImpl::WasResized(JNIEnv* env, jobject obj) {
   RenderWidgetHostViewAndroid* view = GetRenderWidgetHostViewAndroid();
+  gfx::Size physical_size(
+      Java_ContentViewCore_getPhysicalBackingWidthPix(env, obj),
+      Java_ContentViewCore_getPhysicalBackingHeightPix(env, obj));
+  root_layer_->SetBounds(physical_size);
+
   if (view) {
     RenderWidgetHostImpl* host = RenderWidgetHostImpl::From(
         view->GetRenderWidgetHost());
@@ -1554,6 +1575,11 @@ void ContentViewCoreImpl::SetUseDesktopUserAgent(
 
 void ContentViewCoreImpl::SetAccessibilityEnabled(JNIEnv* env, jobject obj,
                                                   bool enabled) {
+  SetAccessibilityEnabledInternal(enabled);
+}
+
+void ContentViewCoreImpl::SetAccessibilityEnabledInternal(bool enabled) {
+  accessibility_enabled_ = enabled;
   RenderWidgetHostViewAndroid* host_view = GetRenderWidgetHostViewAndroid();
   if (!host_view)
     return;
@@ -1580,13 +1606,9 @@ void ContentViewCoreImpl::SendOrientationChangeEventInternal() {
   if (rwhv)
     rwhv->UpdateScreenInfo(GetViewAndroid());
 
-  RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
-      web_contents_->GetRenderViewHost());
-  rvhi->SendOrientationChangeEvent(device_orientation_);
-
   // TODO(mlamouri): temporary plumbing for Screen Orientation, this will change
-  // in the future. It might leave ContentViewCoreImpl or simply replace the
-  // SendOrientationChangeEvent call above.
+  // in the future. The OnResize IPC message sent from UpdateScreenInfo() will
+  // propagate the information.
   blink::WebScreenOrientationType orientation =
       blink::WebScreenOrientationPortraitPrimary;
 
@@ -1650,9 +1672,9 @@ void ContentViewCoreImpl::OnSmartClipDataExtracted(
       env, obj.obj(), jresult.obj());
 }
 
-void ContentViewCoreImpl::WebContentsDestroyed(WebContents* web_contents) {
-  WebContentsViewAndroid* wcva =
-      static_cast<WebContentsViewAndroid*>(web_contents->GetView());
+void ContentViewCoreImpl::WebContentsDestroyed() {
+  WebContentsViewAndroid* wcva = static_cast<WebContentsViewAndroid*>(
+      static_cast<WebContentsImpl*>(web_contents())->GetView());
   DCHECK(wcva);
   wcva->SetContentViewCore(NULL);
 }

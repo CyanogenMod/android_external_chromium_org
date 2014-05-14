@@ -7,7 +7,7 @@
 #include "base/mac/scoped_nsobject.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
-#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/managed_mode/managed_user_service_factory.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
@@ -22,6 +22,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/bookmarks/core/test/bookmark_test_helpers.h"
 
 class AvatarIconControllerTest : public CocoaProfileTest {
  public:
@@ -108,7 +109,8 @@ TEST_F(AvatarIconControllerTest, ManagedUserLabel) {
   AutocompleteClassifierFactory::GetInstance()->SetTestingFactoryAndUse(
       profile, &AutocompleteClassifierFactory::BuildInstanceFor);
   profile->CreateBookmarkModel(true);
-  test::WaitForBookmarkModelToLoad(profile);
+  test::WaitForBookmarkModelToLoad(
+      BookmarkModelFactory::GetForProfile(profile));
 
   Browser* browser =
       new Browser(Browser::CreateParams(profile, chrome::GetActiveDesktop()));

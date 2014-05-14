@@ -16,12 +16,15 @@
 #include "google_apis/gcm/protocol/checkin.pb.h"
 #include "net/base/backoff_entry.h"
 #include "net/url_request/url_fetcher_delegate.h"
+#include "url/gurl.h"
 
 namespace net {
 class URLRequestContextGetter;
 }
 
 namespace gcm {
+
+class GCMStatsRecorder;
 
 // Enables making check-in requests with the GCM infrastructure. When called
 // with android_id and security_token both set to 0 it is an initial check-in
@@ -55,10 +58,12 @@ class GCM_EXPORT CheckinRequest : public net::URLFetcherDelegate {
     checkin_proto::ChromeBuildProto chrome_build_proto;
   };
 
-  CheckinRequest(const RequestInfo& request_info,
+  CheckinRequest(const GURL& checkin_url,
+                 const RequestInfo& request_info,
                  const net::BackoffEntry::Policy& backoff_policy,
                  const CheckinRequestCallback& callback,
-                 net::URLRequestContextGetter* request_context_getter);
+                 net::URLRequestContextGetter* request_context_getter,
+                 GCMStatsRecorder* recorder);
   virtual ~CheckinRequest();
 
   void Start();
@@ -75,8 +80,12 @@ class GCM_EXPORT CheckinRequest : public net::URLFetcherDelegate {
   CheckinRequestCallback callback_;
 
   net::BackoffEntry backoff_entry_;
+  GURL checkin_url_;
   scoped_ptr<net::URLFetcher> url_fetcher_;
   const RequestInfo request_info_;
+
+  // Recorder that records GCM activities for debugging purpose. Not owned.
+  GCMStatsRecorder* recorder_;
 
   base::WeakPtrFactory<CheckinRequest> weak_ptr_factory_;
 

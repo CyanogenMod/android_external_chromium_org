@@ -81,9 +81,11 @@ class CC_EXPORT LayerTreeImpl {
   int MaxTextureSize() const;
   bool PinchGestureActive() const;
   base::TimeTicks CurrentFrameTimeTicks() const;
+  base::TimeDelta begin_impl_frame_interval() const;
   void SetNeedsCommit();
   gfx::Size DrawViewportSize() const;
-  void StartScrollbarAnimation();
+  scoped_ptr<ScrollbarAnimationController> CreateScrollbarAnimationController(
+      LayerImpl* scrolling_layer);
   void DidAnimateScrollOffset();
 
   // Tree specific methods exposed to layer-impl tree.

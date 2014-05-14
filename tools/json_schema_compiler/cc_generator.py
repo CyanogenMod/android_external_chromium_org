@@ -191,6 +191,9 @@ class _Generator(object):
       .Sblock('    %s) {' % self._GenerateParams(
           ('const base::Value& value', '%(name)s* out'))))
 
+    if self._generate_error_messages:
+      c.Append('DCHECK(error);')
+
     if type_.property_type == PropertyType.CHOICES:
       for choice in type_.choices:
         (c.Sblock('if (%s) {' % self._GenerateValueIsTypeExpression('value',
@@ -313,7 +316,10 @@ class _Generator(object):
     (c.Append('// static')
       .Append('scoped_ptr<%s> %s::FromValue(%s) {' % (classname,
         cpp_namespace, self._GenerateParams(('const base::Value& value',))))
-      .Append('  scoped_ptr<%s> out(new %s());' % (classname, classname))
+    )
+    if self._generate_error_messages:
+      c.Append('DCHECK(error);')
+    (c.Append('  scoped_ptr<%s> out(new %s());' % (classname, classname))
       .Append('  if (!Populate(%s))' % self._GenerateArgs(
           ('value', 'out.get()')))
       .Append('    return scoped_ptr<%s>();' % classname)
@@ -362,7 +368,10 @@ class _Generator(object):
       is_ptr = prop.optional or prop.type_.property_type == PropertyType.ANY
       c.Append('value->SetWithoutPathExpansion("%s", %s);' % (
           prop.name,
-          self._CreateValueFromType(prop.type_, prop_var, is_ptr=is_ptr)))
+          self._CreateValueFromType(cpp_namespace,
+                                    prop.type_,
+                                    prop_var,
+                                    is_ptr=is_ptr)))
 
       if prop.optional:
         c.Eblock('}')
@@ -383,6 +392,7 @@ class _Generator(object):
           .Append('   it != additional_properties.end(); ++it) {')
           .Append('value->SetWithoutPathExpansion(it->first, %s);' %
               self._CreateValueFromType(
+                  cpp_namespace,
                   type_.additional_properties,
                   '%sit->second' % ('*' if needs_unwrap else '')))
           .Eblock('}')
@@ -404,8 +414,10 @@ class _Generator(object):
       (c.Sblock('if (%s) {' % choice_var)
           .Append('DCHECK(!result) << "Cannot set multiple choices for %s";' %
                       type_.unix_name)
-          .Append('result.reset(%s);' %
-                      self._CreateValueFromType(choice, '*%s' % choice_var))
+          .Append('result.reset(%s);' % self._CreateValueFromType(
+              cpp_namespace,
+              choice,
+              '*%s' % choice_var))
         .Eblock('}')
       )
     (c.Append('DCHECK(result) << "Must set at least one choice for %s";' %
@@ -441,7 +453,8 @@ class _Generator(object):
 
     # Results::Create function
     if function.callback:
-      c.Concat(self._GenerateCreateCallbackArguments('Results',
+      c.Concat(self._GenerateCreateCallbackArguments(function_namespace,
+                                                     'Results',
                                                      function.callback))
 
     c.Append('}  // namespace %s' % function_namespace)
@@ -454,12 +467,14 @@ class _Generator(object):
     (c.Append('namespace %s {' % event_namespace)
       .Append()
       .Cblock(self._GenerateEventNameConstant(None, event))
-      .Cblock(self._GenerateCreateCallbackArguments(None, event))
+      .Cblock(self._GenerateCreateCallbackArguments(event_namespace,
+                                                    None,
+                                                    event))
       .Append('}  // namespace %s' % event_namespace)
     )
     return c
 
-  def _CreateValueFromType(self, type_, var, is_ptr=False):
+  def _CreateValueFromType(self, cpp_namespace, type_, var, is_ptr=False):
     """Creates a base::Value given a type. Generated code passes ownership
     to caller.
 
@@ -482,7 +497,9 @@ class _Generator(object):
         vardot = '(%s).' % var
       return '%sDeepCopy()' % vardot
     elif underlying_type.property_type == PropertyType.ENUM:
-      return 'new base::StringValue(ToString(%s))' % var
+      classname = cpp_util.Classname(schema_util.StripNamespace(
+          underlying_type.name))
+      return 'new base::StringValue(%sToString(%s))' % (classname, var)
     elif underlying_type.property_type == PropertyType.BINARY:
       if is_ptr:
         vardot = var + '->'
@@ -492,6 +509,7 @@ class _Generator(object):
               (vardot, vardot))
     elif underlying_type.property_type == PropertyType.ARRAY:
       return '%s.release()' % self._util_cc_helper.CreateValueFromArray(
+          cpp_namespace,
           underlying_type,
           var,
           is_ptr)
@@ -544,7 +562,10 @@ class _Generator(object):
     (c.Append('// static')
       .Sblock('scoped_ptr<Params> Params::Create(%s) {' % self._GenerateParams(
         ['const base::ListValue& args']))
-      .Concat(self._GenerateParamsCheck(function, 'args'))
+    )
+    if self._generate_error_messages:
+      c.Append('DCHECK(error);')
+    (c.Concat(self._GenerateParamsCheck(function, 'args'))
       .Append('scoped_ptr<Params> params(new Params());')
     )
 
@@ -707,7 +728,6 @@ class _Generator(object):
                      is_ptr=is_ptr))
       else:
         (c.Sblock('if (!%s) {' % self._util_cc_helper.PopulateArrayFromList(
-              underlying_type,
               'list',
               dst_var,
               is_ptr)))
@@ -868,8 +888,8 @@ class _Generator(object):
       c.Append('// static')
     maybe_namespace = '' if cpp_namespace is None else '%s::' % cpp_namespace
 
-    c.Sblock('std::string %sToString(%s enum_param) {' %
-                 (maybe_namespace, classname))
+    c.Sblock('std::string %s%sToString(%s enum_param) {' %
+                 (maybe_namespace, classname, classname))
     c.Sblock('switch (enum_param) {')
     for enum_value in self._type_helper.FollowRef(type_).enum_values:
       (c.Append('case %s: ' % self._type_helper.GetEnumValue(type_, enum_value))
@@ -881,6 +901,12 @@ class _Generator(object):
       .Append('return "";')
       .Eblock('}')
     )
+
+    (c.Append()
+      .Sblock('std::string %sToString(%s enum_param) {' %
+                  (maybe_namespace, classname))
+      .Append('return %s%sToString(enum_param);' % (maybe_namespace, classname))
+      .Eblock('}'))
     return c
 
   def _GenerateEnumFromString(self, cpp_namespace, type_):
@@ -909,7 +935,10 @@ class _Generator(object):
     )
     return c
 
-  def _GenerateCreateCallbackArguments(self, function_scope, callback):
+  def _GenerateCreateCallbackArguments(self,
+                                       cpp_namespace,
+                                       function_scope,
+                                       callback):
     """Generate all functions to create Value parameters for a callback.
 
     E.g for function "Bar", generate Bar::Results::Create
@@ -932,8 +961,10 @@ class _Generator(object):
     for param in params:
       declaration_list.append(cpp_util.GetParameterDeclaration(
           param, self._type_helper.GetCppType(param.type_)))
-      c.Append('create_results->Append(%s);' %
-          self._CreateValueFromType(param.type_, param.unix_name))
+      c.Append('create_results->Append(%s);' % self._CreateValueFromType(
+          cpp_namespace,
+          param.type_,
+          param.unix_name))
     c.Append('return create_results.Pass();')
     c.Eblock('}')
     c.Substitute({
@@ -976,13 +1007,9 @@ class _Generator(object):
     c = Code()
     if not self._generate_error_messages:
       return c
-    (c.Append('if (error) {')
-      .Append('  if (error->length())')
-      .Append('    error->append(UTF8ToUTF16("; "));')
-      .Append('  error->append(UTF8ToUTF16(%s));' % body)
-      .Append('}')
-      .Append('else')
-      .Append('  *error = UTF8ToUTF16(%s);' % body))
+    (c.Append('if (error->length())')
+      .Append('  error->append(UTF8ToUTF16("; "));')
+      .Append('error->append(UTF8ToUTF16(%s));' % body))
     return c
 
   def _GenerateParams(self, params):

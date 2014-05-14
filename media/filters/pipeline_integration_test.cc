@@ -322,7 +322,11 @@ class MockMediaSource {
   void Seek(base::TimeDelta seek_time, int new_position, int seek_append_size) {
     chunk_demuxer_->StartWaitingForSeek(seek_time);
 
-    chunk_demuxer_->Abort(kSourceId);
+    // TODO(wolenetz): Test timestamp offset updating once "sequence" append
+    // mode processing is implemented. See http://crbug.com/249422.
+    chunk_demuxer_->Abort(
+        kSourceId,
+        base::TimeDelta(), kInfiniteDuration(), &last_timestamp_offset_);
 
     DCHECK_GE(new_position, 0);
     DCHECK_LT(new_position, file_data_->data_size());
@@ -338,12 +342,10 @@ class MockMediaSource {
 
     // TODO(wolenetz): Test timestamp offset updating once "sequence" append
     // mode processing is implemented. See http://crbug.com/249422.
-    base::TimeDelta timestamp_offset;
     chunk_demuxer_->AppendData(
         kSourceId, file_data_->data() + current_position_, size,
-        base::TimeDelta(), kInfiniteDuration(), &timestamp_offset);
+        base::TimeDelta(), kInfiniteDuration(), &last_timestamp_offset_);
     current_position_ += size;
-    last_timestamp_offset_ = timestamp_offset;
   }
 
   void AppendAtTime(base::TimeDelta timestamp_offset,
@@ -352,6 +354,21 @@ class MockMediaSource {
     CHECK(!chunk_demuxer_->IsParsingMediaSegment(kSourceId));
     chunk_demuxer_->AppendData(kSourceId, pData, size,
                                base::TimeDelta(), kInfiniteDuration(),
+                               &timestamp_offset);
+    last_timestamp_offset_ = timestamp_offset;
+  }
+
+  void AppendAtTimeWithWindow(base::TimeDelta timestamp_offset,
+                              base::TimeDelta append_window_start,
+                              base::TimeDelta append_window_end,
+                              const uint8* pData,
+                              int size) {
+    CHECK(!chunk_demuxer_->IsParsingMediaSegment(kSourceId));
+    chunk_demuxer_->AppendData(kSourceId,
+                               pData,
+                               size,
+                               append_window_start,
+                               append_window_end,
                                &timestamp_offset);
     last_timestamp_offset_ = timestamp_offset;
   }
@@ -855,6 +872,17 @@ TEST_P(PipelineIntegrationTest, MediaSource_ADTS_TimestampOffset) {
   EXPECT_TRUE(WaitUntilOnEnded());
 }
 
+TEST_F(PipelineIntegrationTest, BasicPlaybackHashed_MP3) {
+  ASSERT_TRUE(Start(GetTestDataFilePath("sfx.mp3"), PIPELINE_OK, kHashed));
+
+  Play();
+
+  ASSERT_TRUE(WaitUntilOnEnded());
+
+  // Verify codec delay and preroll are stripped.
+  EXPECT_EQ("3.05,2.87,3.00,3.32,3.58,4.08,", GetAudioHash());
+}
+
 TEST_P(PipelineIntegrationTest, MediaSource_MP3) {
   MockMediaSource source("sfx.mp3", kMP3, kAppendWholeFile, GetParam());
   StartHashedPipelineWithMediaSource(&source);
@@ -878,17 +906,25 @@ TEST_P(PipelineIntegrationTest, MediaSource_MP3_TimestampOffset) {
   StartPipelineWithMediaSource(&source);
   EXPECT_EQ(313, source.last_timestamp_offset().InMilliseconds());
 
+  // There are 576 silent frames at the start of this mp3.  The second append
+  // should trim them off.
+  const base::TimeDelta mp3_preroll_duration =
+      base::TimeDelta::FromSecondsD(576.0 / 44100);
+  const base::TimeDelta append_time =
+      source.last_timestamp_offset() - mp3_preroll_duration;
+
   scoped_refptr<DecoderBuffer> second_file = ReadTestDataFile("sfx.mp3");
-  source.AppendAtTime(
-      source.last_timestamp_offset() - base::TimeDelta::FromMilliseconds(10),
-      second_file->data(),
-      second_file->data_size());
+  source.AppendAtTimeWithWindow(append_time,
+                                append_time + mp3_preroll_duration,
+                                kInfiniteDuration(),
+                                second_file->data(),
+                                second_file->data_size());
   source.EndOfStream();
 
-  EXPECT_EQ(616, source.last_timestamp_offset().InMilliseconds());
+  EXPECT_EQ(613, source.last_timestamp_offset().InMilliseconds());
   EXPECT_EQ(1u, pipeline_->GetBufferedTimeRanges().size());
   EXPECT_EQ(0, pipeline_->GetBufferedTimeRanges().start(0).InMilliseconds());
-  EXPECT_EQ(616, pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
+  EXPECT_EQ(613, pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
 
   Play();
 

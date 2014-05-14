@@ -14,8 +14,8 @@
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/view_message_enums.h"
-#include "content/port/browser/render_widget_host_view_port.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_process_host.h"
@@ -89,6 +89,44 @@ base::DictionaryValue* BuildTargetDescriptor(RenderViewHost* rvh) {
                                accessibility_mode);
 }
 
+bool HandleRequestCallback(BrowserContext* current_context,
+                           const std::string& path,
+                           const WebUIDataSource::GotDataCallback& callback) {
+  if (path != kDataFile)
+    return false;
+  scoped_ptr<base::ListValue> rvh_list(new base::ListValue());
+
+  scoped_ptr<RenderWidgetHostIterator> widgets(
+      RenderWidgetHost::GetRenderWidgetHosts());
+
+  while (RenderWidgetHost* widget = widgets->GetNextHost()) {
+    // Ignore processes that don't have a connection, such as crashed tabs.
+    if (!widget->GetProcess()->HasConnection())
+      continue;
+    if (!widget->IsRenderView())
+        continue;
+    RenderWidgetHostImpl* rwhi = RenderWidgetHostImpl::From(widget);
+    BrowserContext* context = rwhi->GetProcess()->GetBrowserContext();
+    if (context != current_context)
+      continue;
+
+    RenderViewHost* rvh = RenderViewHost::From(widget);
+    rvh_list->Append(BuildTargetDescriptor(rvh));
+  }
+
+  scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
+  data->Set("list", rvh_list.release());
+  scoped_ptr<base::FundamentalValue> a11y_mode(base::Value::CreateIntegerValue(
+      BrowserAccessibilityStateImpl::GetInstance()->accessibility_mode()));
+  data->Set("global_a11y_mode", a11y_mode.release());
+
+  std::string json_string;
+  base::JSONWriter::Write(data.get(), &json_string);
+
+  callback.Run(base::RefCountedString::TakeString(&json_string));
+  return true;
+}
+
 }  // namespace
 
 AccessibilityUI::AccessibilityUI(WebUI* web_ui) : WebUIController(web_ui) {
@@ -115,8 +153,9 @@ AccessibilityUI::AccessibilityUI(WebUI* web_ui) : WebUIController(web_ui) {
   html_source->AddResourcePath("accessibility.css", IDR_ACCESSIBILITY_CSS);
   html_source->AddResourcePath("accessibility.js", IDR_ACCESSIBILITY_JS);
   html_source->SetDefaultResource(IDR_ACCESSIBILITY_HTML);
-  html_source->SetRequestFilter(base::Bind(
-      &AccessibilityUI::HandleRequestCallback, base::Unretained(this)));
+  html_source->SetRequestFilter(
+      base::Bind(&HandleRequestCallback,
+                 web_ui->GetWebContents()->GetBrowserContext()));
 
   BrowserContext* browser_context =
       web_ui->GetWebContents()->GetBrowserContext();
@@ -124,51 +163,6 @@ AccessibilityUI::AccessibilityUI(WebUI* web_ui) : WebUIController(web_ui) {
 }
 
 AccessibilityUI::~AccessibilityUI() {}
-
-void AccessibilityUI::SendTargetsData(
-    const WebUIDataSource::GotDataCallback& callback) {
-  scoped_ptr<base::ListValue> rvh_list(new base::ListValue());
-
-  scoped_ptr<RenderWidgetHostIterator> widgets(
-      RenderWidgetHost::GetRenderWidgetHosts());
-  BrowserContext* current_context =
-      web_ui()->GetWebContents()->GetBrowserContext();
-  while (RenderWidgetHost* widget = widgets->GetNextHost()) {
-    // Ignore processes that don't have a connection, such as crashed tabs.
-    if (!widget->GetProcess()->HasConnection())
-      continue;
-    if (!widget->IsRenderView())
-        continue;
-    RenderWidgetHostImpl* rwhi = RenderWidgetHostImpl::From(widget);
-    BrowserContext* context = rwhi->GetProcess()->GetBrowserContext();
-    if (context != current_context)
-      continue;
-
-    RenderViewHost* rvh = RenderViewHost::From(widget);
-    rvh_list->Append(BuildTargetDescriptor(rvh));
-  }
-
-  scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
-  data->Set("list", rvh_list.release());
-  scoped_ptr<base::FundamentalValue> a11y_mode(base::Value::CreateIntegerValue(
-      BrowserAccessibilityStateImpl::GetInstance()->accessibility_mode()));
-  data->Set("global_a11y_mode", a11y_mode.release());
-
-  std::string json_string;
-  base::JSONWriter::Write(data.get(), &json_string);
-
-  callback.Run(base::RefCountedString::TakeString(&json_string));
-}
-
-bool AccessibilityUI::HandleRequestCallback(
-    const std::string& path,
-    const WebUIDataSource::GotDataCallback& callback) {
-  if (path != kDataFile)
-    return false;
-
-  SendTargetsData(callback);
-  return true;
-}
 
 void AccessibilityUI::ToggleAccessibility(const base::ListValue* args) {
   std::string process_id_str;
@@ -226,7 +220,7 @@ void AccessibilityUI::RequestAccessibilityTree(const base::ListValue* args) {
   }
 
   scoped_ptr<base::DictionaryValue> result(BuildTargetDescriptor(rvh));
-  RenderWidgetHostViewPort* host_view = static_cast<RenderWidgetHostViewPort*>(
+  RenderWidgetHostViewBase* host_view = static_cast<RenderWidgetHostViewBase*>(
       WebContents::FromRenderViewHost(rvh)->GetRenderWidgetHostView());
   if (!host_view) {
     result->Set("error",

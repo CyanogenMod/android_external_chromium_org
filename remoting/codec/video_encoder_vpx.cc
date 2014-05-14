@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/sys_info.h"
-#include "base/time/time.h"
 #include "media/base/yuv_convert.h"
 #include "remoting/base/util.h"
 #include "remoting/proto/video.pb.h"
@@ -29,6 +28,30 @@ namespace {
 // map for the encoder.
 const int kMacroBlockSize = 16;
 
+void SetCommonCodecParameters(const webrtc::DesktopSize& size,
+                              vpx_codec_enc_cfg_t* config) {
+  // Use millisecond granularity time base.
+  config->g_timebase.num = 1;
+  config->g_timebase.den = 1000;
+
+  // Adjust default target bit-rate to account for actual desktop size.
+  config->rc_target_bitrate = size.width() * size.height() *
+      config->rc_target_bitrate / config->g_w / config->g_h;
+
+  config->g_w = size.width();
+  config->g_h = size.height();
+  config->g_pass = VPX_RC_ONE_PASS;
+
+  // Start emitting packets immediately.
+  config->g_lag_in_frames = 0;
+
+  // Using 2 threads gives a great boost in performance for most systems with
+  // adequate processing power. NB: Going to multiple threads on low end
+  // windows systems can really hurt performance.
+  // http://crbug.com/99179
+  config->g_threads = (base::SysInfo::NumberOfProcessors() > 2) ? 2 : 1;
+}
+
 ScopedVpxCodec CreateVP8Codec(const webrtc::DesktopSize& size) {
   ScopedVpxCodec codec(new vpx_codec_ctx_t);
 
@@ -40,26 +63,16 @@ ScopedVpxCodec CreateVP8Codec(const webrtc::DesktopSize& size) {
   if (ret != VPX_CODEC_OK)
     return ScopedVpxCodec();
 
-  config.rc_target_bitrate = size.width() * size.height() *
-      config.rc_target_bitrate / config.g_w / config.g_h;
-  config.g_w = size.width();
-  config.g_h = size.height();
-  config.g_pass = VPX_RC_ONE_PASS;
+  SetCommonCodecParameters(size, &config);
 
   // Value of 2 means using the real time profile. This is basically a
   // redundant option since we explicitly select real time mode when doing
   // encoding.
   config.g_profile = 2;
 
-  // Using 2 threads gives a great boost in performance for most systems with
-  // adequate processing power. NB: Going to multiple threads on low end
-  // windows systems can really hurt performance.
-  // http://crbug.com/99179
-  config.g_threads = (base::SysInfo::NumberOfProcessors() > 2) ? 2 : 1;
+  // Clamping the quantizer constrains the worst-case quality and CPU usage.
   config.rc_min_quantizer = 20;
   config.rc_max_quantizer = 30;
-  config.g_timebase.num = 1;
-  config.g_timebase.den = 20;
 
   if (vpx_codec_enc_init(codec.get(), algo, &config, 0))
     return ScopedVpxCodec();
@@ -88,19 +101,13 @@ ScopedVpxCodec CreateVP9Codec(const webrtc::DesktopSize& size) {
   if (ret != VPX_CODEC_OK)
     return ScopedVpxCodec();
 
-  //config.rc_target_bitrate = size.width() * size.height() *
-  //    config.rc_target_bitrate / config.g_w / config.g_h;
-  config.g_w = size.width();
-  config.g_h = size.height();
-  config.g_pass = VPX_RC_ONE_PASS;
+  SetCommonCodecParameters(size, &config);
 
-  // Only the default profile is currently supported for VP9 encoding.
+  // Configure VP9 for I420 source frames.
   config.g_profile = 0;
 
-  // Start emitting packets immediately.
-  config.g_lag_in_frames = 0;
-
-  // Prevent VP9 from ruining output quality with quantization.
+  // Disable quantization entirely, putting the encoder in "lossless" mode.
+  config.rc_min_quantizer = 0;
   config.rc_max_quantizer = 0;
 
   if (vpx_codec_enc_init(codec.get(), algo, &config, 0))
@@ -142,13 +149,16 @@ scoped_ptr<VideoPacket> VideoEncoderVpx::Encode(
   DCHECK_LE(32, frame.size().width());
   DCHECK_LE(32, frame.size().height());
 
-  base::Time encode_start_time = base::Time::Now();
+  base::TimeTicks encode_start_time = base::TimeTicks::Now();
 
   if (!codec_ ||
       !frame.size().equals(webrtc::DesktopSize(image_->w, image_->h))) {
     bool ret = Initialize(frame.size());
     // TODO(hclam): Handle error better.
     CHECK(ret) << "Initialization of encoder failed";
+
+    // Set now as the base for timestamp calculation.
+    timestamp_base_ = encode_start_time;
   }
 
   // Convert the updated capture data ready for encode.
@@ -168,16 +178,13 @@ scoped_ptr<VideoPacket> VideoEncoderVpx::Encode(
   }
 
   // Do the actual encoding.
-  vpx_codec_err_t ret = vpx_codec_encode(codec_.get(), image_.get(),
-                                         last_timestamp_,
-                                         1, 0, VPX_DL_REALTIME);
+  int timestamp = (encode_start_time - timestamp_base_).InMilliseconds();
+  vpx_codec_err_t ret = vpx_codec_encode(
+      codec_.get(), image_.get(), timestamp, 1, 0, VPX_DL_REALTIME);
   DCHECK_EQ(ret, VPX_CODEC_OK)
       << "Encoding error: " << vpx_codec_err_to_string(ret) << "\n"
       << "Details: " << vpx_codec_error(codec_.get()) << "\n"
       << vpx_codec_error_detail(codec_.get());
-
-  // TODO(hclam): Apply the proper timestamp here.
-  last_timestamp_ += 50;
 
   // Read the encoded data.
   vpx_codec_iter_t iter = NULL;
@@ -209,7 +216,7 @@ scoped_ptr<VideoPacket> VideoEncoderVpx::Encode(
   packet->mutable_format()->set_screen_height(frame.size().height());
   packet->set_capture_time_ms(frame.capture_time_ms());
   packet->set_encode_time_ms(
-      (base::Time::Now() - encode_start_time).InMillisecondsRoundedUp());
+      (base::TimeTicks::Now() - encode_start_time).InMillisecondsRoundedUp());
   if (!frame.dpi().is_zero()) {
     packet->mutable_format()->set_x_dpi(frame.dpi().x());
     packet->mutable_format()->set_y_dpi(frame.dpi().y());
@@ -229,8 +236,7 @@ scoped_ptr<VideoPacket> VideoEncoderVpx::Encode(
 VideoEncoderVpx::VideoEncoderVpx(const InitializeCodecCallback& init_codec)
     : init_codec_(init_codec),
       active_map_width_(0),
-      active_map_height_(0),
-      last_timestamp_(0) {
+      active_map_height_(0) {
 }
 
 bool VideoEncoderVpx::Initialize(const webrtc::DesktopSize& size) {
@@ -257,39 +263,36 @@ bool VideoEncoderVpx::Initialize(const webrtc::DesktopSize& size) {
   active_map_height_ = (image_->h + kMacroBlockSize - 1) / kMacroBlockSize;
   active_map_.reset(new uint8[active_map_width_ * active_map_height_]);
 
-  // YUV image size is 1.5 times of a plane. Multiplication is performed first
-  // to avoid rounding error.
-  const int y_plane_size = image_->w * image_->h;
-  const int uv_width = (image_->w + 1) / 2;
-  const int uv_height = (image_->h + 1) / 2;
-  const int uv_plane_size = uv_width * uv_height;
-  const int yuv_image_size = y_plane_size + uv_plane_size * 2;
+  // libyuv's fast-path requires 16-byte aligned pointers and strides, so pad
+  // the Y, U and V planes' strides to multiples of 16 bytes.
+  const int y_stride = ((image_->w - 1) & ~15) + 16;
+  const int uv_unaligned_stride = y_stride / 2;
+  const int uv_stride = ((uv_unaligned_stride - 1) & ~15) + 16;
 
-  // libvpx may try to access memory after the buffer (it still
-  // doesn't use it) - it copies the data in 16x16 blocks:
-  // crbug.com/119633 . Here we workaround that problem by adding
-  // padding at the end of the buffer. Overreading to U and V buffers
-  // is safe so the padding is necessary only at the end.
-  //
-  // TODO(sergeyu): Remove this padding when the bug is fixed in libvpx.
-  const int active_map_area = active_map_width_ * kMacroBlockSize *
-      active_map_height_ * kMacroBlockSize;
-  const int padding_size = active_map_area - y_plane_size;
-  const int buffer_size = yuv_image_size + padding_size;
+  // libvpx accesses the source image in macro blocks, and will over-read
+  // if the image is not padded out to the next macroblock: crbug.com/119633.
+  // Pad the Y, U and V planes' height out to compensate.
+  // Assuming macroblocks are 16x16, aligning the planes' strides above also
+  // macroblock aligned them.
+  DCHECK_EQ(16, kMacroBlockSize);
+  const int y_rows = active_map_height_ * kMacroBlockSize;
+  const int uv_rows = y_rows / 2;
 
+  // Allocate a YUV buffer large enough for the aligned data & padding.
+  const int buffer_size = y_stride * y_rows + 2 * uv_stride * uv_rows;
   yuv_image_.reset(new uint8[buffer_size]);
 
   // Reset image value to 128 so we just need to fill in the y plane.
-  memset(yuv_image_.get(), 128, yuv_image_size);
+  memset(yuv_image_.get(), 128, buffer_size);
 
   // Fill in the information for |image_|.
   unsigned char* image = reinterpret_cast<unsigned char*>(yuv_image_.get());
   image_->planes[0] = image;
-  image_->planes[1] = image + y_plane_size;
-  image_->planes[2] = image + y_plane_size + uv_plane_size;
-  image_->stride[0] = image_->w;
-  image_->stride[1] = uv_width;
-  image_->stride[2] = uv_width;
+  image_->planes[1] = image_->planes[0] + y_stride * y_rows;
+  image_->planes[2] = image_->planes[1] + uv_stride * uv_rows;
+  image_->stride[0] = y_stride;
+  image_->stride[1] = uv_stride;
+  image_->stride[2] = uv_stride;
 
   // Initialize the codec.
   codec_ = init_codec_.Run(size);

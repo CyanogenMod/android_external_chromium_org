@@ -9,6 +9,22 @@
 <include src="pdf_scripting_api.js">
 
 /**
+ * @return {number} Width of a scrollbar in pixels
+ */
+function getScrollbarWidth() {
+  var div = document.createElement('div');
+  div.style.visibility = 'hidden';
+  div.style.overflow = 'scroll';
+  div.style.width = '50px';
+  div.style.height = '50px';
+  div.style.position = 'absolute';
+  document.body.appendChild(div);
+  var result = div.offsetWidth - div.clientWidth;
+  div.parentNode.removeChild(div);
+  return result;
+}
+
+/**
  * Creates a new PDFViewer. There should only be one of these objects per
  * document.
  */
@@ -28,13 +44,16 @@ function PDFViewer() {
   // Create the viewport.
   this.viewport_ = new Viewport(window,
                                 this.sizer_,
-                                this.viewportChangedCallback_.bind(this));
+                                this.viewportChangedCallback_.bind(this),
+                                getScrollbarWidth());
 
   // Create the plugin object dynamically so we can set its src. The plugin
   // element is sized to fill the entire window and is set to be fixed
   // positioning, acting as a viewport. The plugin renders into this viewport
   // according to the scroll position of the window.
   this.plugin_ = document.createElement('object');
+  // NOTE: The plugin's 'id' field must be set to 'plugin' since
+  // chrome/renderer/printing/print_web_view_helper.cc actually references it.
   this.plugin_.id = 'plugin';
   this.plugin_.type = 'application/x-google-chrome-pdf';
   this.plugin_.addEventListener('message', this.handleMessage_.bind(this),
@@ -62,6 +81,8 @@ function PDFViewer() {
   }
 
   this.plugin_.setAttribute('src', streamDetails.streamUrl);
+  if (window.top == window)
+    this.plugin_.setAttribute('full-frame', '');
   document.body.appendChild(this.plugin_);
 
   this.messagingHost_ = new PDFMessagingHost(window, this);
@@ -102,7 +123,7 @@ PDFViewer.prototype = {
           return;
         case 33:  // Page up key.
           // Go to the previous page if we are fit-to-page.
-          if (isFitToPageEnabled()) {
+          if (this.viewport_.fittingType == Viewport.FittingType.FIT_TO_PAGE) {
             this.viewport_.goToPage(this.viewport_.getMostVisiblePage() - 1);
             // Since we do the movement of the page.
             e.preventDefault();
@@ -118,7 +139,7 @@ PDFViewer.prototype = {
           return;
         case 34:  // Page down key.
           // Go to the next page if we are fit-to-page.
-          if (isFitToPageEnabled()) {
+          if (this.viewport_.fittingType == Viewport.FittingType.FIT_TO_PAGE) {
             this.viewport_.goToPage(this.viewport_.getMostVisiblePage() + 1);
             // Since we do the movement of the page.
             e.preventDefault();

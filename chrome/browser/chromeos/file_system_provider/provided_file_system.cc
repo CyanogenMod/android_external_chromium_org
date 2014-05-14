@@ -5,6 +5,8 @@
 #include "chrome/browser/chromeos/file_system_provider/provided_file_system.h"
 
 #include "base/files/file.h"
+#include "chrome/browser/chromeos/file_system_provider/operations/get_metadata.h"
+#include "chrome/browser/chromeos/file_system_provider/operations/read_directory.h"
 #include "chrome/browser/chromeos/file_system_provider/operations/unmount.h"
 #include "chrome/browser/chromeos/file_system_provider/request_manager.h"
 #include "chrome/common/extensions/api/file_system_provider.h"
@@ -31,6 +33,29 @@ void ProvidedFileSystem::RequestUnmount(
               new operations::Unmount(
                   event_router_, file_system_info_, callback)))) {
     callback.Run(base::File::FILE_ERROR_SECURITY);
+  }
+}
+
+void ProvidedFileSystem::GetMetadata(
+    const base::FilePath& entry_path,
+    const fileapi::AsyncFileUtil::GetFileInfoCallback& callback) {
+  if (!request_manager_.CreateRequest(
+          make_scoped_ptr<RequestManager::HandlerInterface>(
+              new operations::GetMetadata(
+                  event_router_, file_system_info_, entry_path, callback)))) {
+    callback.Run(base::File::FILE_ERROR_SECURITY, base::File::Info());
+  }
+}
+
+void ProvidedFileSystem::ReadDirectory(
+    const base::FilePath& directory_path,
+    const fileapi::AsyncFileUtil::ReadDirectoryCallback& callback) {
+  if (!request_manager_.CreateRequest(make_scoped_ptr<
+          RequestManager::HandlerInterface>(new operations::ReadDirectory(
+          event_router_, file_system_info_, directory_path, callback)))) {
+    callback.Run(base::File::FILE_ERROR_SECURITY,
+                 fileapi::AsyncFileUtil::EntryList(),
+                 false /* has_more */);
   }
 }
 

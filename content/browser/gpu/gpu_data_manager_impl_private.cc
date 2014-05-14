@@ -237,9 +237,12 @@ void DisplayReconfigCallback(CGDirectDisplayID display,
 
 #if defined(OS_ANDROID)
 void ApplyAndroidWorkarounds(const gpu::GPUInfo& gpu_info,
-                             CommandLine* command_line) {
+                             CommandLine* command_line,
+                             std::set<int>* workarounds) {
   std::string vendor(StringToLowerASCII(gpu_info.gl_vendor));
   std::string renderer(StringToLowerASCII(gpu_info.gl_renderer));
+  std::string version(StringToLowerASCII(gpu_info.gl_version));
+
   bool is_img =
       gpu_info.gl_vendor.find("Imagination") != std::string::npos;
 
@@ -516,14 +519,14 @@ void GpuDataManagerImplPrivate::SetGLStrings(const std::string& gl_vendor,
   // situation where GPU process collected GL strings before this call.
   if (!gpu_info_.gl_vendor.empty() ||
       !gpu_info_.gl_renderer.empty() ||
-      !gpu_info_.gl_version_string.empty())
+      !gpu_info_.gl_version.empty())
     return;
 
   gpu::GPUInfo gpu_info = gpu_info_;
 
   gpu_info.gl_vendor = gl_vendor;
   gpu_info.gl_renderer = gl_renderer;
-  gpu_info.gl_version_string = gl_version;
+  gpu_info.gl_version = gl_version;
 
   gpu::CollectDriverInfoGL(&gpu_info);
 
@@ -539,7 +542,7 @@ void GpuDataManagerImplPrivate::GetGLStrings(std::string* gl_vendor,
 
   *gl_vendor = gpu_info_.gl_vendor;
   *gl_renderer = gpu_info_.gl_renderer;
-  *gl_version = gpu_info_.gl_version_string;
+  *gl_version = gpu_info_.gl_version;
 }
 
 void GpuDataManagerImplPrivate::Initialize() {
@@ -988,7 +991,8 @@ void GpuDataManagerImplPrivate::InitializeImpl(
   UpdatePreliminaryBlacklistedFeatures();
 
 #if defined(OS_ANDROID)
-  ApplyAndroidWorkarounds(gpu_info, CommandLine::ForCurrentProcess());
+  ApplyAndroidWorkarounds(
+      gpu_info, CommandLine::ForCurrentProcess(), &gpu_driver_bugs_);
 #endif  // OS_ANDROID
 }
 

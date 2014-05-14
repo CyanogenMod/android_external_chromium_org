@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_DATABASE_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_DATABASE_H_
 
+#include <map>
 #include <set>
 #include <vector>
 
@@ -76,6 +77,8 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   bool GetRegistrationsForOrigin(const GURL& origin,
                                  std::vector<RegistrationData>* registrations);
 
+  bool GetAllRegistrations(std::vector<RegistrationData>* registrations);
+
   // Saving, retrieving, and updating registration data.
   // (will bump next_avail_xxxx_ids as needed)
   // (resource ids will be added/removed from the uncommitted/purgeable
@@ -127,6 +130,10 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   // Returns true on success. Otherwise deletes nothing and returns false.
   bool ClearPurgeableResourceIds(const std::set<int64>& ids);
 
+  // Delete all data for |origin|, namely, unique origin, registrations and
+  // resource records. Resources are moved to the purgeable list.
+  bool DeleteAllDataForOrigin(const GURL& origin);
+
   bool is_disabled() const { return is_disabled_; }
   bool was_corruption_detected() const { return was_corruption_detected_; }
 
@@ -142,12 +149,19 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   bool ReadRegistrationData(int64 registration_id,
                             const GURL& origin,
                             RegistrationData* registration);
+  bool ReadResourceRecords(int64 version_id,
+                           std::vector<ResourceRecord>* resources);
+  bool DeleteResourceRecords(int64 version_id,
+                             leveldb::WriteBatch* batch);
   bool ReadResourceIds(const char* id_key_prefix,
                        std::set<int64>* ids);
   bool WriteResourceIds(const char* id_key_prefix,
                         const std::set<int64>& ids);
   bool DeleteResourceIds(const char* id_key_prefix,
                          const std::set<int64>& ids);
+
+  // Reads the current schema version from the database. If the database hasn't
+  // been written anything yet, sets |db_version| to 0 and returns true.
   bool ReadDatabaseVersion(int64* db_version);
 
   // Write a batch into the database.
@@ -190,7 +204,11 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
 
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, OpenDatabase);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, OpenDatabase_InMemory);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, DatabaseVersion);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, GetNextAvailableIds);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, Registration_Basic);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, Registration_Overwrite);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, Registration_Multiple);
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerDatabase);
 };

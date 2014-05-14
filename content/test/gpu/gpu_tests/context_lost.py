@@ -49,7 +49,7 @@ class _ContextLostValidator(page_test.PageTest):
     # after each run, but if more tests are added which crash the GPU
     # process, then it will.
     super(_ContextLostValidator, self).__init__(
-      'ValidatePage', needs_browser_restart_after_each_page=True)
+      needs_browser_restart_after_each_page=True)
 
   def CustomizeBrowserOptions(self, options):
     options.AppendExtraBrowserArgs(
@@ -102,17 +102,39 @@ class _ContextLostValidator(page_test.PageTest):
           'window.domAutomationController._succeeded'):
           raise page_test.Failure(
             'Test failed (context not restored properly?)')
+    elif page.force_garbage_collection:
+      # Try to corce GC to clean up any contexts not attached to the page.
+      # This method seem unreliable, so the page will also attempt to force
+      # GC through excessive allocations.
+      tab.CollectGarbage()
+      completed = False
+      try:
+        print "Waiting for page to finish."
+        util.WaitFor(lambda: tab.EvaluateJavaScript(
+            'window.domAutomationController._finished'), wait_timeout)
+        completed = True
+      except util.TimeoutException:
+        pass
+
+      if not completed:
+        raise page_test.Failure(
+            'Test didn\'t complete (no context restored event?)')
+      if not tab.EvaluateJavaScript(
+        'window.domAutomationController._succeeded'):
+        raise page_test.Failure(
+          'Test failed (context not restored properly?)')
 
 class WebGLContextLostFromGPUProcessExitPage(page.Page):
   def __init__(self, page_set, base_dir):
     super(WebGLContextLostFromGPUProcessExitPage, self).__init__(
       url='file://webgl.html?query=kill_after_notification',
       page_set=page_set,
-      base_dir=base_dir)
-    self.name = 'ContextLost.WebGLContextLostFromGPUProcessExit'
+      base_dir=base_dir,
+      name='ContextLost.WebGLContextLostFromGPUProcessExit')
     self.script_to_evaluate_on_commit = harness_script
     self.kill_gpu_process = True
     self.number_of_gpu_process_kills = 1
+    self.force_garbage_collection = False
 
   def RunNavigateSteps(self, action_runner):
     action_runner.RunAction(NavigateAction())
@@ -125,16 +147,32 @@ class WebGLContextLostFromLoseContextExtensionPage(page.Page):
     super(WebGLContextLostFromLoseContextExtensionPage, self).__init__(
       url='file://webgl.html?query=WEBGL_lose_context',
       page_set=page_set,
-      base_dir=base_dir)
-    self.name = 'ContextLost.WebGLContextLostFromLoseContextExtension',
+      base_dir=base_dir,
+      name='ContextLost.WebGLContextLostFromLoseContextExtension')
     self.script_to_evaluate_on_commit = harness_script
     self.kill_gpu_process = False
+    self.force_garbage_collection = False
 
   def RunNavigateSteps(self, action_runner):
     action_runner.RunAction(NavigateAction())
     action_runner.RunAction(WaitAction(
       {'javascript': 'window.domAutomationController._finished'}))
 
+class WebGLContextLostFromQuantityPage(page.Page):
+  def __init__(self, page_set, base_dir):
+    super(WebGLContextLostFromQuantityPage, self).__init__(
+      url='file://webgl.html?query=forced_quantity_loss',
+      page_set=page_set,
+      base_dir=base_dir,
+      name='ContextLost.WebGLContextLostFromQuantity')
+    self.script_to_evaluate_on_commit = harness_script
+    self.kill_gpu_process = False
+    self.force_garbage_collection = True
+
+  def RunNavigateSteps(self, action_runner):
+    action_runner.RunAction(NavigateAction())
+    action_runner.RunAction(WaitAction(
+      {'javascript': 'window.domAutomationController._loaded'}))
 
 class ContextLost(test_module.Test):
   enabled = True
@@ -150,4 +188,7 @@ class ContextLost(test_module.Test):
       serving_dirs=set(['']))
     ps.AddPage(WebGLContextLostFromGPUProcessExitPage(ps, ps.base_dir))
     ps.AddPage(WebGLContextLostFromLoseContextExtensionPage(ps, ps.base_dir))
+    ps.AddPage(WebGLContextLostFromQuantityPage(ps, ps.base_dir))
     return ps
+
+

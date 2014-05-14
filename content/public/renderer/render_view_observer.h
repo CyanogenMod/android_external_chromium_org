@@ -27,7 +27,6 @@ class WebFrame;
 class WebFormElement;
 class WebGestureEvent;
 class WebLocalFrame;
-class WebMediaPlayerClient;
 class WebMouseEvent;
 class WebNode;
 class WebTouchEvent;
@@ -81,8 +80,6 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
                                    blink::WebDataSource* ds) {}
   virtual void PrintPage(blink::WebLocalFrame* frame, bool user_initiated) {}
   virtual void FocusedNodeChanged(const blink::WebNode& node) {}
-  virtual void WillCreateMediaPlayer(blink::WebLocalFrame* frame,
-                                     blink::WebMediaPlayerClient* client) {}
   virtual void ZoomLevelChanged() {};
   virtual void DidChangeScrollOffset(blink::WebLocalFrame* frame) {}
   virtual void DraggableRegionsChanged(blink::WebFrame* frame) {}
@@ -108,7 +105,7 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
   // These match incoming IPCs.
   virtual void Navigate(const GURL& url) {}
   virtual void ClosePage() {}
-  virtual void OrientationChangeEvent(int orientation) {}
+  virtual void OrientationChangeEvent() {}
 
   virtual void OnStop() {}
 

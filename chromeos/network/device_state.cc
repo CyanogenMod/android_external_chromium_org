@@ -8,12 +8,14 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
+#include "chromeos/network/network_event_log.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 namespace chromeos {
 
 DeviceState::DeviceState(const std::string& path)
     : ManagedState(MANAGED_TYPE_DEVICE, path),
+      allow_roaming_(false),
       provider_requires_roaming_(false),
       support_network_scan_(false),
       scanning_(false),
@@ -38,6 +40,8 @@ bool DeviceState::PropertyChanged(const std::string& key,
     return GetBooleanValue(key, value, &scanning_);
   } else if (key == shill::kSupportNetworkScanProperty) {
     return GetBooleanValue(key, value, &support_network_scan_);
+  } else if (key == shill::kCellularAllowRoamingProperty) {
+    return GetBooleanValue(key, value, &allow_roaming_);
   } else if (key == shill::kProviderRequiresRoamingProperty) {
     return GetBooleanValue(key, value, &provider_requires_roaming_);
   } else if (key == shill::kHomeProviderProperty) {
@@ -118,6 +122,12 @@ bool DeviceState::PropertyChanged(const std::string& key,
     return GetBooleanValue(key, value, &sim_present_);
   } else if (key == shill::kEapAuthenticationCompletedProperty) {
     return GetBooleanValue(key, value, &eap_authentication_completed_);
+  } else if (key == shill::kIPConfigsProperty) {
+    // If kIPConfigsProperty changes, clear any previous ip_configs_.
+    // ShillPropertyhandler will request the IPConfig objects which will trigger
+    // calls to IPConfigPropertiesChanged.
+    ip_configs_.Clear();
+    return false;  // No actual state change.
   }
   return false;
 }
@@ -130,6 +140,22 @@ bool DeviceState::InitialPropertiesReceived(
     UMA_HISTOGRAM_BOOLEAN("Cellular.SIMLocked", locked);
   }
   return false;
+}
+
+void DeviceState::IPConfigPropertiesChanged(
+    const std::string& ip_config_path,
+    const base::DictionaryValue& properties) {
+  base::DictionaryValue* ip_config = NULL;
+  if (ip_configs_.GetDictionaryWithoutPathExpansion(
+          ip_config_path, &ip_config)) {
+    NET_LOG_EVENT("IPConfig Updated: " + ip_config_path, path());
+    ip_config->Clear();
+  } else {
+    NET_LOG_EVENT("IPConfig Added: " + ip_config_path, path());
+    ip_config = new base::DictionaryValue;
+    ip_configs_.SetWithoutPathExpansion(ip_config_path, ip_config);
+  }
+  ip_config->MergeDictionary(&properties);
 }
 
 std::string DeviceState::GetFormattedMacAddress() const {

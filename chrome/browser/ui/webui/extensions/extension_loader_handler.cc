@@ -19,7 +19,6 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "extensions/browser/extension_system.h"
@@ -113,8 +112,7 @@ void ExtensionLoaderHandler::FileHelper::ChooseFile() {
       NULL,
       kFileTypeIndex,
       base::FilePath::StringType(),
-      loader_handler_->web_ui()->
-          GetWebContents()->GetView()->GetTopLevelNativeWindow(),
+      loader_handler_->web_ui()->GetWebContents()->GetTopLevelNativeWindow(),
       NULL);
 
   content::RecordComputedAction("Options_LoadUnpackedExtension");
@@ -187,6 +185,11 @@ void ExtensionLoaderHandler::LoadUnpackedExtensionImpl(
   installer->set_on_failure_callback(
       base::Bind(&ExtensionLoaderHandler::OnLoadFailure,
                  weak_ptr_factory_.GetWeakPtr()));
+
+  // We do our own error handling, so we don't want a load failure to trigger
+  // a dialog.
+  installer->set_be_noisy_on_failure(false);
+
   installer->Load(file_path);
 }
 

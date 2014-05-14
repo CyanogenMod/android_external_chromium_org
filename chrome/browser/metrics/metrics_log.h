@@ -14,9 +14,9 @@
 #include "base/basictypes.h"
 #include "chrome/browser/metrics/extension_metrics.h"
 #include "chrome/browser/metrics/metrics_network_observer.h"
-#include "chrome/common/metrics/metrics_log_base.h"
 #include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/installer/util/google_update_settings.h"
+#include "components/metrics/metrics_log_base.h"
 #include "ui/gfx/size.h"
 
 class HashedExtensionMetrics;
@@ -55,7 +55,7 @@ struct GoogleUpdateMetrics {
     bool is_system_install;
     // The time at which Google Update last started an automatic update check.
     base::Time last_started_au;
-    // The time at which Google Update last successfully recieved update
+    // The time at which Google Update last successfully received update
     // information from Google servers.
     base::Time last_checked;
     // Details about Google Update's attempts to update itself.
@@ -64,7 +64,7 @@ struct GoogleUpdateMetrics {
     GoogleUpdateSettings::ProductData product_data;
 };
 
-class MetricsLog : public MetricsLogBase {
+class MetricsLog : public metrics::MetricsLogBase {
  public:
   // Creates a new metrics log of the specified type.
   // client_id is the identifier for this profile on this installation

@@ -56,7 +56,6 @@ class RenderViewHost;
 class RenderViewHostDelegateView;
 class RenderViewHostImpl;
 class RenderWidgetHostImpl;
-class RenderWidgetHostViewPort;
 class SavePackage;
 class SessionStorageNamespaceImpl;
 class SiteInstance;
@@ -64,7 +63,7 @@ class TestWebContents;
 class WebContentsDelegate;
 class WebContentsImpl;
 class WebContentsObserver;
-class WebContentsViewPort;
+class WebContentsView;
 class WebContentsViewDelegate;
 struct AXEventNotificationDetails;
 struct ColorSuggestion;
@@ -75,7 +74,7 @@ struct ResourceRequestDetails;
 
 // Factory function for the implementations that content knows about. Takes
 // ownership of |delegate|.
-WebContentsViewPort* CreateWebContentsView(
+WebContentsView* CreateWebContentsView(
     WebContentsImpl* web_contents,
     WebContentsViewDelegate* delegate,
     RenderViewHostDelegateView** render_view_host_delegate_view);
@@ -150,10 +149,6 @@ class CONTENT_EXPORT WebContentsImpl
   // an embedder.
   BrowserPluginEmbedder* GetBrowserPluginEmbedder() const;
 
-  // Returns the BrowserPluginGuestManager object, or NULL if this web contents
-  // does not have a BrowserPluginGuestManager.
-  BrowserPluginGuestManager* GetBrowserPluginGuestManager() const;
-
   // Gets the current fullscreen render widget's routing ID. Returns
   // MSG_ROUTING_NONE when there is no fullscreen render widget.
   int GetFullscreenWidgetRoutingID() const;
@@ -174,6 +169,8 @@ class CONTENT_EXPORT WebContentsImpl
   void DidGetRedirectForResourceRequest(
       RenderViewHost* render_view_host,
       const ResourceRedirectDetails& details);
+
+  WebContentsView* GetView() const;
 
   // WebContents ------------------------------------------------------
   virtual WebContentsDelegate* GetDelegate() OVERRIDE;
@@ -197,7 +194,6 @@ class CONTENT_EXPORT WebContentsImpl
   virtual RenderWidgetHostView* GetRenderWidgetHostView() const OVERRIDE;
   virtual RenderWidgetHostView* GetFullscreenRenderWidgetHostView() const
       OVERRIDE;
-  virtual WebContentsView* GetView() const OVERRIDE;
   virtual WebUI* CreateWebUI(const GURL& url) OVERRIDE;
   virtual WebUI* GetWebUI() const OVERRIDE;
   virtual WebUI* GetCommittedWebUI() const OVERRIDE;
@@ -255,6 +251,16 @@ class CONTENT_EXPORT WebContentsImpl
       const CustomContextMenuContext& context) OVERRIDE;
   virtual void ExecuteCustomContextMenuCommand(
       int action, const CustomContextMenuContext& context) OVERRIDE;
+  virtual gfx::NativeView GetNativeView() OVERRIDE;
+  virtual gfx::NativeView GetContentNativeView() OVERRIDE;
+  virtual gfx::NativeWindow GetTopLevelNativeWindow() OVERRIDE;
+  virtual gfx::Rect GetContainerBounds() OVERRIDE;
+  virtual gfx::Rect GetViewBounds() OVERRIDE;
+  virtual DropData* GetDropData() OVERRIDE;
+  virtual void Focus() OVERRIDE;
+  virtual void SetInitialFocus() OVERRIDE;
+  virtual void StoreFocus() OVERRIDE;
+  virtual void RestoreFocus() OVERRIDE;
   virtual void FocusThroughTabTraversal(bool reverse) OVERRIDE;
   virtual bool ShowingInterstitialPage() const OVERRIDE;
   virtual InterstitialPage* GetInterstitialPage() const OVERRIDE;
@@ -308,6 +314,12 @@ class CONTENT_EXPORT WebContentsImpl
 #if defined(OS_ANDROID)
   virtual base::android::ScopedJavaLocalRef<jobject> GetJavaWebContents()
       OVERRIDE;
+#elif defined(OS_MACOSX)
+  virtual void SetAllowOverlappingViews(bool overlapping) OVERRIDE;
+  virtual bool GetAllowOverlappingViews() OVERRIDE;
+  virtual void SetOverlayView(WebContents* overlay,
+                              const gfx::Point& offset) OVERRIDE;
+  virtual void RemoveOverlayView() OVERRIDE;
 #endif
 
   // Implementation of PageNavigator.
@@ -329,17 +341,20 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void WorkerCrashed(RenderFrameHost* render_frame_host) OVERRIDE;
   virtual void ShowContextMenu(RenderFrameHost* render_frame_host,
                                const ContextMenuParams& params) OVERRIDE;
-  virtual void RunJavaScriptMessage(RenderFrameHost* rfh,
+  virtual void RunJavaScriptMessage(RenderFrameHost* render_frame_host,
                                     const base::string16& message,
                                     const base::string16& default_prompt,
                                     const GURL& frame_url,
                                     JavaScriptMessageType type,
                                     IPC::Message* reply_msg) OVERRIDE;
-  virtual void RunBeforeUnloadConfirm(RenderFrameHost* rfh,
+  virtual void RunBeforeUnloadConfirm(RenderFrameHost* render_frame_host,
                                       const base::string16& message,
                                       bool is_reload,
                                       IPC::Message* reply_msg) OVERRIDE;
   virtual void DidAccessInitialDocument() OVERRIDE;
+  virtual void DidDisownOpener(RenderFrameHost* render_frame_host) OVERRIDE;
+  virtual void DocumentOnLoadCompleted(
+      RenderFrameHost* render_frame_host) OVERRIDE;
   virtual WebContents* GetAsWebContents() OVERRIDE;
   virtual bool IsNeverVisible() OVERRIDE;
 
@@ -371,12 +386,8 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void RequestMove(const gfx::Rect& new_bounds) OVERRIDE;
   virtual void DidCancelLoading() OVERRIDE;
   virtual void DidChangeLoadProgress(double progress) OVERRIDE;
-  virtual void DidDisownOpener(RenderViewHost* rvh) OVERRIDE;
   virtual void DocumentAvailableInMainFrame(
       RenderViewHost* render_view_host) OVERRIDE;
-  virtual void DocumentOnLoadCompletedInMainFrame(
-      RenderViewHost* render_view_host,
-      int32 page_id) OVERRIDE;
   virtual void RouteCloseEvent(RenderViewHost* rvh) OVERRIDE;
   virtual void RouteMessageEvent(
       RenderViewHost* rvh,
@@ -748,9 +759,8 @@ class CONTENT_EXPORT WebContentsImpl
                           const GURL& image_url,
                           const std::vector<SkBitmap>& bitmaps,
                           const std::vector<gfx::Size>& original_bitmap_sizes);
-  void OnUpdateFaviconURL(int32 page_id,
-                          const std::vector<FaviconURL>& candidates);
-  void OnFirstVisuallyNonEmptyPaint(int32 page_id);
+  void OnUpdateFaviconURL(const std::vector<FaviconURL>& candidates);
+  void OnFirstVisuallyNonEmptyPaint();
   void OnMediaPlayingNotification(int64 player_cookie,
                                   bool has_video,
                                   bool has_audio);
@@ -819,13 +829,6 @@ class CONTENT_EXPORT WebContentsImpl
   // called once as this call also removes it from the internal map.
   WebContentsImpl* GetCreatedWindow(int route_id);
 
-  // Returns the RenderWidgetHostView that is associated with a native window
-  // and can be used in showing created widgets.
-  // If this WebContents belongs to a browser plugin guest, there is no native
-  // window 'view' associated with this WebContents. This method returns the
-  // 'view' of the embedder instead.
-  RenderWidgetHostViewPort* GetRenderWidgetHostViewPort() const;
-
   // Misc non-view stuff -------------------------------------------------------
 
   // Helper functions for sending notifications.
@@ -843,14 +846,14 @@ class CONTENT_EXPORT WebContentsImpl
   // Removes browser plugin embedder if there is one.
   void RemoveBrowserPluginEmbedder();
 
-  // Clear |render_view_host|'s PowerSaveBlockers.
-  void ClearPowerSaveBlockers(RenderViewHost* render_view_host);
+  // Clear |render_frame_host|'s PowerSaveBlockers.
+  void ClearPowerSaveBlockers(RenderFrameHost* render_frame_host);
 
   // Clear all PowerSaveBlockers, leave power_save_blocker_ empty.
   void ClearAllPowerSaveBlockers();
 
   // Helper function to invoke WebContentsDelegate::GetSizeForNewRenderView().
-  gfx::Size GetSizeForNewRenderView() const;
+  gfx::Size GetSizeForNewRenderView();
 
   void OnFrameRemoved(RenderViewHostImpl* render_view_host,
                       int frame_routing_id);
@@ -874,7 +877,7 @@ class CONTENT_EXPORT WebContentsImpl
   NavigationControllerImpl controller_;
 
   // The corresponding view.
-  scoped_ptr<WebContentsViewPort> view_;
+  scoped_ptr<WebContentsView> view_;
 
   // The view of the RVHD. Usually this is our WebContentsView implementation,
   // but if an embedder uses a different WebContentsView, they'll need to
@@ -914,10 +917,10 @@ class CONTENT_EXPORT WebContentsImpl
 
   // Helper classes ------------------------------------------------------------
 
-  // Maps the RenderViewHost to its media_player_cookie and PowerSaveBlocker
-  // pairs. Key is the RenderViewHost, value is the map which maps player_cookie
-  // on to PowerSaveBlocker.
-  typedef std::map<RenderViewHost*, std::map<int64, PowerSaveBlocker*> >
+  // Maps the RenderFrameHost to its media_player_cookie and PowerSaveBlocker
+  // pairs. Key is the RenderFrameHost, value is the map which maps
+  // player_cookie on to PowerSaveBlocker.
+  typedef std::map<RenderFrameHost*, std::map<int64, PowerSaveBlocker*> >
       PowerSaveBlockerMap;
   PowerSaveBlockerMap power_save_blockers_;
 

@@ -31,8 +31,8 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/media_stream_request.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/process_manager.h"
@@ -231,7 +231,6 @@ AppWindow::AppWindow(BrowserContext* context,
                      Delegate* delegate,
                      const extensions::Extension* extension)
     : browser_context_(context),
-      extension_(extension),
       extension_id_(extension->id()),
       window_type_(WINDOW_TYPE_DEFAULT),
       delegate_(delegate),
@@ -280,7 +279,11 @@ void AppWindow::Init(const GURL& url,
 
   native_app_window_.reset(delegate_->CreateNativeAppWindow(this, new_params));
 
-  if (!new_params.hidden) {
+  if (new_params.hidden) {
+    // Although the window starts hidden by default, calling Hide() here
+    // notifies observers of the window being hidden.
+    Hide();
+  } else {
     // Panels are not activated by default.
     Show(window_type_is_panel() || !new_params.focused ? SHOW_INACTIVE
                                                        : SHOW_ACTIVE);
@@ -322,7 +325,6 @@ void AppWindow::Init(const GURL& url,
     // We want to show the window only when the content has been painted. For
     // that to happen, we need to define a size for the content, otherwise the
     // layout will happen in a 0x0 area.
-    // Note: WebContents::GetView() is guaranteed to be non-null.
     gfx::Insets frame_insets = native_app_window_->GetFrameInsets();
     gfx::Rect initial_bounds = new_params.GetInitialWindowBounds(frame_insets);
     initial_bounds.Inset(frame_insets);
@@ -350,8 +352,12 @@ void AppWindow::RequestMediaAccessPermission(
     content::WebContents* web_contents,
     const content::MediaStreamRequest& request,
     const content::MediaResponseCallback& callback) {
+  const extensions::Extension* extension = GetExtension();
+  if (!extension)
+    return;
+
   delegate_->RequestMediaAccessPermission(
-      web_contents, request, callback, extension());
+      web_contents, request, callback, extension);
 }
 
 WebContents* AppWindow::OpenURLFromTab(WebContents* source,
@@ -409,6 +415,10 @@ bool AppWindow::PreHandleKeyboardEvent(
     content::WebContents* source,
     const content::NativeWebKeyboardEvent& event,
     bool* is_keyboard_shortcut) {
+  const extensions::Extension* extension = GetExtension();
+  if (!extension)
+    return false;
+
   // Here, we can handle a key event before the content gets it. When we are
   // fullscreen and it is not forced, we want to allow the user to leave
   // when ESC is pressed.
@@ -420,7 +430,7 @@ bool AppWindow::PreHandleKeyboardEvent(
   if (event.windowsKeyCode == ui::VKEY_ESCAPE &&
       (fullscreen_types_ != FULLSCREEN_TYPE_NONE) &&
       ((fullscreen_types_ & FULLSCREEN_TYPE_FORCED) == 0) &&
-      !extension_->HasAPIPermission(APIPermission::kOverrideEscFullscreen)) {
+      !extension->HasAPIPermission(APIPermission::kOverrideEscFullscreen)) {
     Restore();
     return true;
   }
@@ -447,9 +457,13 @@ void AppWindow::HandleKeyboardEvent(
 void AppWindow::RequestToLockMouse(WebContents* web_contents,
                                    bool user_gesture,
                                    bool last_unlocked_by_target) {
+  const extensions::Extension* extension = GetExtension();
+  if (!extension)
+    return;
+
   bool has_permission = IsExtensionWithPermissionOrSuggestInConsole(
       APIPermission::kPointerLock,
-      extension_,
+      extension,
       web_contents->GetRenderViewHost());
 
   web_contents->GotResponseToLockMouseRequest(has_permission);
@@ -463,7 +477,7 @@ bool AppWindow::PreHandleGestureEvent(WebContents* source,
          event.type == blink::WebGestureEvent::GesturePinchEnd;
 }
 
-void AppWindow::DidFirstVisuallyNonEmptyPaint(int32 page_id) {
+void AppWindow::DidFirstVisuallyNonEmptyPaint() {
   first_paint_complete_ = true;
   if (show_on_first_paint_) {
     DCHECK(delayed_show_type_ == SHOW_ACTIVE ||
@@ -506,6 +520,12 @@ content::WebContents* AppWindow::web_contents() const {
   return app_window_contents_->GetWebContents();
 }
 
+const extensions::Extension* AppWindow::GetExtension() const {
+  return extensions::ExtensionRegistry::Get(browser_context_)
+      ->enabled_extensions()
+      .GetByID(extension_id_);
+}
+
 NativeAppWindow* AppWindow::GetBaseWindow() { return native_app_window_.get(); }
 
 gfx::NativeWindow AppWindow::GetNativeWindow() {
@@ -519,13 +539,17 @@ gfx::Rect AppWindow::GetClientBounds() const {
 }
 
 base::string16 AppWindow::GetTitle() const {
+  base::string16 title;
+  const extensions::Extension* extension = GetExtension();
+  if (!extension)
+    return title;
+
   // WebContents::GetTitle() will return the page's URL if there's no <title>
   // specified. However, we'd prefer to show the name of the extension in that
   // case, so we directly inspect the NavigationEntry's title.
-  base::string16 title;
   if (!web_contents() || !web_contents()->GetController().GetActiveEntry() ||
       web_contents()->GetController().GetActiveEntry()->GetTitle().empty()) {
-    title = base::UTF8ToUTF16(extension()->name());
+    title = base::UTF8ToUTF16(extension->name());
   } else {
     title = web_contents()->GetTitle();
   }
@@ -672,6 +696,7 @@ void AppWindow::Show(ShowType show_type) {
       GetBaseWindow()->ShowInactive();
       break;
   }
+  AppWindowRegistry::Get(browser_context_)->AppWindowShown(this);
 }
 
 void AppWindow::Hide() {
@@ -681,6 +706,7 @@ void AppWindow::Hide() {
   // show will not be delayed.
   show_on_first_paint_ = false;
   GetBaseWindow()->Hide();
+  AppWindowRegistry::Get(browser_context_)->AppWindowHidden(this);
 }
 
 void AppWindow::SetAlwaysOnTop(bool always_on_top) {
@@ -792,10 +818,15 @@ void AppWindow::UpdateExtensionAppIcon() {
   const gfx::ImageSkia& default_icon =
       *ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
           IDR_APP_DEFAULT_ICON);
+
+  const extensions::Extension* extension = GetExtension();
+  if (!extension)
+    return;
+
   app_icon_image_.reset(
       new extensions::IconImage(browser_context(),
-                                extension(),
-                                extensions::IconsInfo::GetIcons(extension()),
+                                extension,
+                                extensions::IconsInfo::GetIcons(extension),
                                 delegate_->PreferredIconSize(),
                                 default_icon,
                                 this));
@@ -905,10 +936,12 @@ void AppWindow::ToggleFullscreenModeForTab(content::WebContents* source,
   }
 #endif
 
+  const extensions::Extension* extension = GetExtension();
+  if (!extension)
+    return;
+
   if (!IsExtensionWithPermissionOrSuggestInConsole(
-           APIPermission::kFullscreen,
-           extension_,
-           source->GetRenderViewHost())) {
+          APIPermission::kFullscreen, extension, source->GetRenderViewHost())) {
     return;
   }
 
@@ -932,7 +965,7 @@ void AppWindow::Observe(int type,
       const extensions::Extension* unloaded_extension =
           content::Details<extensions::UnloadedExtensionInfo>(details)
               ->extension;
-      if (extension_ == unloaded_extension)
+      if (extension_id_ == unloaded_extension->id())
         native_app_window_->Close();
       break;
     }
@@ -941,7 +974,7 @@ void AppWindow::Observe(int type,
           content::Details<const extensions::InstalledExtensionInfo>(details)
               ->extension;
       DCHECK(installed_extension);
-      if (installed_extension->id() == extension_->id())
+      if (installed_extension->id() == extension_id())
         native_app_window_->UpdateShelfMenu();
       break;
     }
@@ -987,7 +1020,7 @@ void AppWindow::SaveWindowPosition() {
       gfx::Screen::GetNativeScreen()->GetDisplayMatching(bounds).work_area();
   ui::WindowShowState window_state = native_app_window_->GetRestoredState();
   cache->SaveGeometry(
-      extension()->id(), window_key_, bounds, screen_bounds, window_state);
+      extension_id(), window_key_, bounds, screen_bounds, window_state);
 }
 
 void AppWindow::AdjustBoundsToBeVisibleOnScreen(
@@ -1043,7 +1076,7 @@ AppWindow::CreateParams AppWindow::LoadDefaults(CreateParams params)
     gfx::Rect cached_bounds;
     gfx::Rect cached_screen_bounds;
     ui::WindowShowState cached_state = ui::SHOW_STATE_DEFAULT;
-    if (cache->GetGeometry(extension()->id(),
+    if (cache->GetGeometry(extension_id(),
                            params.window_key,
                            &cached_bounds,
                            &cached_screen_bounds,

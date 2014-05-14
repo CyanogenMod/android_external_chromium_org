@@ -173,7 +173,7 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
 
   // This method is invoked once the onload handler of the main frame has
   // completed.
-  virtual void DocumentOnLoadCompletedInMainFrame(int32 page_id) {}
+  virtual void DocumentOnLoadCompletedInMainFrame() {}
 
   // This method is invoked when the document in the given frame finished
   // loading. At this point, scripts marked as defer were executed, and
@@ -239,7 +239,7 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
 
   // This method is invoked when the renderer has completed its first paint
   // after a non-empty layout.
-  virtual void DidFirstVisuallyNonEmptyPaint(int32 page_id) {}
+  virtual void DidFirstVisuallyNonEmptyPaint() {}
 
   // These two methods correspond to the points in time when the spinner of the
   // tab starts and stops spinning.
@@ -293,16 +293,15 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
                                         WebContents* new_web_contents) {}
 
   // Invoked when the WebContents is being destroyed. Gives subclasses a chance
-  // to cleanup. At the time this is invoked |web_contents()| returns NULL.
-  // It is safe to delete 'this' from here.
-  virtual void WebContentsDestroyed(WebContents* web_contents) {}
+  // to cleanup. After the whole loop over all WebContentsObservers has been
+  // finished, web_contents() returns NULL.
+  virtual void WebContentsDestroyed() {}
 
   // Called when the user agent override for a WebContents has been changed.
   virtual void UserAgentOverrideSet(const std::string& user_agent) {}
 
   // Invoked when new FaviconURL candidates are received from the renderer.
-  virtual void DidUpdateFaviconURL(int32 page_id,
-                                   const std::vector<FaviconURL>& candidates) {}
+  virtual void DidUpdateFaviconURL(const std::vector<FaviconURL>& candidates) {}
 
   // Invoked when a pepper plugin creates and shows or destroys a fullscreen
   // render widget.
@@ -359,9 +358,7 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
  private:
   friend class WebContentsImpl;
 
-  // Invoked from WebContentsImpl. Invokes WebContentsDestroyed and NULL out
-  // |web_contents_|.
-  void WebContentsImplDestroyed();
+  void ResetWebContents();
 
   WebContentsImpl* web_contents_;
 

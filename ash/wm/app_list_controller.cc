@@ -24,6 +24,7 @@
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/events/event.h"
 #include "ui/gfx/transform_util.h"
+#include "ui/keyboard/keyboard_controller.h"
 #include "ui/views/widget/widget.h"
 
 namespace ash {
@@ -113,6 +114,24 @@ gfx::Vector2d GetAnchorPositionOffsetToShelf(
   }
 }
 
+// Gets the point at the center of the display that a particular view is on.
+// This calculation excludes the virtual keyboard area.
+gfx::Point GetCenterOfDisplayForView(const views::View* view) {
+  gfx::Rect bounds = Shell::GetScreen()->GetDisplayNearestWindow(
+      view->GetWidget()->GetNativeView()).bounds();
+
+  // If the virtual keyboard is active, subtract it from the display bounds, so
+  // that the app list is centered in the non-keyboard area of the display.
+  // (Note that work_area excludes the keyboard, but it doesn't get updated
+  // until after this function is called.)
+  keyboard::KeyboardController* keyboard_controller =
+      keyboard::KeyboardController::GetInstance();
+  if (keyboard_controller && keyboard_controller->keyboard_visible())
+    bounds.Subtract(keyboard_controller->current_keyboard_bounds());
+
+  return bounds.CenterPoint();
+}
+
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -121,6 +140,7 @@ gfx::Vector2d GetAnchorPositionOffsetToShelf(
 AppListController::AppListController()
     : pagination_model_(new app_list::PaginationModel),
       is_visible_(false),
+      is_centered_(false),
       view_(NULL),
       should_snap_back_(false) {
   Shell::GetInstance()->AddShellObserver(this);
@@ -165,17 +185,21 @@ void AppListController::SetVisible(bool visible, aura::Window* window) {
     aura::Window* root_window = window->GetRootWindow();
     aura::Window* container = GetRootWindowController(root_window)->
         GetContainer(kShellWindowId_AppListContainer);
-    if (app_list::switches::IsExperimentalAppListPositionEnabled()) {
-      // The experimental app list is centered over the primary display.
-      view->InitAsBubbleCenteredOnPrimaryDisplay(
-          NULL,
+    views::View* applist_button =
+        Shelf::ForWindow(container)->GetAppListButtonView();
+    is_centered_ = view->ShouldCenterWindow();
+    if (is_centered_) {
+      // The experimental app list is centered over the display of the app list
+      // button that was pressed (if triggered via keyboard, this is the display
+      // with the currently focused window).
+      view->InitAsBubbleAtFixedLocation(
+          container,
           pagination_model_.get(),
-          Shell::GetScreen(),
+          GetCenterOfDisplayForView(applist_button),
           views::BubbleBorder::FLOAT,
           true /* border_accepts_events */);
     } else {
-      gfx::Rect applist_button_bounds = Shelf::ForWindow(container)->
-          GetAppListButtonView()->GetBoundsInScreen();
+      gfx::Rect applist_button_bounds = applist_button->GetBoundsInScreen();
       // We need the location of the button within the local screen.
       applist_button_bounds = ScreenUtil::ConvertRectFromScreen(
           root_window,
@@ -225,6 +249,10 @@ void AppListController::SetView(app_list::AppListView* view) {
   view_ = view;
   views::Widget* widget = view_->GetWidget();
   widget->AddObserver(this);
+  keyboard::KeyboardController* keyboard_controller =
+      keyboard::KeyboardController::GetInstance();
+  if (keyboard_controller)
+    keyboard_controller->AddObserver(this);
   Shell::GetInstance()->AddPreTargetHandler(this);
   Shelf::ForWindow(widget->GetNativeWindow())->AddIconObserver(this);
   widget->GetNativeView()->GetRootWindow()->AddObserver(this);
@@ -240,6 +268,10 @@ void AppListController::ResetView() {
   views::Widget* widget = view_->GetWidget();
   widget->RemoveObserver(this);
   GetLayer(widget)->GetAnimator()->RemoveObserver(this);
+  keyboard::KeyboardController* keyboard_controller =
+      keyboard::KeyboardController::GetInstance();
+  if (keyboard_controller)
+    keyboard_controller->RemoveObserver(this);
   Shell::GetInstance()->RemovePreTargetHandler(this);
   Shelf::ForWindow(widget->GetNativeWindow())->RemoveIconObserver(this);
   widget->GetNativeView()->GetRootWindow()->RemoveObserver(this);
@@ -302,8 +334,13 @@ void AppListController::ProcessLocatedEvent(ui::LocatedEvent* event) {
 }
 
 void AppListController::UpdateBounds() {
-  if (view_ && is_visible_)
-    view_->UpdateBounds();
+  if (!view_ || !is_visible_)
+    return;
+
+  view_->UpdateBounds();
+
+  if (is_centered_)
+    view_->SetAnchorPoint(GetCenterOfDisplayForView(view_));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -361,6 +398,13 @@ void AppListController::OnWidgetDestroying(views::Widget* widget) {
   if (is_visible_)
     SetVisible(false, widget->GetNativeView());
   ResetView();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// AppListController, keyboard::KeyboardControllerObserver implementation:
+
+void AppListController::OnKeyboardBoundsChanging(const gfx::Rect& new_bounds) {
+  UpdateBounds();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -32,22 +32,20 @@ bool SettingsFunction::ShouldSkipQuotaLimiting() const {
   std::string settings_namespace_string;
   if (!args_->GetString(0, &settings_namespace_string)) {
     // This should be EXTENSION_FUNCTION_VALIDATE(false) but there is no way
-    // to signify that from this function. It will be caught in
-    // RunImplTypesafe().
+    // to signify that from this function. It will be caught in Run().
     return false;
   }
   return settings_namespace_string != "sync";
 }
 
-ExtensionFunction::ResponseAction SettingsFunction::RunImplTypesafe() {
+ExtensionFunction::ResponseAction SettingsFunction::Run() {
   std::string settings_namespace_string;
-  EXTENSION_FUNCTION_VALIDATE_TYPESAFE(
-      args_->GetString(0, &settings_namespace_string));
+  EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &settings_namespace_string));
   args_->Remove(0, NULL);
   settings_namespace_ =
       settings_namespace::FromString(settings_namespace_string);
-  EXTENSION_FUNCTION_VALIDATE_TYPESAFE(settings_namespace_ !=
-                                       settings_namespace::INVALID);
+  EXTENSION_FUNCTION_VALIDATE(settings_namespace_ !=
+                              settings_namespace::INVALID);
 
   StorageFrontend* frontend = StorageFrontend::Get(browser_context());
   if (!frontend->IsStorageEnabled(settings_namespace_)) {
@@ -66,11 +64,10 @@ ExtensionFunction::ResponseAction SettingsFunction::RunImplTypesafe() {
 
 void SettingsFunction::AsyncRunWithStorage(ValueStore* storage) {
   ResponseValue response = RunWithStorage(storage);
-  BrowserThread::PostTask(BrowserThread::UI,
-                          FROM_HERE,
-                          base::Bind(&SettingsFunction::SendResponseTypesafe,
-                                     this,
-                                     base::Passed(&response)));
+  BrowserThread::PostTask(
+      BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(&SettingsFunction::Respond, this, base::Passed(&response)));
 }
 
 ExtensionFunction::ResponseValue SettingsFunction::UseReadResult(

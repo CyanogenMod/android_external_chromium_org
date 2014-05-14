@@ -8,8 +8,7 @@ LOCAL_MODULE_STEM := yasm
 LOCAL_MODULE_SUFFIX := 
 LOCAL_MODULE_TAGS := optional
 LOCAL_IS_HOST_MODULE := true
-LOCAL_MODULE_TARGET_ARCH := $(TARGET_$(GYP_VAR_PREFIX)ARCH)
-gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_VAR_PREFIX))
+gyp_intermediate_dir := $(call local-intermediates-dir)
 gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared,,,$(GYP_VAR_PREFIX))
 
 # Make sure our deps are built first.
@@ -25,6 +24,7 @@ GYP_TARGET_DEPENDENCIES := \
 
 ### Rules for action "generate_nasm_macros":
 $(gyp_intermediate_dir)/third_party/yasm/nasm-macros.c: gyp_local_path := $(LOCAL_PATH)
+$(gyp_intermediate_dir)/third_party/yasm/nasm-macros.c: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_intermediate_dir)/third_party/yasm/nasm-macros.c: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/nasm-macros.c: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/nasm-macros.c: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -35,6 +35,7 @@ $(gyp_intermediate_dir)/third_party/yasm/nasm-macros.c: $(gyp_shared_intermediat
 
 ### Rules for action "generate_nasm_version":
 $(gyp_intermediate_dir)/third_party/yasm/nasm-version.c: gyp_local_path := $(LOCAL_PATH)
+$(gyp_intermediate_dir)/third_party/yasm/nasm-version.c: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_intermediate_dir)/third_party/yasm/nasm-version.c: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/nasm-version.c: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/nasm-version.c: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -45,6 +46,7 @@ $(gyp_intermediate_dir)/third_party/yasm/nasm-version.c: $(gyp_shared_intermedia
 
 ### Rules for action "generate_win64_gas":
 $(gyp_intermediate_dir)/third_party/yasm/win64-gas.c: gyp_local_path := $(LOCAL_PATH)
+$(gyp_intermediate_dir)/third_party/yasm/win64-gas.c: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_intermediate_dir)/third_party/yasm/win64-gas.c: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/win64-gas.c: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/win64-gas.c: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -55,6 +57,7 @@ $(gyp_intermediate_dir)/third_party/yasm/win64-gas.c: $(gyp_shared_intermediate_
 
 ### Rules for action "generate_win64_nasm":
 $(gyp_intermediate_dir)/third_party/yasm/win64-nasm.c: gyp_local_path := $(LOCAL_PATH)
+$(gyp_intermediate_dir)/third_party/yasm/win64-nasm.c: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_intermediate_dir)/third_party/yasm/win64-nasm.c: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/win64-nasm.c: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/win64-nasm.c: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -65,6 +68,7 @@ $(gyp_intermediate_dir)/third_party/yasm/win64-nasm.c: $(gyp_shared_intermediate
 
 ### Rules for action "generate_license":
 $(gyp_intermediate_dir)/third_party/yasm/license.c: gyp_local_path := $(LOCAL_PATH)
+$(gyp_intermediate_dir)/third_party/yasm/license.c: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_intermediate_dir)/third_party/yasm/license.c: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/license.c: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/license.c: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -75,6 +79,7 @@ $(gyp_intermediate_dir)/third_party/yasm/license.c: $(gyp_shared_intermediate_di
 
 ### Rules for action "generate_lc3b_token":
 $(gyp_intermediate_dir)/third_party/yasm/lc3bid.c: gyp_local_path := $(LOCAL_PATH)
+$(gyp_intermediate_dir)/third_party/yasm/lc3bid.c: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_intermediate_dir)/third_party/yasm/lc3bid.c: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/lc3bid.c: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/lc3bid.c: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -85,6 +90,7 @@ $(gyp_intermediate_dir)/third_party/yasm/lc3bid.c: $(gyp_shared_intermediate_dir
 
 ### Rules for action "generate_module":
 $(gyp_intermediate_dir)/third_party/yasm/module.c: gyp_local_path := $(LOCAL_PATH)
+$(gyp_intermediate_dir)/third_party/yasm/module.c: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_intermediate_dir)/third_party/yasm/module.c: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/module.c: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/module.c: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -98,6 +104,7 @@ $(gyp_intermediate_dir)/third_party/yasm/module.c: $(gyp_shared_intermediate_dir
 ### Generated for rule "third_party_yasm_yasm_gyp_yasm_host_generate_gperf":
 # "{'inputs': ['$(gyp_shared_intermediate_dir)/genperf'], 'extension': 'gperf', 'process_outputs_as_sources': '0', 'outputs': ['$(gyp_intermediate_dir)/third_party/yasm/%(INPUT_ROOT)s.c'], 'rule_name': 'generate_gperf', 'rule_sources': ['$(gyp_shared_intermediate_dir)/third_party/yasm/x86insn_nasm.gperf', '$(gyp_shared_intermediate_dir)/third_party/yasm/x86insn_gas.gperf'], 'action': ['$(gyp_shared_intermediate_dir)/genperf', '$(RULE_SOURCES)', '$(gyp_intermediate_dir)/third_party/yasm/%(INPUT_ROOT)s.c'], 'message': 'yasm gperf for $(RULE_SOURCES)'}":
 $(gyp_intermediate_dir)/third_party/yasm/x86insn_nasm.c: gyp_local_path := $(LOCAL_PATH)
+$(gyp_intermediate_dir)/third_party/yasm/x86insn_nasm.c: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_intermediate_dir)/third_party/yasm/x86insn_nasm.c: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/x86insn_nasm.c: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/x86insn_nasm.c: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -106,6 +113,7 @@ $(gyp_intermediate_dir)/third_party/yasm/x86insn_nasm.c: $(gyp_shared_intermedia
 
 
 $(gyp_intermediate_dir)/third_party/yasm/x86insn_gas.c: gyp_local_path := $(LOCAL_PATH)
+$(gyp_intermediate_dir)/third_party/yasm/x86insn_gas.c: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_intermediate_dir)/third_party/yasm/x86insn_gas.c: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/x86insn_gas.c: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/x86insn_gas.c: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -117,6 +125,7 @@ $(gyp_intermediate_dir)/third_party/yasm/x86insn_gas.c: $(gyp_shared_intermediat
 ### Generated for rule "third_party_yasm_yasm_gyp_yasm_host_generate_re2c":
 # "{'inputs': ['$(gyp_shared_intermediate_dir)/re2c'], 'extension': 're', 'process_outputs_as_sources': '1', 'outputs': ['$(gyp_intermediate_dir)/third_party/yasm/%(INPUT_ROOT)s.c'], 'rule_name': 'generate_re2c', 'rule_sources': ['source/patched-yasm/modules/parsers/gas/gas-token.re', 'source/patched-yasm/modules/parsers/nasm/nasm-token.re'], 'action': ['$(gyp_shared_intermediate_dir)/re2c', '-b', '-o', '$(gyp_intermediate_dir)/third_party/yasm/%(INPUT_ROOT)s.c', '$(RULE_SOURCES)'], 'message': 'yasm re2c for $(RULE_SOURCES)'}":
 $(gyp_intermediate_dir)/third_party/yasm/gas-token.c: gyp_local_path := $(LOCAL_PATH)
+$(gyp_intermediate_dir)/third_party/yasm/gas-token.c: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_intermediate_dir)/third_party/yasm/gas-token.c: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/gas-token.c: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/gas-token.c: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -125,6 +134,7 @@ $(gyp_intermediate_dir)/third_party/yasm/gas-token.c: $(LOCAL_PATH)/third_party/
 
 
 $(gyp_intermediate_dir)/third_party/yasm/nasm-token.c: gyp_local_path := $(LOCAL_PATH)
+$(gyp_intermediate_dir)/third_party/yasm/nasm-token.c: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_intermediate_dir)/third_party/yasm/nasm-token.c: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/nasm-token.c: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_intermediate_dir)/third_party/yasm/nasm-token.c: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))

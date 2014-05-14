@@ -86,8 +86,8 @@
 #define IDC_EMAIL_PAGE_LOCATION         35006
 #define IDC_ADVANCED_PRINT              35007
 #define IDC_PRINT_TO_DESTINATION        35008
-#define IDC_BOOKMARK_PAGE_FROM_STAR     35009
-#define IDC_TRANSLATE_PAGE              35010
+#define IDC_TRANSLATE_PAGE              35009
+#define IDC_MANAGE_PASSWORDS_FOR_PAGE   35010
 
 // When adding a new encoding to this list, be sure to append it to the
 // EncodingMenuController::kValidEncodingIds array in
@@ -343,11 +343,6 @@
 
 // Context menu items in the status tray
 #define IDC_STATUS_TRAY_KEEP_CHROME_RUNNING_IN_BACKGROUND 51100
-
-// Context menu items for speech recognition
-#define IDC_SPEECH_INPUT_MENU 51200
-#define IDC_CONTENT_CONTEXT_SPEECH_INPUT_FILTER_PROFANITIES 51201
-#define IDC_CONTENT_CONTEXT_SPEECH_INPUT_ABOUT 51202
 
 // Context menu items for media stream status tray
 #define IDC_MEDIA_STREAM_DEVICE_STATUS_TRAY 51300

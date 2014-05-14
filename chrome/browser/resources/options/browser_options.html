@@ -139,7 +139,7 @@
         <div class="settings-row">
           <select id="default-search-engine" class="weakrtl"></select>
           <span class="controlled-setting-indicator"
-              pref="default_search_provider.enabled">
+              pref="default_search_provider_data.template_url_data">
           </span>
           <button id="manage-default-search-engines"
               i18n-content="defaultSearchManageEngines">
@@ -328,6 +328,7 @@
       <div class="checkbox">
         <span class="controlled-setting-with-label">
           <input id="spelling-enabled-control" type="checkbox"
+              metric="Options_SpellingServiceCheckbox"
               pref="spellcheck.use_spelling_service" dialog-pref>
           <span>
             <label for="spelling-enabled-control" i18n-content="spellingPref">
@@ -658,13 +659,6 @@
               i18n-content="certificatesManageButton"></button>
         </div>
 </if>
-        <div class="checkbox">
-          <label>
-            <input id="sslCheckRevocation" pref="ssl.rev_checking.enabled"
-                   type="checkbox">
-            <span i18n-content="sslCheckRevocation"></span>
-          </label>
-        </div>
       </div>
   </section>
 <if expr="enable_service_discovery">

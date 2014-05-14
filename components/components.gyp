@@ -22,6 +22,7 @@
     'domain_reliability.gypi',
     'favicon.gypi',
     'favicon_base.gypi',
+    'feedback.gypi',  # crbug.com/368738
     'infobars.gypi',
     'json_schema.gypi',
     'keyed_service.gypi',
@@ -47,6 +48,7 @@
   'conditions': [
     ['OS != "ios"', {
       'includes': [
+        'cdm.gypi',
         'navigation_interception.gypi',
         'plugins.gypi',
         'sessions.gypi',

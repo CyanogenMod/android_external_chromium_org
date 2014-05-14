@@ -17,6 +17,7 @@ GYP_TARGET_DEPENDENCIES := \
 
 ### Rules for action "devtools_resources":
 $(gyp_shared_intermediate_dir)/webkit/grit/devtools_resources.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/webkit/grit/devtools_resources.h: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/webkit/grit/devtools_resources.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/webkit/grit/devtools_resources.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/webkit/grit/devtools_resources.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -30,6 +31,7 @@ $(gyp_shared_intermediate_dir)/webkit/grit/devtools_resources_map.h: $(gyp_share
 
 ### Rules for action "devtools_protocol_constants":
 $(gyp_shared_intermediate_dir)/content/browser/devtools/devtools_protocol_constants.cc: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/content/browser/devtools/devtools_protocol_constants.cc: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/content/browser/devtools/devtools_protocol_constants.cc: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/browser/devtools/devtools_protocol_constants.cc: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/browser/devtools/devtools_protocol_constants.cc: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))

@@ -24,12 +24,6 @@ Template::Template(scoped_ptr<Scope> scope, const FunctionCallNode* def)
 Template::~Template() {
 }
 
-scoped_ptr<Template> Template::Clone() const {
-  // We can make a new closure from our closure to copy it.
-  return scoped_ptr<Template>(
-      new Template(closure_->MakeClosure(), definition_));
-}
-
 Value Template::Invoke(Scope* scope,
                        const FunctionCallNode* invocation,
                        const std::vector<Value>& args,
@@ -61,6 +55,9 @@ Value Template::Invoke(Scope* scope,
   template_scope.set_source_dir(scope->GetSourceDir());
 
   ScopePerFileProvider per_file_provider(&template_scope, true);
+
+  // Targets defined in the template go in the collector for the invoking file.
+  template_scope.set_item_collector(scope->GetItemCollector());
 
   // We jump through some hoops to avoid copying the invocation scope when
   // setting it in the template scope (since the invocation scope may have

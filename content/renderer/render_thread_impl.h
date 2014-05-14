@@ -33,6 +33,7 @@ struct WorkerProcessMsg_CreateWorker_Params;
 
 namespace blink {
 class WebGamepads;
+class WebGamepadListener;
 class WebGraphicsContext3D;
 class WebMediaStreamCenter;
 class WebMediaStreamCenterClient;
@@ -216,6 +217,10 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   bool is_lcd_text_enabled() const { return is_lcd_text_enabled_; }
 
+  bool is_distance_field_text_enabled() const {
+    return is_distance_field_text_enabled_;
+  }
+
   bool is_zero_copy_enabled() const { return is_zero_copy_enabled_; }
 
   bool is_one_copy_enabled() const { return is_one_copy_enabled_; }
@@ -269,6 +274,10 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   VideoCaptureImplManager* video_capture_impl_manager() const {
     return vc_manager_.get();
+  }
+
+  GamepadSharedMemoryReader* gamepad_shared_memory_reader() const {
+    return gamepad_shared_memory_reader_.get();
   }
 
   // Get the GPU channel. Returns NULL if the channel is not established or
@@ -368,6 +377,10 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // Retrieve current gamepad data.
   void SampleGamepads(blink::WebGamepads* data);
 
+  // Set a listener for gamepad connected/disconnected events.
+  // A non-null listener must be set first before calling SampleGamepads.
+  void SetGamepadListener(blink::WebGamepadListener* listener);
+
   // Called by a RenderWidget when it is created or destroyed. This
   // allows the process to know when there are no visible widgets.
   void WidgetCreated();
@@ -400,7 +413,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   virtual scoped_ptr<gfx::GpuMemoryBuffer> AllocateGpuMemoryBuffer(
       size_t width,
       size_t height,
-      unsigned internalformat) OVERRIDE;
+      unsigned internalformat,
+      unsigned usage) OVERRIDE;
 
   // mojo::ShellClient implementation:
   virtual void AcceptConnection(
@@ -545,6 +559,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   bool is_impl_side_painting_enabled_;
   bool is_low_res_tiling_enabled_;
   bool is_lcd_text_enabled_;
+  bool is_distance_field_text_enabled_;
   bool is_zero_copy_enabled_;
   bool is_one_copy_enabled_;
 

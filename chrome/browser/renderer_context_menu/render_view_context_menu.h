@@ -141,7 +141,7 @@ class RenderViewContextMenu : public ui::SimpleMenuModel::Delegate,
   // Programmatically closes the context menu.
   void Cancel();
 
-  const ui::MenuModel& menu_model() const { return menu_model_; }
+  const ui::SimpleMenuModel& menu_model() const { return menu_model_; }
   const content::ContextMenuParams& params() const { return params_; }
 
   // SimpleMenuModel::Delegate implementation.
@@ -211,6 +211,7 @@ class RenderViewContextMenu : public ui::SimpleMenuModel::Delegate,
   void AppendLinkItems();
   void AppendImageItems();
   void AppendAudioItems();
+  void AppendCanvasItems();
   void AppendVideoItems();
   void AppendMediaItems();
   void AppendPluginItems();
@@ -226,7 +227,6 @@ class RenderViewContextMenu : public ui::SimpleMenuModel::Delegate,
   void AppendSearchWebForImageItems();
   void AppendSpellingSuggestionsSubMenu();
   void AppendSpellcheckOptionsSubMenu();
-  void AppendSpeechInputOptionsSubMenu();
   void AppendProtocolHandlerSubMenu();
 
   // Opens the specified URL string in a new tab.
@@ -265,7 +265,6 @@ class RenderViewContextMenu : public ui::SimpleMenuModel::Delegate,
   // a text selection.
   GURL selection_navigation_url_;
 
-  ui::SimpleMenuModel speech_input_submenu_model_;
   ui::SimpleMenuModel protocol_handler_submenu_model_;
   ProtocolHandlerRegistry* protocol_handler_registry_;
 

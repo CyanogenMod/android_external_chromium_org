@@ -20,6 +20,7 @@ GYP_TARGET_DEPENDENCIES := \
 ### Generated for rule "third_party_libphonenumber_libphonenumber_gyp_libphonenumber_without_metadata_target_genproto":
 # "{'inputs': ['../../tools/protoc_wrapper/protoc_wrapper.py', '$(gyp_shared_intermediate_dir)/protoc'], 'process_outputs_as_sources': '1', 'extension': 'proto', 'outputs': ['$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/%(INPUT_ROOT)s_pb2.py', '$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/%(INPUT_ROOT)s.pb.cc', '$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/%(INPUT_ROOT)s.pb.h'], 'rule_name': 'genproto', 'rule_sources': ['src/resources/phonemetadata.proto', 'src/resources/phonenumber.proto'], 'action': ['python', '../../tools/protoc_wrapper/protoc_wrapper.py', '--include', '', '--protobuf', '$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/%(INPUT_ROOT)s.pb.h', '--proto-in-dir', 'src/resources', '--proto-in-file', '%(INPUT_ROOT)s$(suffix $<)', '--use-system-protobuf=0', '--', '$(gyp_shared_intermediate_dir)/protoc', '--cpp_out', '$(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers', '--python_out', '$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers'], 'message': 'Generating C++ and Python code from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -30,6 +31,7 @@ $(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumber
 $(gyp_shared_intermediate_dir)/protoc_out/third_party/libphonenumber/phonenumbers/phonemetadata.pb.h: $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonemetadata_pb2.py ;
 
 $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonenumber_pb2.py: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonenumber_pb2.py: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonenumber_pb2.py: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonenumber_pb2.py: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/pyproto/third_party/libphonenumber/phonenumbers/phonenumber_pb2.py: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -99,7 +101,6 @@ MY_CFLAGS_Debug := \
 	-fPIC \
 	-Wno-format \
 	-fno-tree-sra \
-	-fuse-ld=gold \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \
@@ -201,7 +202,6 @@ MY_CFLAGS_Release := \
 	-fPIC \
 	-Wno-format \
 	-fno-tree-sra \
-	-fuse-ld=gold \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \

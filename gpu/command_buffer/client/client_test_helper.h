@@ -9,8 +9,8 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "gpu/command_buffer/client/gpu_control.h"
 #include "gpu/command_buffer/common/cmd_buffer_common.h"
-#include "gpu/command_buffer/common/gpu_control.h"
 #include "gpu/command_buffer/common/gpu_memory_allocation.h"
 #include "gpu/command_buffer/service/command_buffer_service.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -88,10 +88,11 @@ class MockClientGpuControl : public GpuControl {
   virtual ~MockClientGpuControl();
 
   MOCK_METHOD0(GetCapabilities, Capabilities());
-  MOCK_METHOD4(CreateGpuMemoryBuffer,
+  MOCK_METHOD5(CreateGpuMemoryBuffer,
                gfx::GpuMemoryBuffer*(size_t width,
                                      size_t height,
                                      unsigned internalformat,
+                                     unsigned usage,
                                      int32* id));
   MOCK_METHOD1(DestroyGpuMemoryBuffer, void(int32 id));
   MOCK_METHOD0(InsertSyncPoint, uint32());

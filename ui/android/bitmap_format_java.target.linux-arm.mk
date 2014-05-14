@@ -18,6 +18,7 @@ GYP_TARGET_DEPENDENCIES :=
 ### Generated for rule "ui_android_ui_android_gyp_bitmap_format_java_target_generate_java_constants":
 # "{'inputs': ['../../build/android/gyp/util/build_utils.py', '../../build/android/gyp/gcc_preprocess.py', '../gfx/android/bitmap_config_list.h'], 'extension': 'template', 'outputs': ['$(gyp_shared_intermediate_dir)/templates/org/chromium/ui/gfx/%(INPUT_ROOT)s.java'], 'variables': {'output_path': '$(gyp_shared_intermediate_dir)/templates/org/chromium/ui/gfx/%(INPUT_ROOT)s.java'}, 'rule_name': 'generate_java_constants', 'rule_sources': ['java/BitmapFormat.template'], 'action': ['python', '../../build/android/gyp/gcc_preprocess.py', '--include-path=../..', '--output=$(gyp_shared_intermediate_dir)/templates/org/chromium/ui/gfx/%(INPUT_ROOT)s.java', '--template=$(RULE_SOURCES)'], 'message': 'Generating Java from cpp template $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/templates/org/chromium/ui/gfx/BitmapFormat.java: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/templates/org/chromium/ui/gfx/BitmapFormat.java: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/templates/org/chromium/ui/gfx/BitmapFormat.java: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/templates/org/chromium/ui/gfx/BitmapFormat.java: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/templates/org/chromium/ui/gfx/BitmapFormat.java: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -53,7 +54,6 @@ MY_CFLAGS_Debug := \
 	-pipe \
 	-fPIC \
 	-fno-tree-sra \
-	-fuse-ld=gold \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \
@@ -137,7 +137,6 @@ MY_CFLAGS_Release := \
 	-pipe \
 	-fPIC \
 	-fno-tree-sra \
-	-fuse-ld=gold \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \

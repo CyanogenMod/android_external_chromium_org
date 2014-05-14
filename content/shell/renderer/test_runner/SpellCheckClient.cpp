@@ -11,10 +11,9 @@
 #include "third_party/WebKit/public/web/WebTextCheckingResult.h"
 
 using namespace blink;
-using namespace content;
 using namespace std;
 
-namespace WebTestRunner {
+namespace content {
 
 namespace {
 
@@ -32,7 +31,7 @@ private:
     CallbackMethodType m_callback;
 };
 
-}
+}  // namespace
 
 SpellCheckClient::SpellCheckClient(WebTestProxyBase* webTestProxy)
     : m_lastRequestedTextCheckingCompletion(0)
@@ -141,4 +140,4 @@ WebString SpellCheckClient::autoCorrectWord(const WebString&)
     return WebString();
 }
 
-}
+}  // namespace content

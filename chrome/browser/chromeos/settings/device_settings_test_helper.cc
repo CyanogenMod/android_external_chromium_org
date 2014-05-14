@@ -116,10 +116,7 @@ void DeviceSettingsTestHelper::EmitLoginPromptVisible() {}
 void DeviceSettingsTestHelper::RestartJob(int pid,
                                           const std::string& command_line) {}
 
-void DeviceSettingsTestHelper::StartSession(
-    const std::string& user_email,
-    const StartSessionCallback& callback) {
-}
+void DeviceSettingsTestHelper::StartSession(const std::string& user_email) {}
 
 void DeviceSettingsTestHelper::StopSession() {}
 
@@ -166,7 +163,6 @@ void DeviceSettingsTestHelper::StoreDevicePolicy(
 void DeviceSettingsTestHelper::StorePolicyForUser(
     const std::string& username,
     const std::string& policy_blob,
-    const std::string& policy_key,
     const StorePolicyCallback& callback) {
 }
 
@@ -181,6 +177,9 @@ void DeviceSettingsTestHelper::StoreDeviceLocalAccountPolicy(
 void DeviceSettingsTestHelper::SetFlagsForUser(
     const std::string& account_id,
     const std::vector<std::string>& flags) {}
+
+void DeviceSettingsTestHelper::GetServerBackedStateKeys(
+    const StateKeysCallback& callback) {}
 
 DeviceSettingsTestHelper::PolicyState::PolicyState()
     : store_result_(true) {}

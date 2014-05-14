@@ -2,6 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """
-The web_perf module provides timeline_interaction_record for measuring web
-app's performance through tracing timeline.
+The web_perf module provides utilities and measurements for benchmarking web
+app's performance.
 """

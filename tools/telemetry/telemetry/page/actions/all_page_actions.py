@@ -24,6 +24,7 @@ from telemetry.page.actions.reload import ReloadAction
 from telemetry.page.actions.repaint_continuously import (
   RepaintContinuouslyAction)
 from telemetry.page.actions.scroll import ScrollAction
+from telemetry.page.actions.scroll_bounce import ScrollBounceAction
 from telemetry.page.actions.seek import SeekAction
 from telemetry.page.actions.tap import TapAction
 from telemetry.page.actions.swipe import SwipeAction
@@ -38,6 +39,3 @@ def GetAllClasses():
 
 def FindClassWithName(name):
   return _page_action_classes.get(name)
-
-def RegisterClassForTest(name, clazz):
-  _page_action_classes[name] = clazz

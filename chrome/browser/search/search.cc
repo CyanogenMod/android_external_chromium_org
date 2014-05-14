@@ -408,7 +408,9 @@ base::string16 ExtractSearchTermsFromURL(Profile* profile, const GURL& url) {
     // page.
     InstantSearchPrerenderer* prerenderer =
         InstantSearchPrerenderer::GetForProfile(profile);
-    DCHECK(prerenderer);
+    // TODO(kmadhusu): Remove this CHECK after the investigation of
+    // crbug.com/367204.
+    CHECK(prerenderer);
     return prerenderer->get_last_query();
   }
 
@@ -530,7 +532,7 @@ GURL GetInstantURL(Profile* profile, int start_margin,
   if (!instant_url.SchemeIsSecure() &&
       !google_util::StartsWithCommandLineGoogleBaseURL(instant_url)) {
     GURL::Replacements replacements;
-    const std::string secure_scheme(content::kHttpsScheme);
+    const std::string secure_scheme(url::kHttpsScheme);
     replacements.SetSchemeStr(secure_scheme);
     instant_url = instant_url.ReplaceComponents(replacements);
   }

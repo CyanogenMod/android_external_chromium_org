@@ -8,12 +8,16 @@
 #include <map>
 
 #include "base/basictypes.h"
-#include "mojo/services/native_viewport/native_viewport.mojom.h"
+#include "mojo/services/view_manager/ids.h"
 #include "mojo/services/view_manager/node.h"
 #include "mojo/services/view_manager/node_delegate.h"
+#include "mojo/services/view_manager/root_view_manager.h"
 #include "mojo/services/view_manager/view_manager_export.h"
 
 namespace mojo {
+
+class Shell;
+
 namespace services {
 namespace view_manager {
 
@@ -22,9 +26,7 @@ class ViewManagerConnection;
 
 // RootNodeManager is responsible for managing the set of ViewManagerConnections
 // as well as providing the root of the node hierarchy.
-class MOJO_VIEW_MANAGER_EXPORT RootNodeManager
-    : public NativeViewportClient,
-      public NodeDelegate {
+class MOJO_VIEW_MANAGER_EXPORT RootNodeManager : public NodeDelegate {
  public:
   // Create when a ViewManagerConnection is about to make a change. Ensures
   // clients are notified of the correct change id.
@@ -32,7 +34,7 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager
    public:
     ScopedChange(ViewManagerConnection* connection,
                  RootNodeManager* root,
-                 ChangeId change_id);
+                 TransportChangeId change_id);
     ~ScopedChange();
 
    private:
@@ -41,23 +43,25 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager
     DISALLOW_COPY_AND_ASSIGN(ScopedChange);
   };
 
-  RootNodeManager();
+  explicit RootNodeManager(Shell* shell);
   virtual ~RootNodeManager();
 
   // Returns the id for the next ViewManagerConnection.
-  uint16_t GetAndAdvanceNextConnectionId();
+  TransportConnectionId GetAndAdvanceNextConnectionId();
 
   void AddConnection(ViewManagerConnection* connection);
   void RemoveConnection(ViewManagerConnection* connection);
 
   // Returns the connection by id.
-  ViewManagerConnection* GetConnection(uint16_t connection_id);
+  ViewManagerConnection* GetConnection(TransportConnectionId connection_id);
 
   // Returns the Node identified by |id|.
   Node* GetNode(const NodeId& id);
 
   // Returns the View identified by |id|.
   View* GetView(const ViewId& id);
+
+  Node* root() { return &root_; }
 
   // These functions trivially delegate to all ViewManagerConnections, which in
   // term notify their clients.
@@ -69,18 +73,24 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager
                               const ViewId& old_view_id);
 
  private:
+  // Used to setup any static state needed by RootNodeManager.
+  struct Context {
+    Context();
+    ~Context();
+  };
+
   // Tracks a change.
   struct Change {
-    Change(int32_t connection_id, ChangeId change_id)
+    Change(TransportConnectionId connection_id, TransportChangeId change_id)
         : connection_id(connection_id),
           change_id(change_id) {
     }
 
-    int32_t connection_id;
-    ChangeId change_id;
+    TransportConnectionId connection_id;
+    TransportChangeId change_id;
   };
 
-  typedef std::map<uint16_t, ViewManagerConnection*> ConnectionMap;
+  typedef std::map<TransportConnectionId, ViewManagerConnection*> ConnectionMap;
 
   // Invoked when a particular connection is about to make a change. Records
   // the |change_id| so that it can be supplied to the clients by way of
@@ -88,17 +98,11 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager
   // Changes should never nest, meaning each PrepareForChange() must be
   // balanced with a call to FinishChange() with no PrepareForChange()
   // in between.
-  void PrepareForChange(ViewManagerConnection* connection, ChangeId change_id);
+  void PrepareForChange(ViewManagerConnection* connection,
+                        TransportChangeId change_id);
 
   // Balances a call to PrepareForChange().
   void FinishChange();
-
-  // Overridden from NativeViewportClient:
-  virtual void OnCreated() OVERRIDE;
-  virtual void OnDestroyed() OVERRIDE;
-  virtual void OnBoundsChanged(const Rect& bounds) OVERRIDE;
-  virtual void OnEvent(const Event& event,
-                       const mojo::Callback<void()>& callback) OVERRIDE;
 
   // Overriden from NodeDelegate:
   virtual void OnNodeHierarchyChanged(const NodeId& node,
@@ -108,17 +112,21 @@ class MOJO_VIEW_MANAGER_EXPORT RootNodeManager
                                   const ViewId& new_view_id,
                                   const ViewId& old_view_id) OVERRIDE;
 
+  Context context_;
+
   // ID to use for next ViewManagerConnection.
-  uint16_t next_connection_id_;
+  TransportConnectionId next_connection_id_;
 
   // Set of ViewManagerConnections.
   ConnectionMap connection_map_;
 
-  // Root node.
-  Node root_;
-
   // If non-null we're processing a change.
   scoped_ptr<Change> change_;
+
+  RootViewManager root_view_manager_;
+
+  // Root node.
+  Node root_;
 
   DISALLOW_COPY_AND_ASSIGN(RootNodeManager);
 };

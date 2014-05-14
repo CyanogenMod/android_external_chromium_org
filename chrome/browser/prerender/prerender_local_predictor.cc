@@ -36,7 +36,6 @@
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/page_transition_types.h"
 #include "crypto/secure_hash.h"
 #include "grit/browser_resources.h"
@@ -600,8 +599,7 @@ void PrerenderLocalPredictor::OnLookupURL(
   info->session_storage_namespace_ =
       source_web_contents->GetController().GetDefaultSessionStorageNamespace();
 
-  gfx::Rect container_bounds;
-  source_web_contents->GetView()->GetContainerBounds(&container_bounds);
+  gfx::Rect container_bounds = source_web_contents->GetContainerBounds();
   info->size_.reset(new gfx::Size(container_bounds.size()));
 
   RecordEvent(EVENT_PRERENDER_URL_LOOKUP_SUCCESS);
@@ -1163,7 +1161,7 @@ void PrerenderLocalPredictor::ContinuePrerenderCheck(
       continue;
     }
 #if defined(FULL_SAFE_BROWSING)
-    if (!SkipLocalPredictorWhitelist() &&
+    if (!SkipLocalPredictorWhitelist() && sb_db_manager &&
         sb_db_manager->CheckSideEffectFreeWhitelistUrl(url_info->url)) {
       // If a page is on the side-effect free whitelist, we will just prerender
       // it without any additional checks.

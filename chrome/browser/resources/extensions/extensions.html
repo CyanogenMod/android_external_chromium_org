@@ -92,12 +92,11 @@
     <div id="apps-developer-tools-promo">
       <img></img>
       <span id="apps-developer-tools-promo-text"
-          i18n-content="extensionSettingsAppsDevToolsPromoText"></span>
-      <a id="apps-developer-tools-promo-link" target="_blank"
-         i18n-content="extensionSettingsAppsDevToolsLinkText"
-         i18n-values="href:extensionSettingsAppsDevToolsUrl"></a>
+          i18n-values=".innerHTML:extensionSettingsAppsDevToolsPromoHTML">
+      </span>
       <div id="apps-developer-tools-promo-close-wrapper">
-        <div class="close-button"></div>
+        <button i18n-values="title:extensionSettingsAppDevToolsPromoClose"
+            class="custom-appearance close-button"></button>
       </div>
     </div>
   </div>
@@ -149,7 +148,15 @@
             <span i18n-content="extensionSettingsSuspiciousInstall"></span>
             <a target="_blank" class="learn-more-link"
                 i18n-values="href:extensionSettingsSuspiciousInstallHelpUrl"
-                i18n-content="extensionSettingsSuspiciousInstallLearnMore"
+                i18n-content="extensionSettingsLearnMore"
+                href="#">
+            </a>
+          </div>
+          <div class="corrupt-install-message" hidden>
+            <span i18n-content="extensionSettingsCorruptInstall"></span>
+            <a target="_blank" class="learn-more-link"
+                i18n-values="href:extensionSettingsCorruptInstallHelpUrl"
+                i18n-content="extensionSettingsLearnMore"
                 href="#">
             </a>
           </div>

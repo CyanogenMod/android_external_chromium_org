@@ -9,6 +9,7 @@
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -417,9 +418,26 @@ IN_PROC_BROWSER_TEST_F(SamlTest, SamlUI) {
   JsExpect("!$('gaia-signin').classList.contains('saml')");
 }
 
-// Tests the sign-in flow when the credentials passing API is used.
-IN_PROC_BROWSER_TEST_F(SamlTest, CredentialPassingAPI) {
-  fake_saml_idp()->SetLoginHTMLTemplate("saml_api_login.html");
+// Tests the sign-in flow when version 1 of the credentials passing API is used.
+IN_PROC_BROWSER_TEST_F(SamlTest, CredentialPassingAPIV1) {
+  fake_saml_idp()->SetLoginHTMLTemplate("saml_api_login_v1.html");
+  fake_saml_idp()->SetLoginAuthHTMLTemplate("saml_api_login_auth.html");
+  StartSamlAndWaitForIdpPageLoad(kFirstSAMLUserEmail);
+
+  // Fill-in the SAML IdP form and submit.
+  SetSignFormField("Email", "fake_user");
+  SetSignFormField("Password", "fake_password");
+  ExecuteJsInSigninFrame("document.getElementById('Submit').click();");
+
+  // Login should finish login and a session should start.
+  content::WindowedNotificationObserver(
+      chrome::NOTIFICATION_SESSION_STARTED,
+      content::NotificationService::AllSources()).Wait();
+}
+
+// Tests the sign-in flow when version 2 of the credentials passing API is used.
+IN_PROC_BROWSER_TEST_F(SamlTest, CredentialPassingAPIV2) {
+  fake_saml_idp()->SetLoginHTMLTemplate("saml_api_login_v2.html");
   fake_saml_idp()->SetLoginAuthHTMLTemplate("saml_api_login_auth.html");
   StartSamlAndWaitForIdpPageLoad(kFirstSAMLUserEmail);
 
@@ -566,6 +584,9 @@ IN_PROC_BROWSER_TEST_F(SamlTest, HTTPRedirectDisallowed) {
   GetLoginDisplay()->ShowSigninScreenForCreds(kHTTPSAMLUserEmail, "");
 
   OobeScreenWaiter(OobeDisplay::SCREEN_FATAL_ERROR).Wait();
+  JsExpect(base::StringPrintf(
+      "$('fatal-error-message').textContent.indexOf('%s') != -1",
+      embedded_test_server()->base_url().Resolve("/SAML").spec().c_str()));
 }
 
 // Verifies that when GAIA attempts to redirect to a page served over http, not

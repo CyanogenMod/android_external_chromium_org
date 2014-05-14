@@ -31,8 +31,13 @@ include $(LOCAL_PATH)/components/autofill_core_browser.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/autofill_core_common.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/autofill_jni_headers.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/autofill_regexes.target.darwin-arm.mk
+include $(LOCAL_PATH)/components/cdm_browser.target.darwin-arm.mk
+include $(LOCAL_PATH)/components/cdm_common.target.darwin-arm.mk
+include $(LOCAL_PATH)/components/cdm_renderer.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/components_resources.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/components_strings.target.darwin-arm.mk
+include $(LOCAL_PATH)/components/data_reduction_proxy_browser.target.darwin-arm.mk
+include $(LOCAL_PATH)/components/data_reduction_proxy_common.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/navigation_interception.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/navigation_interception_jni_headers.target.darwin-arm.mk
 include $(LOCAL_PATH)/components/os_crypt.target.darwin-arm.mk
@@ -165,11 +170,13 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_profiler_module.t
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_resources_module.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_script_formatter_worker_module.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_search_module.target.darwin-arm.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_settings_module.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_source_frame_module.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_sources_module.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_temp_storage_shared_worker_module.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/build_timeline_module.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_devtools_css.target.darwin-arm.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/concatenated_module_descriptors.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_extension_api.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_frontend_resources.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_html.target.darwin-arm.mk
@@ -192,8 +199,10 @@ include $(LOCAL_PATH)/third_party/WebKit/public/blink_headers.target.darwin-arm.
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_minimal.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_skia_config.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/angle/src/commit_id.target.darwin-arm.mk
+include $(LOCAL_PATH)/third_party/angle/src/copy_scripts.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/angle/src/preprocessor.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/angle/src/translator.target.darwin-arm.mk
+include $(LOCAL_PATH)/third_party/angle/src/translator_lib.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/brotli/brotli.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.darwin-arm.mk
@@ -241,6 +250,8 @@ include $(LOCAL_PATH)/third_party/lzma_sdk/lzma_sdk.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/mesa/mesa_headers.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/modp_b64/modp_b64.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/npapi/npapi.target.darwin-arm.mk
+include $(LOCAL_PATH)/third_party/openmax_dl/dl/openmax_dl.target.darwin-arm.mk
+include $(LOCAL_PATH)/third_party/openmax_dl/dl/openmax_dl_armv7.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/openssl/openssl.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/opus/opus.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/ots/ots.target.darwin-arm.mk

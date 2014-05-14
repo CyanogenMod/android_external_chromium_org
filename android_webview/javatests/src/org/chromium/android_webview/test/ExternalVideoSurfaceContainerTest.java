@@ -8,6 +8,7 @@ import android.graphics.RectF;
 import android.test.suitebuilder.annotation.SmallTest;
 
 import org.chromium.android_webview.ExternalVideoSurfaceContainer;
+import org.chromium.android_webview.test.util.VideoTestUtil;
 import org.chromium.base.CommandLine;
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
@@ -55,7 +56,7 @@ public class ExternalVideoSurfaceContainerTest extends AwTestBase {
         private int mPlayerId = INVALID_PLAYER_ID;
 
         public MockExternalVideoSurfaceContainer(
-                int nativeExternalVideoSurfaceContainer, ContentViewCore contentViewCore) {
+                long nativeExternalVideoSurfaceContainer, ContentViewCore contentViewCore) {
             super(nativeExternalVideoSurfaceContainer, contentViewCore);
         }
 
@@ -91,7 +92,7 @@ public class ExternalVideoSurfaceContainerTest extends AwTestBase {
         ExternalVideoSurfaceContainer.setFactory(new ExternalVideoSurfaceContainer.Factory() {
             @Override
             public ExternalVideoSurfaceContainer create(
-                    int nativeContainer, ContentViewCore contentViewCore) {
+                    long nativeContainer, ContentViewCore contentViewCore) {
                 return new MockExternalVideoSurfaceContainer(nativeContainer, contentViewCore);
             }
         });
@@ -111,7 +112,7 @@ public class ExternalVideoSurfaceContainerTest extends AwTestBase {
         int onRequestCallCount = mOnRequestExternalVideoSurface.getCallCount();
         int onPositionChangedCallCount = mOnExternalVideoSurfacePositionChanged.getCallCount();
 
-        assertTrue(runVideoTest(false, -1));
+        assertTrue(VideoTestUtil.runVideoTest(this, false, WAIT_TIMEOUT_MS));
 
         mOnRequestExternalVideoSurface.waitForCallback(onRequestCallCount);
         waitForVideoSizeChangeTo(mOnExternalVideoSurfacePositionChanged,
@@ -123,7 +124,7 @@ public class ExternalVideoSurfaceContainerTest extends AwTestBase {
     public void testDisableVideoOverlayForEmbeddedVideo() throws Throwable {
         setUpMockExternalVideoSurfaceContainer();
 
-        assertTrue(runVideoTest(false, -1));
+        assertTrue(VideoTestUtil.runVideoTest(this, false, WAIT_TIMEOUT_MS));
 
         assertEquals(0, mOnRequestExternalVideoSurface.getCallCount());
         assertEquals(0, mOnExternalVideoSurfacePositionChanged.getCallCount());

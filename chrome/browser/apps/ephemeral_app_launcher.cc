@@ -11,7 +11,6 @@
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/permissions/permissions_data.h"
@@ -38,7 +37,7 @@ gfx::NativeWindow NativeWindowForWebContents(content::WebContents* contents) {
   if (!contents)
     return NULL;
 
-  return contents->GetView()->GetTopLevelNativeWindow();
+  return contents->GetTopLevelNativeWindow();
 }
 
 }  // namespace
@@ -132,7 +131,7 @@ EphemeralAppLauncher::~EphemeralAppLauncher() {}
 
 void EphemeralAppLauncher::StartObserving() {
   extension_registry_observer_.Add(
-      extensions::ExtensionRegistry::Get(profile()->GetOriginalProfile()));
+      extensions::ExtensionRegistry::Get(profile()));
 }
 
 void EphemeralAppLauncher::LaunchApp(const Extension* extension) const {
@@ -253,15 +252,13 @@ void EphemeralAppLauncher::CompleteInstall(const std::string& error) {
   // WebstoreStandaloneInstaller to support this cleanly.
 }
 
-void EphemeralAppLauncher::WebContentsDestroyed(
-    content::WebContents* web_contents) {
+void EphemeralAppLauncher::WebContentsDestroyed() {
   AbortInstall();
 }
 
 void EphemeralAppLauncher::OnExtensionLoaded(
     content::BrowserContext* browser_context,
     const Extension* extension) {
-  DCHECK(extension);
   if (extension->id() == id()) {
     LaunchApp(extension);
     WebstoreStandaloneInstaller::CompleteInstall(std::string());

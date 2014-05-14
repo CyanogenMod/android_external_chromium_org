@@ -17,6 +17,8 @@
 #include "chrome/browser/guest_view/guest_view_constants.h"
 #include "chrome/browser/guest_view/web_view/web_view_constants.h"
 #include "chrome/browser/guest_view/web_view/web_view_permission_types.h"
+#include "chrome/browser/renderer_context_menu/context_menu_delegate.h"
+#include "chrome/browser/renderer_context_menu/render_view_context_menu.h"
 #include "chrome/common/chrome_version_info.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/geolocation_permission_context.h"
@@ -40,6 +42,7 @@
 #include "extensions/common/constants.h"
 #include "net/base/net_errors.h"
 #include "third_party/WebKit/public/web/WebFindOptions.h"
+#include "ui/base/models/simple_menu_model.h"
 
 #if defined(ENABLE_PLUGINS)
 #include "chrome/browser/guest_view/web_view/plugin_permission_helper.h"
@@ -129,11 +132,15 @@ void AttachWebViewHelpers(WebContents* contents) {
 }  // namespace
 
 WebViewGuest::WebViewGuest(WebContents* guest_web_contents,
-                           const std::string& extension_id)
-    : GuestView<WebViewGuest>(guest_web_contents, extension_id),
+                           const std::string& embedder_extension_id,
+                           const base::WeakPtr<GuestViewBase>& opener)
+   :  GuestView<WebViewGuest>(guest_web_contents,
+                              embedder_extension_id,
+                              opener),
       WebContentsObserver(guest_web_contents),
       script_executor_(new extensions::ScriptExecutor(guest_web_contents,
                                                       &script_observers_)),
+      pending_context_menu_request_id_(0),
       next_permission_request_id_(0),
       is_overriding_user_agent_(false),
       pending_reload_on_attachment_(false),
@@ -263,6 +270,22 @@ void WebViewGuest::RecordUserInitiatedUMA(const PermissionResponseInfo& info,
   }
 }
 
+// static
+scoped_ptr<base::ListValue> WebViewGuest::MenuModelToValue(
+    const ui::SimpleMenuModel& menu_model) {
+  scoped_ptr<base::ListValue> items(new base::ListValue());
+  for (int i = 0; i < menu_model.GetItemCount(); ++i) {
+    base::DictionaryValue* item_value = new base::DictionaryValue();
+    // TODO(lazyboy): We need to expose some kind of enum equivalent of
+    // |command_id| instead of plain integers.
+    item_value->SetInteger(webview::kMenuItemCommandId,
+                           menu_model.GetCommandIdAt(i));
+    item_value->SetString(webview::kMenuItemLabel, menu_model.GetLabelAt(i));
+    items->Append(item_value);
+  }
+  return items.Pass();
+}
+
 void WebViewGuest::Attach(WebContents* embedder_web_contents,
                           const base::DictionaryValue& args) {
   std::string user_agent_override;
@@ -276,6 +299,26 @@ void WebViewGuest::Attach(WebContents* embedder_web_contents,
   GuestViewBase::Attach(embedder_web_contents, args);
 
   AddWebViewToExtensionRendererState();
+}
+
+bool WebViewGuest::HandleContextMenu(
+    const content::ContextMenuParams& params) {
+  ContextMenuDelegate* menu_delegate =
+      ContextMenuDelegate::FromWebContents(guest_web_contents());
+  DCHECK(menu_delegate);
+
+  pending_menu_ = menu_delegate->BuildMenu(guest_web_contents(), params);
+
+  // Pass it to embedder.
+  int request_id = ++pending_context_menu_request_id_;
+  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
+  scoped_ptr<base::ListValue> items =
+      MenuModelToValue(pending_menu_->menu_model());
+  args->Set(webview::kContextMenuItems, items.release());
+  args->SetInteger(webview::kRequestId, request_id);
+  DispatchEvent(new GuestViewBase::Event(webview::kEventContextMenu,
+                                         args.Pass()));
+  return true;
 }
 
 void WebViewGuest::AddMessageToConsole(int32 level,
@@ -748,14 +791,14 @@ void WebViewGuest::DidStopLoading(content::RenderViewHost* render_view_host) {
   DispatchEvent(new GuestViewBase::Event(webview::kEventLoadStop, args.Pass()));
 }
 
-void WebViewGuest::WebContentsDestroyed(WebContents* web_contents) {
+void WebViewGuest::WebContentsDestroyed() {
   // Clean up custom context menu items for this guest.
   extensions::MenuManager* menu_manager = extensions::MenuManager::Get(
       Profile::FromBrowserContext(browser_context()));
   menu_manager->RemoveAllContextItems(extensions::MenuItem::ExtensionKey(
       embedder_extension_id(), view_instance_id()));
 
-  RemoveWebViewFromExtensionRendererState(web_contents);
+  RemoveWebViewFromExtensionRendererState(web_contents());
 }
 
 void WebViewGuest::UserAgentOverrideSet(const std::string& user_agent) {
@@ -1020,4 +1063,21 @@ WebViewGuest::PermissionResponseInfo::PermissionResponseInfo(
 }
 
 WebViewGuest::PermissionResponseInfo::~PermissionResponseInfo() {
+}
+
+void WebViewGuest::ShowContextMenu(int request_id,
+                                   const MenuItemVector* items) {
+  if (!pending_menu_.get())
+    return;
+
+  // Make sure this was the correct request.
+  if (request_id != pending_context_menu_request_id_)
+    return;
+
+  // TODO(lazyboy): Implement.
+  DCHECK(!items);
+
+  ContextMenuDelegate* menu_delegate =
+      ContextMenuDelegate::FromWebContents(guest_web_contents());
+  menu_delegate->ShowMenu(pending_menu_.Pass());
 }

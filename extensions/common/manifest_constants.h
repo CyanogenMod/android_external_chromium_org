@@ -13,6 +13,7 @@ namespace manifest_keys {
 extern const char kAllFrames[];
 extern const char kAltKey[];
 extern const char kApp[];
+extern const char kAutomation[];
 extern const char kBackgroundAllowJsAccess[];
 extern const char kBackgroundPage[];
 extern const char kBackgroundPageLegacy[];
@@ -178,6 +179,7 @@ extern const char kWebview[];
 extern const char kWebviewName[];
 extern const char kWebviewAccessibleResources[];
 extern const char kWebviewPartitions[];
+extern const char kWhitelist[];
 
 }  // namespace manifest_keys
 
@@ -286,6 +288,8 @@ extern const char kInvalidExport[];
 extern const char kInvalidExportPermissions[];
 extern const char kInvalidExportResources[];
 extern const char kInvalidExportResourcesString[];
+extern const char kInvalidExportWhitelist[];
+extern const char kInvalidExportWhitelistString[];
 extern const char kInvalidFileAccessList[];
 extern const char kInvalidFileAccessValue[];
 extern const char kInvalidFileBrowserHandler[];

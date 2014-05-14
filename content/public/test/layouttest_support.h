@@ -22,6 +22,7 @@ struct WebSize;
 namespace content {
 
 class PageState;
+class RenderFrame;
 class RenderView;
 class WebTestProxyBase;
 
@@ -80,6 +81,9 @@ void ForceResizeRenderView(RenderView* render_view,
 // Set the device scale factor and force the compositor to resize.
 void SetDeviceScaleFactor(RenderView* render_view, float factor);
 
+// Set the device color profile associated with the profile |name|.
+void SetDeviceColorProfile(RenderView* render_view, const std::string& name);
+
 // Enables or disables synchronous resize mode. When enabled, all window-sizing
 // machinery is short-circuited inside the renderer. This mode is necessary for
 // some tests that were written before browsers had multi-process architecture
@@ -94,8 +98,8 @@ void EnableAutoResizeMode(RenderView* render_view,
 void DisableAutoResizeMode(RenderView* render_view,
                            const blink::WebSize& new_size);
 
-// Forces the |render_view| to use mock media streams.
-void UseMockMediaStreams(RenderView* render_view);
+// Forces the |render_frame| to use mock media streams.
+void UseMockMediaStreams(RenderFrame* render_frame);
 
 // Provides a text dump of the contents of the given page state.
 std::string DumpBackForwardList(std::vector<PageState>& page_state,

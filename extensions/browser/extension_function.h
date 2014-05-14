@@ -44,28 +44,23 @@ class ExtensionMessageFilter;
 class QuotaLimitHeuristic;
 }
 
-#define EXTENSION_FUNCTION_VALIDATE(test) \
-  EXTENSION_FUNCTION_VALIDATE_INTERNAL(test, false)
-
-#define EXTENSION_FUNCTION_VALIDATE_TYPESAFE(test) \
-  EXTENSION_FUNCTION_VALIDATE_INTERNAL(test, RespondNow(BadMessage()))
-
 #ifdef NDEBUG
-#define EXTENSION_FUNCTION_VALIDATE_INTERNAL(test, failure) \
-  do {                                                      \
-    if (!(test)) {                                          \
-      bad_message_ = true;                                  \
-      return (failure);                                     \
-    }                                                       \
+#define EXTENSION_FUNCTION_VALIDATE(test) \
+  do {                                    \
+    if (!(test)) {                        \
+      bad_message_ = true;                \
+      return ValidationFailure(this);     \
+    }                                     \
   } while (0)
 #else   // NDEBUG
-#define EXTENSION_FUNCTION_VALIDATE_INTERNAL(test, failure) CHECK(test)
+#define EXTENSION_FUNCTION_VALIDATE(test) CHECK(test)
 #endif  // NDEBUG
 
-#define EXTENSION_FUNCTION_ERROR(error) do { \
-    error_ = error; \
-    bad_message_ = true; \
-    return false; \
+#define EXTENSION_FUNCTION_ERROR(error) \
+  do {                                  \
+    error_ = error;                     \
+    bad_message_ = true;                \
+    return ValidationFailure(this);     \
   } while (0)
 
 // Declares a callable extension function with the given |name|. You must also
@@ -118,13 +113,41 @@ class ExtensionFunction
   // This will be run after the function has been set up but before Run().
   virtual bool HasPermission();
 
-  // Execute the API. Clients should initialize the ExtensionFunction using
-  // SetArgs(), set_request_id(), and the other setters before calling this
-  // method.
+  // The result of a function call.
   //
-  // Note that once Run() returns, dispatcher() can be NULL, so be sure to
-  // NULL-check.
-  void Run();
+  // Use NoArguments(), SingleArgument(), MultipleArguments(), or Error()
+  // rather than this class directly.
+  class ResponseValueObject {
+   public:
+    virtual ~ResponseValueObject() {}
+
+    // Returns true for success, false for failure.
+    virtual bool Apply() = 0;
+  };
+  typedef scoped_ptr<ResponseValueObject> ResponseValue;
+
+  // The action to use when returning from RunAsync.
+  //
+  // Use RespondNow() or RespondLater() rather than this class directly.
+  class ResponseActionObject {
+   public:
+    virtual ~ResponseActionObject() {}
+
+    virtual void Execute() = 0;
+  };
+  typedef scoped_ptr<ResponseActionObject> ResponseAction;
+
+  // Runs the function and returns the action to take when the caller is ready
+  // to respond.
+  //
+  // Callers must call Execute() on the return ResponseAction at some point,
+  // exactly once.
+  //
+  // SyncExtensionFunction and AsyncExtensionFunction implement this in terms
+  // of SyncExtensionFunction::RunSync and AsyncExtensionFunction::RunAsync,
+  // but this is deprecated. ExtensionFunction implementations are encouraged
+  // to just implement Run.
+  virtual ResponseAction Run() WARN_UNUSED_RESULT = 0;
 
   // Gets whether quota should be applied to this individual function
   // invocation. This is different to GetQuotaLimitHeuristics which is only
@@ -208,30 +231,6 @@ class ExtensionFunction
   void set_source_tab_id(int source_tab_id) { source_tab_id_ = source_tab_id; }
   int source_tab_id() const { return source_tab_id_; }
 
-  // The result of a function call.
-  //
-  // Use NoArguments(), SingleArgument(), MultipleArguments(), or Error()
-  // rather than this class directly.
-  class ResponseValueObject {
-   public:
-    virtual ~ResponseValueObject() {}
-
-    // Returns true for success, false for failure.
-    virtual bool Apply() = 0;
-  };
-  typedef scoped_ptr<ResponseValueObject> ResponseValue;
-
-  // The action to use when returning from RunImpl.
-  //
-  // Use RespondNow() or RespondLater() rather than this class directly.
-  class ResponseActionObject {
-   public:
-    virtual ~ResponseActionObject() {}
-
-    virtual void Execute() = 0;
-  };
-  typedef scoped_ptr<ResponseActionObject> ResponseAction;
-
  protected:
   friend struct ExtensionFunctionDeleteTraits;
 
@@ -252,28 +251,28 @@ class ExtensionFunction
   //
   // Respond to the extension immediately with |result|.
   ResponseAction RespondNow(ResponseValue result);
-  // Don't respond now, but promise to call SendResponse later.
+  // Don't respond now, but promise to call Respond() later.
   ResponseAction RespondLater();
+
+  // This is the return value of the EXTENSION_FUNCTION_VALIDATE macro, which
+  // needs to work from Run(), RunAsync(), and RunSync(). The former of those
+  // has a different return type (ResponseAction) than the latter two (bool).
+  static ResponseAction ValidationFailure(ExtensionFunction* function);
+
+  // If RespondLater() was used, functions must at some point call Respond()
+  // with |result| as their result.
+  void Respond(ResponseValue result);
 
   virtual ~ExtensionFunction();
 
   // Helper method for ExtensionFunctionDeleteTraits. Deletes this object.
   virtual void Destruct() const = 0;
 
-  // Derived classes should implement one of these methods to do their work.
+  // Do not call this function directly, return the appropriate ResponseAction
+  // from Run() instead. If using RespondLater then call Respond().
   //
-  // Returns the action to take. DO NOT USE WITH SyncExtensionFunction.
-  virtual ResponseAction RunImplTypesafe();
-  // Deprecated. Returns true on success. SendResponse() must be called later.
-  // Return false to indicate an error and respond immediately.
-  virtual bool RunImpl();
-
-  // Sends the result back to the extension.
-  //
-  // Responds with |response|.
-  void SendResponseTypesafe(ResponseValue response);
-  // Deprecated. Call with true to indicate success, false to indicate failure,
-  // in which case please set |error_|.
+  // Call with true to indicate success, false to indicate failure, in which
+  // case please set |error_|.
   virtual void SendResponse(bool success) = 0;
 
   // Common implementation for SendResponse.
@@ -337,6 +336,8 @@ class ExtensionFunction
   int source_tab_id_;
 
  private:
+  void OnRespondingLater(ResponseValue response);
+
   DISALLOW_COPY_AND_ASSIGN(ExtensionFunction);
 };
 
@@ -489,6 +490,19 @@ class AsyncExtensionFunction : public UIThreadExtensionFunction {
 
  protected:
   virtual ~AsyncExtensionFunction();
+
+  // Deprecated: Override UIThreadExtensionFunction and implement Run() instead.
+  //
+  // AsyncExtensionFunctions implement this method. Return true to indicate that
+  // nothing has gone wrong yet; SendResponse must be called later. Return true
+  // to respond immediately with an error.
+  virtual bool RunAsync() = 0;
+
+  // ValidationFailure override to match RunAsync().
+  static bool ValidationFailure(AsyncExtensionFunction* function);
+
+ private:
+  virtual ResponseAction Run() OVERRIDE;
 };
 
 // A SyncExtensionFunction is an ExtensionFunction that runs synchronously
@@ -502,24 +516,41 @@ class SyncExtensionFunction : public UIThreadExtensionFunction {
  public:
   SyncExtensionFunction();
 
-  virtual bool RunImpl() OVERRIDE;
-
  protected:
+  virtual ~SyncExtensionFunction();
+
+  // Deprecated: Override UIThreadExtensionFunction and implement Run() instead.
+  //
+  // SyncExtensionFunctions implement this method. Return true to respond
+  // immediately with success, false to respond immediately with an error.
   virtual bool RunSync() = 0;
 
-  virtual ~SyncExtensionFunction();
+  // ValidationFailure override to match RunSync().
+  static bool ValidationFailure(SyncExtensionFunction* function);
+
+ private:
+  virtual ResponseAction Run() OVERRIDE;
 };
 
 class SyncIOThreadExtensionFunction : public IOThreadExtensionFunction {
  public:
   SyncIOThreadExtensionFunction();
 
-  virtual bool RunImpl() OVERRIDE;
-
  protected:
+  virtual ~SyncIOThreadExtensionFunction();
+
+  // Deprecated: Override IOThreadExtensionFunction and implement Run() instead.
+  //
+  // SyncIOThreadExtensionFunctions implement this method. Return true to
+  // respond immediately with success, false to respond immediately with an
+  // error.
   virtual bool RunSync() = 0;
 
-  virtual ~SyncIOThreadExtensionFunction();
+  // ValidationFailure override to match RunSync().
+  static bool ValidationFailure(SyncIOThreadExtensionFunction* function);
+
+ private:
+  virtual ResponseAction Run() OVERRIDE;
 };
 
 #endif  // EXTENSIONS_BROWSER_EXTENSION_FUNCTION_H_

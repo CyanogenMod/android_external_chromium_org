@@ -152,6 +152,7 @@ int AutocompleteMatch::TypeToIcon(Type type) {
     IDR_OMNIBOX_EXTENSION_APP,
     IDR_OMNIBOX_SEARCH,
     IDR_OMNIBOX_HTTP,
+    IDR_OMNIBOX_HTTP,
   };
   COMPILE_ASSERT(arraysize(icons) == AutocompleteMatchType::NUM_TYPES,
                  icons_array_must_match_type_enum);
@@ -376,9 +377,9 @@ void AutocompleteMatch::ComputeStrippedDestinationURL(Profile* profile) {
   }
 
   // Replace https protocol with http protocol.
-  if (stripped_destination_url.SchemeIs(content::kHttpsScheme)) {
-    replacements.SetScheme(content::kHttpScheme,
-                           url::Component(0, strlen(content::kHttpScheme)));
+  if (stripped_destination_url.SchemeIs(url::kHttpsScheme)) {
+    replacements.SetScheme(url::kHttpScheme,
+                           url::Component(0, strlen(url::kHttpScheme)));
     needs_replacement = true;
   }
 

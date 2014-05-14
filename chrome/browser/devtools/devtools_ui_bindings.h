@@ -23,6 +23,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "ui/gfx/size.h"
 
+class InfoBarService;
 class Profile;
 
 namespace content {
@@ -58,6 +59,8 @@ class DevToolsUIBindings : public content::NotificationObserver,
 
     virtual void InspectedContentsClosing() = 0;
     virtual void OnLoadCompleted() = 0;
+    virtual InfoBarService* GetInfoBarService() = 0;
+    virtual void RenderProcessGone() = 0;
   };
 
   explicit DevToolsUIBindings(content::WebContents* web_contents);
@@ -91,6 +94,7 @@ class DevToolsUIBindings : public content::NotificationObserver,
   virtual void SetContentsResizingStrategy(
       const gfx::Insets& insets, const gfx::Size& min_size) OVERRIDE;
   virtual void InspectElementCompleted() OVERRIDE;
+  virtual void InspectedURLChanged(const std::string& url) OVERRIDE;
   virtual void MoveWindow(int x, int y) OVERRIDE;
   virtual void SetIsDocked(bool is_docked) OVERRIDE;
   virtual void OpenInNewTab(const std::string& url) OVERRIDE;

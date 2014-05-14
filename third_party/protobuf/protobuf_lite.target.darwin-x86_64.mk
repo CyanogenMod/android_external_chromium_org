@@ -54,7 +54,6 @@ MY_CFLAGS_Debug := \
 	-Wno-format \
 	-m64 \
 	-march=x86-64 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \
@@ -146,7 +145,6 @@ MY_CFLAGS_Release := \
 	-Wno-format \
 	-m64 \
 	-march=x86-64 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \

@@ -263,14 +263,16 @@
         'focus/view_storage.h',
         'focus/widget_focus_manager.cc',
         'focus/widget_focus_manager.h',
+        'ime/input_method.h',
         'ime/input_method_base.cc',
         'ime/input_method_base.h',
         'ime/input_method_bridge.cc',
         'ime/input_method_bridge.h',
         'ime/input_method_delegate.h',
-        'ime/input_method.h',
         'ime/mock_input_method.cc',
         'ime/mock_input_method.h',
+        'ime/null_input_method.cc',
+        'ime/null_input_method.h',
         'layout/box_layout.cc',
         'layout/box_layout.h',
         'layout/fill_layout.cc',
@@ -375,6 +377,8 @@
         'widget/desktop_aura/x11_desktop_window_move_client.h',
         'widget/desktop_aura/x11_scoped_capture.cc',
         'widget/desktop_aura/x11_scoped_capture.h',
+        'widget/desktop_aura/x11_topmost_window_finder.cc',
+        'widget/desktop_aura/x11_topmost_window_finder.h',
         'widget/desktop_aura/x11_whole_screen_move_loop.cc',
         'widget/desktop_aura/x11_whole_screen_move_loop.h',
         'widget/desktop_aura/x11_whole_screen_move_loop_delegate.h',
@@ -650,10 +654,10 @@
         'touchui/touch_selection_controller_impl_unittest.cc',
         'view_model_unittest.cc',
         'view_model_utils_unittest.cc',
+        'view_targeter_unittest.cc',
         'view_unittest.cc',
         'widget/desktop_aura/desktop_focus_rules_unittest.cc',
         'widget/desktop_aura/desktop_native_widget_aura_unittest.cc',
-        'widget/desktop_aura/desktop_window_tree_host_win_unittest.cc',
         'widget/desktop_aura/desktop_screen_x11_unittest.cc',
         'widget/desktop_aura/desktop_screen_position_client_unittest.cc',
         'widget/native_widget_aura_unittest.cc',
@@ -699,8 +703,7 @@
             '../../base/allocator/allocator.gyp:allocator',
           ],
         }],
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
+        ['OS=="linux" and use_allocator!="none"', {
            # See http://crbug.com/162998#c4 for why this is needed.
           'dependencies': [
             '../../base/allocator/allocator.gyp:allocator',

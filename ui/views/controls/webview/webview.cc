@@ -10,10 +10,10 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "ipc/ipc_message.h"
 #include "ui/accessibility/ax_enums.h"
 #include "ui/accessibility/ax_view_state.h"
+#include "ui/base/ui_base_switches_util.h"
 #include "ui/events/event.h"
 #include "ui/views/accessibility/native_view_accessibility.h"
 #include "ui/views/controls/native/native_view_host.h"
@@ -67,6 +67,7 @@ void WebView::SetWebContents(content::WebContents* replacement) {
     DCHECK(!is_embedding_fullscreen_widget_);
   }
   AttachWebContents();
+  NotifyMaybeTextInputClientChanged();
 }
 
 void WebView::SetEmbedFullscreenWidgetMode(bool enable) {
@@ -101,6 +102,24 @@ void WebView::SetPreferredSize(const gfx::Size& preferred_size) {
 
 const char* WebView::GetClassName() const {
   return kViewClassName;
+}
+
+ui::TextInputClient* WebView::GetTextInputClient() {
+  // This function delegates the text input handling to the underlying
+  // content::RenderWidgetHostView.  So when the underlying RWHV is destroyed or
+  // replaced with another one, we have to notify the FocusManager through
+  // FocusManager::OnTextInputClientChanged() that the focused TextInputClient
+  // needs to be updated.
+  if (switches::IsTextInputFocusManagerEnabled() &&
+      web_contents() && !web_contents()->IsBeingDestroyed()) {
+    content::RenderWidgetHostView* host_view =
+        is_embedding_fullscreen_widget_ ?
+        web_contents()->GetFullscreenRenderWidgetHostView() :
+        web_contents()->GetRenderWidgetHostView();
+    if (host_view)
+      return host_view->GetTextInputClient();
+  }
+  return NULL;
 }
 
 void WebView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
@@ -182,7 +201,7 @@ void WebView::OnFocus() {
     if (current_fs_view)
       current_fs_view->Focus();
   } else {
-    web_contents()->GetView()->Focus();
+    web_contents()->Focus();
   }
 }
 
@@ -229,11 +248,16 @@ bool WebView::EmbedsFullscreenWidget() const {
 ////////////////////////////////////////////////////////////////////////////////
 // WebView, content::WebContentsObserver implementation:
 
+void WebView::RenderViewDeleted(content::RenderViewHost* render_view_host) {
+  NotifyMaybeTextInputClientChanged();
+}
+
 void WebView::RenderViewHostChanged(content::RenderViewHost* old_host,
                                     content::RenderViewHost* new_host) {
   FocusManager* const focus_manager = GetFocusManager();
   if (focus_manager && focus_manager->GetFocusedView() == this)
     OnFocus();
+  NotifyMaybeTextInputClientChanged();
 }
 
 void WebView::DidShowFullscreenWidget(int routing_id) {
@@ -262,7 +286,7 @@ void WebView::AttachWebContents() {
 
   const gfx::NativeView view_to_attach = is_embedding_fullscreen_widget_ ?
       web_contents()->GetFullscreenRenderWidgetHostView()->GetNativeView() :
-      web_contents()->GetView()->GetNativeView();
+      web_contents()->GetNativeView();
   OnBoundsChanged(bounds());
   if (holder_->native_view() == view_to_attach)
     return;
@@ -309,6 +333,14 @@ void WebView::ReattachForFullscreenChange(bool enter_fullscreen) {
     // the same.  So, do not change attachment.
     OnBoundsChanged(bounds());
   }
+  NotifyMaybeTextInputClientChanged();
+}
+
+void WebView::NotifyMaybeTextInputClientChanged() {
+  // Update the TextInputClient as needed; see GetTextInputClient().
+  FocusManager* const focus_manager = GetFocusManager();
+  if (focus_manager)
+    focus_manager->OnTextInputClientChanged(this);
 }
 
 content::WebContents* WebView::CreateWebContents(

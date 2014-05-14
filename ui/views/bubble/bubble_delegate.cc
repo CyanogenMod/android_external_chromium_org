@@ -48,7 +48,6 @@ BubbleDelegateView::BubbleDelegateView()
       close_on_deactivate_(true),
       anchor_view_storage_id_(ViewStorage::GetInstance()->CreateStorageID()),
       anchor_widget_(NULL),
-      move_with_anchor_(false),
       arrow_(BubbleBorder::TOP_LEFT),
       shadow_(BubbleBorder::SMALL_SHADOW),
       color_explicitly_set_(false),
@@ -69,7 +68,6 @@ BubbleDelegateView::BubbleDelegateView(
       close_on_deactivate_(true),
       anchor_view_storage_id_(ViewStorage::GetInstance()->CreateStorageID()),
       anchor_widget_(NULL),
-      move_with_anchor_(false),
       arrow_(arrow),
       shadow_(BubbleBorder::SMALL_SHADOW),
       color_explicitly_set_(false),
@@ -174,12 +172,8 @@ void BubbleDelegateView::OnWidgetActivationChanged(Widget* widget,
 
 void BubbleDelegateView::OnWidgetBoundsChanged(Widget* widget,
                                                const gfx::Rect& new_bounds) {
-  if (anchor_widget() == widget) {
-    if (move_with_anchor())
-      SizeToContents();
-    else
-      GetWidget()->Close();
-  }
+  if (anchor_widget() == widget)
+    SizeToContents();
 }
 
 View* BubbleDelegateView::GetAnchorView() const {
@@ -250,7 +244,11 @@ void BubbleDelegateView::SetAnchorView(View* anchor_view) {
   if (anchor_view)
     view_storage->StoreView(anchor_view_storage_id_, anchor_view);
 
-  if (GetWidget())
+  // Do not update anchoring for NULL views; this could indicate that our
+  // NativeWindow is being destroyed, so it would be dangerous for us to update
+  // our anchor bounds at that point. (It's safe to skip this, since if we were
+  // to update the bounds when |anchor_view| is NULL, the bubble won't move.)
+  if (anchor_view && GetWidget())
     OnAnchorBoundsChanged();
 }
 

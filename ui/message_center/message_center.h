@@ -65,7 +65,7 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
   // VISIBILITY_TRANSIENT or VISIBILITY_SETTINGS.
   virtual NotificationList::PopupNotifications GetPopupNotifications() = 0;
 
-  // Management of NotificaitonBlockers.
+  // Management of NotificationBlockers.
   virtual void AddNotificationBlocker(NotificationBlocker* blocker) = 0;
   virtual void RemoveNotificationBlocker(NotificationBlocker* blocker) = 0;
 
@@ -125,7 +125,9 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
   // This should be called by UI classes when a notification is first displayed
   // to the user, in order to decrement the unread_count for the tray, and to
   // notify observers that the notification is visible.
-  virtual void DisplayedNotification(const std::string& id) = 0;
+  virtual void DisplayedNotification(
+      const std::string& id,
+      const DisplaySource source) = 0;
 
   // Setter/getter of notifier settings provider. This will be a weak reference.
   // This should be set at the initialization process. The getter may return

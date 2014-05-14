@@ -11,8 +11,10 @@
 #include "base/threading/non_thread_safe.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_thread.h"
-#include "crypto/rsa_private_key.h"
-#include "net/socket/stream_socket.h"
+
+namespace net {
+class StreamSocket;
+}
 
 class AndroidDeviceManager
     : public base::RefCountedThreadSafe<AndroidDeviceManager>,
@@ -35,12 +37,6 @@ class AndroidDeviceManager
                             const CommandCallback& callback) = 0;
     virtual void OpenSocket(const std::string& socket_name,
                             const SocketCallback& callback) = 0;
-    void HttpQuery(const std::string& la_name,
-                   const std::string& request,
-                   const CommandCallback& callback);
-    void HttpUpgrade(const std::string& la_name,
-                     const std::string& request,
-                     const SocketCallback& callback);
 
     std::string serial() { return serial_; }
     bool is_connected() { return is_connected_; }
@@ -49,15 +45,6 @@ class AndroidDeviceManager
     virtual ~Device();
 
    private:
-    void OnHttpSocketOpened(const std::string& request,
-                            const CommandCallback& callback,
-                            int result,
-                            net::StreamSocket* socket);
-    void OnHttpSocketOpened2(const std::string& request,
-                             const SocketCallback& callback,
-                             int result,
-                             net::StreamSocket* socket);
-
     const std::string serial_;
     const bool is_connected_;
 
@@ -87,11 +74,6 @@ class AndroidDeviceManager
   };
 
  public:
-  static scoped_refptr<DeviceProvider> GetAdbDeviceProvider();
-  static scoped_refptr<DeviceProvider> GetUsbDeviceProvider(Profile* profile);
-  // Use only in a test and/or when DEBUG_DEVTOOLS is defined.
-  static scoped_refptr<DeviceProvider> GetSelfAsDeviceProvider(int port);
-
   static scoped_refptr<AndroidDeviceManager> Create();
 
   typedef std::vector<scoped_refptr<DeviceProvider> > DeviceProviders;
@@ -114,13 +96,13 @@ class AndroidDeviceManager
                   const SocketCallback& callback);
 
   void HttpQuery(const std::string& serial,
-                 const std::string& la_name,
+                 const std::string& socket_name,
                  const std::string& request,
                  const CommandCallback& callback);
 
   void HttpUpgrade(const std::string& serial,
-                   const std::string& la_name,
-                   const std::string& request,
+                   const std::string& socket_name,
+                   const std::string& url,
                    const SocketCallback& callback);
 
  private:

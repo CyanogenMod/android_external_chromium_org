@@ -212,10 +212,14 @@ class CONTENT_EXPORT ServiceWorkerVersion
                                       const GURL& source_url) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
+  void AddToScriptCache(const GURL& url, int64 resource_id);
+  int64 LookupInScriptCache(const GURL& url);
+
  private:
   typedef ServiceWorkerVersion self;
   typedef std::map<ServiceWorkerProviderHost*, int> ControlleeMap;
   typedef IDMap<ServiceWorkerProviderHost> ControlleeByIDMap;
+  typedef std::map<GURL, int64> ResourceIDMap;
   friend class base::RefCounted<ServiceWorkerVersion>;
 
   virtual ~ServiceWorkerVersion();
@@ -236,6 +240,9 @@ class CONTENT_EXPORT ServiceWorkerVersion
                             ServiceWorkerFetchEventResult result,
                             const ServiceWorkerResponse& response);
   void OnSyncEventFinished(int request_id);
+  void OnPostMessageToDocument(int client_id,
+                               const base::string16& message,
+                               const std::vector<int>& sent_message_port_ids);
 
   const int64 version_id_;
   int64 registration_id_;
@@ -257,6 +264,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
   ControlleeByIDMap controllee_by_id_;
   base::WeakPtr<ServiceWorkerContextCore> context_;
   ObserverList<Listener> listeners_;
+
+  ResourceIDMap script_cache_map_;
 
   base::WeakPtrFactory<ServiceWorkerVersion> weak_factory_;
 

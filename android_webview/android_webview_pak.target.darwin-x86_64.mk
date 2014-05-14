@@ -20,6 +20,7 @@ GYP_TARGET_DEPENDENCIES := \
 
 ### Rules for action "repack_android_webview_pack":
 $(gyp_shared_intermediate_dir)/android_webview_apk/assets/webviewchromium.pak: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/android_webview_apk/assets/webviewchromium.pak: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/android_webview_apk/assets/webviewchromium.pak: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/android_webview_apk/assets/webviewchromium.pak: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/android_webview_apk/assets/webviewchromium.pak: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))

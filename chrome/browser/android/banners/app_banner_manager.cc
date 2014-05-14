@@ -6,17 +6,20 @@
 
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
+#include "base/command_line.h"
 #include "base/metrics/histogram.h"
 #include "chrome/browser/android/banners/app_banner_metrics_ids.h"
 #include "chrome/browser/android/banners/app_banner_settings_helper.h"
 #include "chrome/browser/android/banners/app_banner_utilities.h"
 #include "chrome/browser/bitmap_fetcher.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/chrome_switches.h"
 #include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/frame_navigate_params.h"
 #include "jni/AppBannerManager_jni.h"
+#include "net/base/load_flags.h"
 #include "ui/gfx/android/java_bitmap.h"
 
 using base::android::ConvertJavaStringToUTF8;
@@ -132,7 +135,11 @@ bool AppBannerManager::FetchIcon(JNIEnv* env,
   Profile* profile =
       Profile::FromBrowserContext(web_contents()->GetBrowserContext());
   fetcher_.reset(new chrome::BitmapFetcher(GURL(image_url), this));
-  fetcher_.get()->Start(profile->GetRequestContext());
+  fetcher_.get()->Start(
+      profile->GetRequestContext(),
+      std::string(),
+      net::URLRequest::CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE,
+      net::LOAD_NORMAL);
   return true;
 }
 
@@ -150,7 +157,8 @@ jlong Init(JNIEnv* env, jobject obj) {
 }
 
 jboolean IsEnabled(JNIEnv* env, jclass clazz) {
-  return false;
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableAppInstallAlerts);
 }
 
 // Register native methods

@@ -62,6 +62,10 @@ class BluetoothDeviceMac : public BluetoothDevice {
       BluetoothProfile* profile,
       const base::Closure& callback,
       const ConnectToProfileErrorCallback& error_callback) OVERRIDE;
+  virtual void ConnectToService(
+      const BluetoothUUID& uuid,
+      const ConnectToServiceCallback& callback,
+      const ConnectToServiceErrorCallback& error_callback) OVERRIDE;
   virtual void SetOutOfBandPairingData(
       const BluetoothOutOfBandPairingData& data,
       const base::Closure& callback,
@@ -69,6 +73,16 @@ class BluetoothDeviceMac : public BluetoothDevice {
   virtual void ClearOutOfBandPairingData(
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
+
+  // Returns the Bluetooth address for the |device|. The returned address has a
+  // normalized format (see below).
+  static std::string GetDeviceAddress(IOBluetoothDevice* device);
+
+  // Returns the address formatted according to Chrome's expectations rather
+  // than per the system convention: octets are separated by colons rather than
+  // by dashes. That is, the returned format is XX:XX:XX:XX:XX:XX rather than
+  // xx-xx-xx-xx-xx-xx.
+  static std::string NormalizeAddress(const std::string& address);
 
  protected:
   // BluetoothDevice override

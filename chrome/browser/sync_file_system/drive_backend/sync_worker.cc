@@ -26,6 +26,8 @@
 #include "chrome/browser/sync_file_system/drive_backend/local_to_remote_syncer.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
 #include "chrome/browser/sync_file_system/drive_backend/register_app_task.h"
+#include "chrome/browser/sync_file_system/drive_backend/remote_change_processor_on_worker.h"
+#include "chrome/browser/sync_file_system/drive_backend/remote_change_processor_wrapper.h"
 #include "chrome/browser/sync_file_system/drive_backend/remote_to_local_syncer.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_initializer.h"
@@ -191,8 +193,8 @@ void SyncWorker::ProcessRemoteChange(
 }
 
 void SyncWorker::SetRemoteChangeProcessor(
-    RemoteChangeProcessor* processor) {
-  context_->SetRemoteChangeProcessor(processor);
+    RemoteChangeProcessorOnWorker* remote_change_processor_on_worker) {
+  context_->SetRemoteChangeProcessor(remote_change_processor_on_worker);
 }
 
 RemoteServiceState SyncWorker::GetCurrentState() const {
@@ -531,13 +533,16 @@ void SyncWorker::DidProcessRemoteChange(RemoteToLocalSyncer* syncer,
   }
 
   if (status == SYNC_STATUS_OK) {
-    FOR_EACH_OBSERVER(
-        Observer, observers_,
-        OnFileStatusChanged(
-            syncer->url(),
-            SYNC_FILE_STATUS_SYNCED,
-            syncer->sync_action(),
-            SYNC_DIRECTION_REMOTE_TO_LOCAL));
+    if (syncer->sync_action() != SYNC_ACTION_NONE &&
+        syncer->url().is_valid()) {
+      FOR_EACH_OBSERVER(
+          Observer, observers_,
+          OnFileStatusChanged(
+              syncer->url(),
+              SYNC_FILE_STATUS_SYNCED,
+              syncer->sync_action(),
+              SYNC_DIRECTION_REMOTE_TO_LOCAL));
+    }
 
     if (syncer->sync_action() == SYNC_ACTION_DELETED &&
         syncer->url().is_valid() &&

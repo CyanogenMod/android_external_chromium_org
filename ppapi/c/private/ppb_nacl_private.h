@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From private/ppb_nacl_private.idl modified Fri Apr 25 15:10:15 2014. */
+/* From private/ppb_nacl_private.idl modified Tue May  6 21:29:20 2014. */
 
 #ifndef PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
 #define PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
@@ -15,8 +15,8 @@
 #include "ppapi/c/pp_stdint.h"
 #include "ppapi/c/pp_var.h"
 
-#define PP_MANIFESTSERVICE_INTERFACE_1_0 "PP_ManifestService;1.0"
-#define PP_MANIFESTSERVICE_INTERFACE PP_MANIFESTSERVICE_INTERFACE_1_0
+#define PPP_MANIFESTSERVICE_INTERFACE_1_0 "PPP_ManifestService;1.0"
+#define PPP_MANIFESTSERVICE_INTERFACE PPP_MANIFESTSERVICE_INTERFACE_1_0
 
 #define PPB_NACL_PRIVATE_INTERFACE_1_0 "PPB_NaCl_Private;1.0"
 #define PPB_NACL_PRIVATE_INTERFACE PPB_NACL_PRIVATE_INTERFACE_1_0
@@ -168,6 +168,17 @@ struct PP_PNaClOptions {
  */
 
 /**
+ * @addtogroup Typedefs
+ * @{
+ */
+/* Callback invoked upon completion of PPP_ManifestService::OpenResource(). */
+typedef void (*PP_OpenResourceCompletionCallback)(void* user_data,
+                                                  PP_FileHandle file_handle);
+/**
+ * @}
+ */
+
+/**
  * @addtogroup Interfaces
  * @{
  */
@@ -178,14 +189,21 @@ struct PP_PNaClOptions {
  * Once false is called, as the service has been destructed, all functions
  * should never be called afterwords.
  */
-struct PP_ManifestService_1_0 {
+struct PPP_ManifestService_1_0 {
   /* Called when ManifestService should be destructed. */
   PP_Bool (*Quit)(void* user_data);
   /* Called when PPAPI initialization in the NaCl plugin is finished. */
   PP_Bool (*StartupInitializationComplete)(void* user_data);
+  /* Called when irt_open_resource() is invoked in the NaCl plugin.
+   * Upon completion, callback will be invoked with given callback_user_data
+   * and the result file handle (or PP_kInvalidFileHandle on error). */
+  PP_Bool (*OpenResource)(void* user_data,
+                          const char* entry_key,
+                          PP_OpenResourceCompletionCallback callback,
+                          void* callback_user_data);
 };
 
-typedef struct PP_ManifestService_1_0 PP_ManifestService;
+typedef struct PPP_ManifestService_1_0 PPP_ManifestService;
 
 /* PPB_NaCl_Private */
 struct PPB_NaCl_Private_1_0 {
@@ -218,7 +236,7 @@ struct PPB_NaCl_Private_1_0 {
       PP_Bool enable_dyncode_syscalls,
       PP_Bool enable_exception_handling,
       PP_Bool enable_crash_throttling,
-      const struct PP_ManifestService_1_0* manifest_service_interface,
+      const struct PPP_ManifestService_1_0* manifest_service_interface,
       void* manifest_service_user_data,
       void* imc_handle,
       struct PP_Var* error_message,
@@ -372,6 +390,7 @@ struct PPB_NaCl_Private_1_0 {
   struct PP_Var (*GetManifestBaseURL)(PP_Instance instance);
   PP_Bool (*ResolvesRelativeToPluginBaseUrl)(PP_Instance instance,
                                              const char* url);
+  /* Returns the parsed contents of a data URL. */
   struct PP_Var (*ParseDataURL)(const char* data_url);
   /* Processes the NaCl manifest once it's been retrieved.
    * TODO(teravest): Move the rest of the supporting logic out of the trusted
@@ -382,6 +401,40 @@ struct PPB_NaCl_Private_1_0 {
   struct PP_Var (*GetManifestURLArgument)(PP_Instance instance);
   PP_Bool (*IsPNaCl)(PP_Instance instance);
   PP_Bool (*DevInterfacesEnabled)(PP_Instance instance);
+  /* Downloads the manifest into the buffer |data|, invoking
+   * |callback| when finished.
+   * TODO(teravest): Merge data URL parsing into this. */
+  void (*DownloadManifestToBuffer)(PP_Instance instance,
+                                   struct PP_Var* data,
+                                   struct PP_CompletionCallback callback);
+  int32_t (*CreatePnaclManifest)(PP_Instance instance);
+  int32_t (*CreateJsonManifest)(PP_Instance instance,
+                                const char* manifest_base_url,
+                                const char* sandbox_isa,
+                                const char* manifest_data);
+  void (*DestroyManifest)(PP_Instance instance, int32_t manifest_id);
+  PP_Bool (*GetManifestProgramURL)(PP_Instance instance,
+                                   int32_t manifest_id,
+                                   struct PP_Var* full_url,
+                                   struct PP_PNaClOptions* pnacl_options,
+                                   PP_Bool* uses_nonsfi_mode);
+  PP_Bool (*ManifestResolveKey)(PP_Instance instance,
+                                int32_t manifest_id,
+                                const char* key,
+                                struct PP_Var* full_url,
+                                struct PP_PNaClOptions* pnacl_options);
+  /* Returns the filenames for the llc and ld tools, parsing that information
+   * from the file given in |filename|.
+   */
+  PP_Bool (*GetPnaclResourceInfo)(PP_Instance instance,
+                                  const char* filename,
+                                  struct PP_Var* llc_tool_name,
+                                  struct PP_Var* ld_tool_name);
+  /* PP_Var string of attributes describing the CPU features supported
+   * by the current architecture. The string is a comma-delimited list
+   * of attributes supported by LLVM in its -mattr= option:
+   *   http://llvm.org/docs/CommandGuide/llc.html#cmdoption-mattr */
+  struct PP_Var (*GetCpuFeatureAttrs)(void);
 };
 
 typedef struct PPB_NaCl_Private_1_0 PPB_NaCl_Private;

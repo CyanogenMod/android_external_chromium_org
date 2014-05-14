@@ -32,7 +32,6 @@
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
 #include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/accelerator_utils.h"
-#include "chrome/browser/ui/bookmarks/bookmark_prompt_controller.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_command_controller.h"
@@ -72,7 +71,6 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
@@ -161,7 +159,7 @@ bool GetBookmarkOverrideCommand(
   return false;
 }
 
-void BookmarkCurrentPageInternal(Browser* browser, bool from_star) {
+void BookmarkCurrentPageInternal(Browser* browser) {
   content::RecordAction(UserMetricsAction("Star"));
 
   BookmarkModel* model =
@@ -181,8 +179,6 @@ void BookmarkCurrentPageInternal(Browser* browser, bool from_star) {
     FaviconTabHelper::FromWebContents(web_contents)->SaveFavicon();
   }
   bookmark_utils::AddIfNotBookmarked(model, url, title);
-  if (from_star && !was_bookmarked)
-    BookmarkPromptController::AddedBookmark(browser, url);
   // Make sure the model actually added a bookmark before showing the star. A
   // bookmark isn't created if the url is invalid.
   if (browser->window()->IsActive() && model->IsBookmarked(url)) {
@@ -235,7 +231,7 @@ void ReloadInternal(Browser* browser,
   WebContents* new_tab = GetTabAndRevertIfNecessary(browser, disposition);
   new_tab->UserGestureDone();
   if (!new_tab->FocusLocationBarByDefault())
-    new_tab->GetView()->Focus();
+    new_tab->Focus();
   if (ignore_cache)
     new_tab->GetController().ReloadIgnoringCache(true);
   else
@@ -558,8 +554,7 @@ void NewTab(Browser* browser) {
 
   if (browser->is_type_tabbed()) {
     AddTabAt(browser, GURL(), -1, true);
-    browser->tab_strip_model()->GetActiveWebContents()->GetView()->
-        RestoreFocus();
+    browser->tab_strip_model()->GetActiveWebContents()->RestoreFocus();
   } else {
     ScopedTabbedBrowserDisplayer displayer(browser->profile(),
                                            browser->host_desktop_type());
@@ -569,7 +564,7 @@ void NewTab(Browser* browser) {
     // The call to AddBlankTabAt above did not set the focus to the tab as its
     // window was not active, so we have to do it explicitly.
     // See http://crbug.com/6380.
-    b->tab_strip_model()->GetActiveWebContents()->GetView()->RestoreFocus();
+    b->tab_strip_model()->GetActiveWebContents()->RestoreFocus();
   }
 }
 
@@ -743,11 +738,7 @@ void BookmarkCurrentPage(Browser* browser) {
     };
   }
 
-  BookmarkCurrentPageInternal(browser, false);
-}
-
-void BookmarkCurrentPageFromStar(Browser* browser) {
-  BookmarkCurrentPageInternal(browser, true);
+  BookmarkCurrentPageInternal(browser);
 }
 
 bool CanBookmarkCurrentPage(const Browser* browser) {
@@ -782,6 +773,18 @@ void Translate(Browser* browser) {
   }
   browser->window()->ShowTranslateBubble(
       web_contents, step, TranslateErrors::NONE);
+}
+
+void ManagePasswordsForPage(Browser* browser) {
+// TODO(mkwst): Implement this feature on Mac: http://crbug.com/261628
+#if !defined(OS_MACOSX)
+  if (!browser->window()->IsActive())
+    return;
+
+  WebContents* web_contents =
+      browser->tab_strip_model()->GetActiveWebContents();
+  chrome::ShowManagePasswordsBubble(web_contents);
+#endif
 }
 
 void TogglePagePinnedToStartScreen(Browser* browser) {
@@ -1059,12 +1062,9 @@ void OpenUpdateChromeDialog(Browser* browser) {
 }
 
 void ToggleSpeechInput(Browser* browser) {
-  WebContents* web_contents =
-      browser->tab_strip_model()->GetActiveWebContents();
-  web_contents->GetRenderViewHost()->ToggleSpeechInput();
-
   SearchTabHelper* search_tab_helper =
-      SearchTabHelper::FromWebContents(web_contents);
+      SearchTabHelper::FromWebContents(
+          browser->tab_strip_model()->GetActiveWebContents());
   // |search_tab_helper| can be null in unit tests.
   if (search_tab_helper)
     search_tab_helper->ToggleVoiceSearch();

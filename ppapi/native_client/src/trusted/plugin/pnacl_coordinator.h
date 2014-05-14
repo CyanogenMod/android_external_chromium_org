@@ -27,7 +27,6 @@ struct PP_PNaClOptions;
 
 namespace plugin {
 
-class Manifest;
 class Plugin;
 class PnaclCoordinator;
 class PnaclTranslateThread;
@@ -204,7 +203,7 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
 
   // The manifest used by resource loading and ld + llc's reverse service
   // to look up objects and libraries.
-  nacl::scoped_ptr<const Manifest> manifest_;
+  int32_t manifest_id_;
   // An auxiliary class that manages downloaded resources (llc and ld nexes).
   nacl::scoped_ptr<PnaclResources> resources_;
 
@@ -212,6 +211,10 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
   nacl::string pexe_url_;
   // Options for translation.
   PP_PNaClOptions pnacl_options_;
+  // Architecture-specific attributes used for translation. These are
+  // supplied by Chrome, not the developer, and are therefore different
+  // from PNaCl options.
+  nacl::string architecture_attributes_;
 
   // Object file, produced by the translator and consumed by the linker.
   std::vector<TempFile*> obj_files_;

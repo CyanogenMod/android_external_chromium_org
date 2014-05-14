@@ -36,17 +36,16 @@ class CHROMEOS_EXPORT NetworkState : public ManagedState {
                                const base::Value& value) OVERRIDE;
   virtual bool InitialPropertiesReceived(
       const base::DictionaryValue& properties) OVERRIDE;
+  virtual void GetStateProperties(
+      base::DictionaryValue* dictionary) const OVERRIDE;
 
-  // Fills |dictionary| with the state properties. All properties that are
-  // parsed by PropertyChanged are stored in |dictionary|, except |ui_data_|.
-  void GetProperties(base::DictionaryValue* dictionary) const;
+  void IPConfigPropertiesChanged(const base::DictionaryValue& properties);
 
   // Returns true, if the network requires a service activation.
   bool RequiresActivation() const;
 
   // Accessors
   const std::string& security() const { return security_; }
-  const std::string& eap_method() const { return eap_method_; }
   const std::string& device_path() const { return device_path_; }
   const std::string& guid() const { return guid_; }
   const std::string& connection_state() const { return connection_state_; }
@@ -54,7 +53,6 @@ class CHROMEOS_EXPORT NetworkState : public ManagedState {
   const std::string& error() const { return error_; }
   const std::string& last_error() const { return last_error_; }
   void clear_last_error() { last_error_.clear(); }
-  bool connectable() const { return connectable_; }
 
   const NetworkUIData& ui_data() const { return ui_data_; }
 
@@ -68,7 +66,11 @@ class CHROMEOS_EXPORT NetworkState : public ManagedState {
   }
 
   // Wireless property accessors
+  bool connectable() const { return connectable_; }
   int signal_strength() const { return signal_strength_; }
+
+  // Wifi property accessors
+  const std::string& eap_method() const { return eap_method_; }
 
   // Cellular property accessors
   const std::string& network_technology() const {
@@ -101,10 +103,6 @@ class CHROMEOS_EXPORT NetworkState : public ManagedState {
   static bool StateIsConnected(const std::string& connection_state);
   static bool StateIsConnecting(const std::string& connection_state);
   static bool ErrorIsValid(const std::string& error);
-
-  // Helper to return a full prefixed version of an IPConfig property key.
-  static std::string IPConfigProperty(const char* key);
-
 
  private:
   friend class MobileActivatorTest;

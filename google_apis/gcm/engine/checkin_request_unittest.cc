@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "google_apis/gcm/engine/checkin_request.h"
+#include "google_apis/gcm/monitoring/gcm_stats_recorder.h"
 #include "google_apis/gcm/protocol/checkin.pb.h"
 #include "net/base/backoff_entry.h"
 #include "net/url_request/test_url_fetcher_factory.h"
@@ -49,6 +50,7 @@ const net::BackoffEntry::Policy kDefaultBackoffPolicy = {
 const uint64 kAndroidId = 42UL;
 const uint64 kBlankAndroidId = 999999UL;
 const uint64 kBlankSecurityToken = 999999UL;
+const char kCheckinURL[] = "http://foo.bar/checkin";
 const char kChromeVersion[] = "Version String";
 const uint64 kSecurityToken = 77;
 const char kSettingsDigest[] = "settings_digest";
@@ -90,6 +92,7 @@ class CheckinRequestTest : public testing::Test {
   checkin_proto::ChromeBuildProto chrome_build_proto_;
   std::vector<std::string> account_ids_;
   scoped_ptr<CheckinRequest> request_;
+  GCMStatsRecorder recorder_;
 };
 
 CheckinRequestTest::CheckinRequestTest()
@@ -131,10 +134,12 @@ void CheckinRequestTest::CreateRequest(uint64 android_id,
   // Then create a request with that protobuf and specified android_id,
   // security_token.
   request_.reset(new CheckinRequest(
+      GURL(kCheckinURL),
       request_info,
       kDefaultBackoffPolicy,
       base::Bind(&CheckinRequestTest::FetcherCallback, base::Unretained(this)),
-      url_request_context_getter_.get()));
+      url_request_context_getter_.get(),
+      &recorder_));
 
   // Setting android_id_ and security_token_ to blank value, not used elsewhere
   // in the tests.
@@ -179,17 +184,17 @@ void CheckinRequestTest::SetResponse(ResponseScenario response_scenario) {
   SetResponseStatusAndString(net::HTTP_OK, response_string);
 }
 
-TEST_F(CheckinRequestTest, FetcherData) {
+TEST_F(CheckinRequestTest, FetcherDataAndURL) {
   CreateRequest(kAndroidId, kSecurityToken);
   request_->Start();
 
   // Get data sent by request.
   net::TestURLFetcher* fetcher = url_fetcher_factory_.GetFetcherByID(0);
   ASSERT_TRUE(fetcher);
-  fetcher->set_response_code(net::HTTP_OK);
+  EXPECT_EQ(GURL(kCheckinURL), fetcher->GetOriginalURL());
+
   checkin_proto::AndroidCheckinRequest request_proto;
   request_proto.ParseFromString(fetcher->upload_data());
-
   EXPECT_EQ(kAndroidId, static_cast<uint64>(request_proto.id()));
   EXPECT_EQ(kSecurityToken, request_proto.security_token());
   EXPECT_EQ(chrome_build_proto_.platform(),

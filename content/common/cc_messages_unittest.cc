@@ -200,6 +200,7 @@ class CCMessagesTest : public testing::Test {
     EXPECT_EQ(a->u_plane_resource_id, b->u_plane_resource_id);
     EXPECT_EQ(a->v_plane_resource_id, b->v_plane_resource_id);
     EXPECT_EQ(a->a_plane_resource_id, b->a_plane_resource_id);
+    EXPECT_EQ(a->color_space, b->color_space);
   }
 
   void Compare(const TransferableResource& a, const TransferableResource& b) {
@@ -259,6 +260,8 @@ TEST_F(CCMessagesTest, AllQuads) {
   ResourceProvider::ResourceId arbitrary_resourceid3 = 23;
   ResourceProvider::ResourceId arbitrary_resourceid4 = 16;
   SkScalar arbitrary_sigma = SkFloatToScalar(2.0f);
+  YUVVideoDrawQuad::ColorSpace arbitrary_color_space =
+      YUVVideoDrawQuad::REC_601;
 
   FilterOperations arbitrary_filters1;
   arbitrary_filters1.Append(FilterOperation::CreateGrayscaleFilter(
@@ -272,7 +275,14 @@ TEST_F(CCMessagesTest, AllQuads) {
   arbitrary_filters2.Append(FilterOperation::CreateBrightnessFilter(
       arbitrary_float2));
 
-  scoped_ptr<SharedQuadState> shared_state1_in = SharedQuadState::Create();
+  scoped_ptr<RenderPass> pass_in = RenderPass::Create();
+  pass_in->SetAll(arbitrary_id,
+                  arbitrary_rect1,
+                  arbitrary_rect2,
+                  arbitrary_matrix,
+                  arbitrary_bool1);
+
+  SharedQuadState* shared_state1_in = pass_in->CreateAndAppendSharedQuadState();
   shared_state1_in->SetAll(arbitrary_matrix,
                            arbitrary_size1,
                            arbitrary_rect1,
@@ -280,11 +290,21 @@ TEST_F(CCMessagesTest, AllQuads) {
                            arbitrary_bool1,
                            arbitrary_float1,
                            arbitrary_blend_mode1);
-  scoped_ptr<SharedQuadState> shared_state1_cmp = shared_state1_in->Copy();
+
+  scoped_ptr<RenderPass> pass_cmp = RenderPass::Create();
+  pass_cmp->SetAll(arbitrary_id,
+                   arbitrary_rect1,
+                   arbitrary_rect2,
+                   arbitrary_matrix,
+                   arbitrary_bool1);
+
+  SharedQuadState* shared_state1_cmp =
+      pass_cmp->CreateAndAppendSharedQuadState();
+  shared_state1_cmp->CopyFrom(shared_state1_in);
 
   scoped_ptr<CheckerboardDrawQuad> checkerboard_in =
       CheckerboardDrawQuad::Create();
-  checkerboard_in->SetAll(shared_state1_in.get(),
+  checkerboard_in->SetAll(shared_state1_in,
                           arbitrary_rect1,
                           arbitrary_rect2_inside_rect1,
                           arbitrary_rect1_inside_rect1,
@@ -295,7 +315,7 @@ TEST_F(CCMessagesTest, AllQuads) {
 
   scoped_ptr<DebugBorderDrawQuad> debugborder_in =
       DebugBorderDrawQuad::Create();
-  debugborder_in->SetAll(shared_state1_in.get(),
+  debugborder_in->SetAll(shared_state1_in,
                          arbitrary_rect3,
                          arbitrary_rect1_inside_rect3,
                          arbitrary_rect2_inside_rect3,
@@ -307,7 +327,7 @@ TEST_F(CCMessagesTest, AllQuads) {
 
   scoped_ptr<IOSurfaceDrawQuad> iosurface_in =
       IOSurfaceDrawQuad::Create();
-  iosurface_in->SetAll(shared_state1_in.get(),
+  iosurface_in->SetAll(shared_state1_in,
                        arbitrary_rect2,
                        arbitrary_rect2_inside_rect2,
                        arbitrary_rect1_inside_rect2,
@@ -318,7 +338,7 @@ TEST_F(CCMessagesTest, AllQuads) {
   scoped_ptr<DrawQuad> iosurface_cmp = iosurface_in->Copy(
       iosurface_in->shared_quad_state);
 
-  scoped_ptr<SharedQuadState> shared_state2_in = SharedQuadState::Create();
+  SharedQuadState* shared_state2_in = pass_in->CreateAndAppendSharedQuadState();
   shared_state2_in->SetAll(arbitrary_matrix,
                            arbitrary_size2,
                            arbitrary_rect2,
@@ -326,11 +346,13 @@ TEST_F(CCMessagesTest, AllQuads) {
                            arbitrary_bool1,
                            arbitrary_float2,
                            arbitrary_blend_mode2);
-  scoped_ptr<SharedQuadState> shared_state2_cmp = shared_state2_in->Copy();
+  SharedQuadState* shared_state2_cmp =
+      pass_cmp->CreateAndAppendSharedQuadState();
+  shared_state2_cmp->CopyFrom(shared_state2_in);
 
   scoped_ptr<RenderPassDrawQuad> renderpass_in =
       RenderPassDrawQuad::Create();
-  renderpass_in->SetAll(shared_state2_in.get(),
+  renderpass_in->SetAll(shared_state2_in,
                         arbitrary_rect1,
                         arbitrary_rect2_inside_rect1,
                         arbitrary_rect1_inside_rect1,
@@ -345,7 +367,7 @@ TEST_F(CCMessagesTest, AllQuads) {
   scoped_ptr<RenderPassDrawQuad> renderpass_cmp = renderpass_in->Copy(
       renderpass_in->shared_quad_state, renderpass_in->render_pass_id);
 
-  scoped_ptr<SharedQuadState> shared_state3_in = SharedQuadState::Create();
+  SharedQuadState* shared_state3_in = pass_in->CreateAndAppendSharedQuadState();
   shared_state3_in->SetAll(arbitrary_matrix,
                            arbitrary_size3,
                            arbitrary_rect3,
@@ -353,11 +375,13 @@ TEST_F(CCMessagesTest, AllQuads) {
                            arbitrary_bool1,
                            arbitrary_float3,
                            arbitrary_blend_mode3);
-  scoped_ptr<SharedQuadState> shared_state3_cmp = shared_state3_in->Copy();
+  SharedQuadState* shared_state3_cmp =
+      pass_cmp->CreateAndAppendSharedQuadState();
+  shared_state3_cmp->CopyFrom(shared_state3_in);
 
   scoped_ptr<SolidColorDrawQuad> solidcolor_in =
       SolidColorDrawQuad::Create();
-  solidcolor_in->SetAll(shared_state3_in.get(),
+  solidcolor_in->SetAll(shared_state3_in,
                         arbitrary_rect3,
                         arbitrary_rect1_inside_rect3,
                         arbitrary_rect2_inside_rect3,
@@ -369,7 +393,7 @@ TEST_F(CCMessagesTest, AllQuads) {
 
   scoped_ptr<StreamVideoDrawQuad> streamvideo_in =
       StreamVideoDrawQuad::Create();
-  streamvideo_in->SetAll(shared_state3_in.get(),
+  streamvideo_in->SetAll(shared_state3_in,
                          arbitrary_rect2,
                          arbitrary_rect2_inside_rect2,
                          arbitrary_rect1_inside_rect2,
@@ -381,17 +405,17 @@ TEST_F(CCMessagesTest, AllQuads) {
 
   int arbitrary_surface_id = 3;
   scoped_ptr<SurfaceDrawQuad> surface_in = SurfaceDrawQuad::Create();
-  surface_in->SetAll(shared_state3_in.get(),
-                         arbitrary_rect2,
-                         arbitrary_rect2_inside_rect2,
-                         arbitrary_rect1_inside_rect2,
-                         arbitrary_bool1,
-                         arbitrary_surface_id);
+  surface_in->SetAll(shared_state3_in,
+                     arbitrary_rect2,
+                     arbitrary_rect2_inside_rect2,
+                     arbitrary_rect1_inside_rect2,
+                     arbitrary_bool1,
+                     arbitrary_surface_id);
   scoped_ptr<DrawQuad> surface_cmp = surface_in->Copy(
       surface_in->shared_quad_state);
 
   scoped_ptr<TextureDrawQuad> texture_in = TextureDrawQuad::Create();
-  texture_in->SetAll(shared_state3_in.get(),
+  texture_in->SetAll(shared_state3_in,
                      arbitrary_rect2,
                      arbitrary_rect2_inside_rect2,
                      arbitrary_rect1_inside_rect2,
@@ -407,7 +431,7 @@ TEST_F(CCMessagesTest, AllQuads) {
       texture_in->shared_quad_state);
 
   scoped_ptr<TileDrawQuad> tile_in = TileDrawQuad::Create();
-  tile_in->SetAll(shared_state3_in.get(),
+  tile_in->SetAll(shared_state3_in,
                   arbitrary_rect2,
                   arbitrary_rect2_inside_rect2,
                   arbitrary_rect1_inside_rect2,
@@ -421,7 +445,7 @@ TEST_F(CCMessagesTest, AllQuads) {
 
   scoped_ptr<YUVVideoDrawQuad> yuvvideo_in =
       YUVVideoDrawQuad::Create();
-  yuvvideo_in->SetAll(shared_state3_in.get(),
+  yuvvideo_in->SetAll(shared_state3_in,
                       arbitrary_rect1,
                       arbitrary_rect2_inside_rect1,
                       arbitrary_rect1_inside_rect1,
@@ -430,24 +454,15 @@ TEST_F(CCMessagesTest, AllQuads) {
                       arbitrary_resourceid1,
                       arbitrary_resourceid2,
                       arbitrary_resourceid3,
-                      arbitrary_resourceid4);
+                      arbitrary_resourceid4,
+                      arbitrary_color_space);
   scoped_ptr<DrawQuad> yuvvideo_cmp = yuvvideo_in->Copy(
       yuvvideo_in->shared_quad_state);
 
-  scoped_ptr<RenderPass> pass_in = RenderPass::Create();
-  pass_in->SetAll(arbitrary_id,
-                  arbitrary_rect1,
-                  arbitrary_rect2,
-                  arbitrary_matrix,
-                  arbitrary_bool1);
-
-  pass_in->shared_quad_state_list.push_back(shared_state1_in.Pass());
   pass_in->quad_list.push_back(checkerboard_in.PassAs<DrawQuad>());
   pass_in->quad_list.push_back(debugborder_in.PassAs<DrawQuad>());
   pass_in->quad_list.push_back(iosurface_in.PassAs<DrawQuad>());
   pass_in->quad_list.push_back(renderpass_in.PassAs<DrawQuad>());
-  pass_in->shared_quad_state_list.push_back(shared_state2_in.Pass());
-  pass_in->shared_quad_state_list.push_back(shared_state3_in.Pass());
   pass_in->quad_list.push_back(solidcolor_in.PassAs<DrawQuad>());
   pass_in->quad_list.push_back(streamvideo_in.PassAs<DrawQuad>());
   pass_in->quad_list.push_back(surface_in.PassAs<DrawQuad>());
@@ -455,20 +470,11 @@ TEST_F(CCMessagesTest, AllQuads) {
   pass_in->quad_list.push_back(tile_in.PassAs<DrawQuad>());
   pass_in->quad_list.push_back(yuvvideo_in.PassAs<DrawQuad>());
 
-  scoped_ptr<RenderPass> pass_cmp = RenderPass::Create();
-  pass_cmp->SetAll(arbitrary_id,
-                   arbitrary_rect1,
-                   arbitrary_rect2,
-                   arbitrary_matrix,
-                   arbitrary_bool1);
 
-  pass_cmp->shared_quad_state_list.push_back(shared_state1_cmp.Pass());
   pass_cmp->quad_list.push_back(checkerboard_cmp.PassAs<DrawQuad>());
   pass_cmp->quad_list.push_back(debugborder_cmp.PassAs<DrawQuad>());
   pass_cmp->quad_list.push_back(iosurface_cmp.PassAs<DrawQuad>());
   pass_cmp->quad_list.push_back(renderpass_cmp.PassAs<DrawQuad>());
-  pass_cmp->shared_quad_state_list.push_back(shared_state2_cmp.Pass());
-  pass_cmp->shared_quad_state_list.push_back(shared_state3_cmp.Pass());
   pass_cmp->quad_list.push_back(solidcolor_cmp.PassAs<DrawQuad>());
   pass_cmp->quad_list.push_back(streamvideo_cmp.PassAs<DrawQuad>());
   pass_cmp->quad_list.push_back(surface_cmp.PassAs<DrawQuad>());
@@ -540,7 +546,7 @@ TEST_F(CCMessagesTest, UnusedSharedQuadStates) {
                   false);
 
   // The first SharedQuadState is used.
-  scoped_ptr<SharedQuadState> shared_state1_in = SharedQuadState::Create();
+  SharedQuadState* shared_state1_in = pass_in->CreateAndAppendSharedQuadState();
   shared_state1_in->SetAll(gfx::Transform(),
                            gfx::Size(1, 1),
                            gfx::Rect(),
@@ -550,7 +556,7 @@ TEST_F(CCMessagesTest, UnusedSharedQuadStates) {
                            SkXfermode::kSrcOver_Mode);
 
   quad = CheckerboardDrawQuad::Create();
-  quad->SetAll(shared_state1_in.get(),
+  quad->SetAll(shared_state1_in,
                gfx::Rect(10, 10),
                gfx::Rect(10, 10),
                gfx::Rect(10, 10),
@@ -559,7 +565,7 @@ TEST_F(CCMessagesTest, UnusedSharedQuadStates) {
   pass_in->quad_list.push_back(quad.PassAs<DrawQuad>());
 
   // The second and third SharedQuadStates are not used.
-  scoped_ptr<SharedQuadState> shared_state2_in = SharedQuadState::Create();
+  SharedQuadState* shared_state2_in = pass_in->CreateAndAppendSharedQuadState();
   shared_state2_in->SetAll(gfx::Transform(),
                            gfx::Size(2, 2),
                            gfx::Rect(),
@@ -568,7 +574,7 @@ TEST_F(CCMessagesTest, UnusedSharedQuadStates) {
                            1.f,
                            SkXfermode::kSrcOver_Mode);
 
-  scoped_ptr<SharedQuadState> shared_state3_in = SharedQuadState::Create();
+  SharedQuadState* shared_state3_in = pass_in->CreateAndAppendSharedQuadState();
   shared_state3_in->SetAll(gfx::Transform(),
                            gfx::Size(3, 3),
                            gfx::Rect(),
@@ -578,7 +584,7 @@ TEST_F(CCMessagesTest, UnusedSharedQuadStates) {
                            SkXfermode::kSrcOver_Mode);
 
   // The fourth SharedQuadState is used.
-  scoped_ptr<SharedQuadState> shared_state4_in = SharedQuadState::Create();
+  SharedQuadState* shared_state4_in = pass_in->CreateAndAppendSharedQuadState();
   shared_state4_in->SetAll(gfx::Transform(),
                            gfx::Size(4, 4),
                            gfx::Rect(),
@@ -588,7 +594,7 @@ TEST_F(CCMessagesTest, UnusedSharedQuadStates) {
                            SkXfermode::kSrcOver_Mode);
 
   quad = CheckerboardDrawQuad::Create();
-  quad->SetAll(shared_state4_in.get(),
+  quad->SetAll(shared_state4_in,
                gfx::Rect(10, 10),
                gfx::Rect(10, 10),
                gfx::Rect(10, 10),
@@ -597,7 +603,7 @@ TEST_F(CCMessagesTest, UnusedSharedQuadStates) {
   pass_in->quad_list.push_back(quad.PassAs<DrawQuad>());
 
   // The fifth is not used again.
-  scoped_ptr<SharedQuadState> shared_state5_in = SharedQuadState::Create();
+  SharedQuadState* shared_state5_in = pass_in->CreateAndAppendSharedQuadState();
   shared_state5_in->SetAll(gfx::Transform(),
                            gfx::Size(5, 5),
                            gfx::Rect(),
@@ -605,12 +611,6 @@ TEST_F(CCMessagesTest, UnusedSharedQuadStates) {
                            false,
                            1.f,
                            SkXfermode::kSrcOver_Mode);
-
-  pass_in->shared_quad_state_list.push_back(shared_state1_in.Pass());
-  pass_in->shared_quad_state_list.push_back(shared_state2_in.Pass());
-  pass_in->shared_quad_state_list.push_back(shared_state3_in.Pass());
-  pass_in->shared_quad_state_list.push_back(shared_state4_in.Pass());
-  pass_in->shared_quad_state_list.push_back(shared_state5_in.Pass());
 
   // 5 SharedQuadStates go in.
   ASSERT_EQ(5u, pass_in->shared_quad_state_list.size());

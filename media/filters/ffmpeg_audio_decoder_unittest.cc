@@ -26,7 +26,8 @@ namespace media {
 class FFmpegAudioDecoderTest : public testing::Test {
  public:
   FFmpegAudioDecoderTest()
-      : decoder_(new FFmpegAudioDecoder(message_loop_.message_loop_proxy())),
+      : decoder_(new FFmpegAudioDecoder(message_loop_.message_loop_proxy(),
+                                        LogCB())),
         pending_decode_(false),
         pending_reset_(false) {
     FFmpegGlue::InitializeFFmpeg();
@@ -175,7 +176,7 @@ TEST_F(FFmpegAudioDecoderTest, ProduceAudioSamples) {
   ASSERT_EQ(3u, decoded_audio_.size());
   ExpectDecodedAudio(0, 0, 2902);
   ExpectDecodedAudio(1, 2902, 13061);
-  ExpectDecodedAudio(2, 15963, 23220);
+  ExpectDecodedAudio(2, 15963, 23219);
 
   // Call one more time to trigger EOS.
   Decode();

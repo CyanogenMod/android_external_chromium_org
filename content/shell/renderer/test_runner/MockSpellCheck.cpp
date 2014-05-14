@@ -11,7 +11,7 @@
 using namespace blink;
 using namespace std;
 
-namespace WebTestRunner {
+namespace content {
 
 namespace {
 
@@ -182,4 +182,4 @@ bool MockSpellCheck::initializeIfNeeded()
     return false;
 }
 
-}
+}  // namespace content

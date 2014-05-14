@@ -7,19 +7,19 @@ from telemetry.page import page as page_module
 from telemetry.page import page_set as page_set_module
 
 
-class PlusAltPostsPhotosPage(page_module.PageWithDefaultRunNavigate):
+class PlusAltPostsPhotosPage(page_module.Page):
 
   """ Why: Alternate between clicking posts and albums """
 
   def __init__(self, page_set):
     super(PlusAltPostsPhotosPage, self).__init__(
       url='https://plus.google.com/+BarackObama/posts',
-      page_set=page_set)
+      page_set=page_set,
+      name='plus_alt_posts_photos')
     self.credentials_path = 'data/credentials.json'
     self.credentials = 'google'
     self.user_agent_type = 'desktop'
     self.archive_data_file = 'data/plus_alt_posts_photos.json'
-    self.name = 'plus_alt_posts_photos'
 
   def RunNavigateSteps(self, action_runner):
     action_runner.RunAction(NavigateAction())

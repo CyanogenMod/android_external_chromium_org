@@ -16,6 +16,7 @@ GYP_TARGET_DEPENDENCIES :=
 
 ### Rules for action "webkit_strings":
 $(gyp_shared_intermediate_dir)/webkit/grit/webkit_strings.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/webkit/grit/webkit_strings.h: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/webkit/grit/webkit_strings.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/webkit/grit/webkit_strings.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/webkit/grit/webkit_strings.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))

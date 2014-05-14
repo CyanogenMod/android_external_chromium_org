@@ -41,8 +41,6 @@ class WIFI_EXPORT WiFiService {
 
   // Create instance of |WiFiService| for normal use.
   static WiFiService* Create();
-  // Create instance of |WiFiService| for unit test use.
-  static WiFiService* CreateForTest();
 
   // Get Properties of network identified by |network_guid|. Populates
   // |properties| on success, |error| on failure.
@@ -165,6 +163,16 @@ class WIFI_EXPORT WiFiService {
   };
 
   typedef std::list<NetworkProperties> NetworkList;
+
+  // Error constants.
+  static const char kErrorAssociateToNetwork[];
+  static const char kErrorInvalidData[];
+  static const char kErrorNotConfigured[];
+  static const char kErrorNotConnected[];
+  static const char kErrorNotFound[];
+  static const char kErrorNotImplemented[];
+  static const char kErrorScanForNetworksWithName[];
+  static const char kErrorWiFiService[];
 
  private:
   DISALLOW_COPY_AND_ASSIGN(WiFiService);

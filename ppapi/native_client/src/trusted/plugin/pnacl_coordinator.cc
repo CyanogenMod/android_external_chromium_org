@@ -16,7 +16,6 @@
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/private/ppb_uma_private.h"
 
-#include "ppapi/native_client/src/trusted/plugin/manifest.h"
 #include "ppapi/native_client/src/trusted/plugin/plugin.h"
 #include "ppapi/native_client/src/trusted/plugin/plugin_error.h"
 #include "ppapi/native_client/src/trusted/plugin/pnacl_translate_thread.h"
@@ -24,64 +23,6 @@
 #include "ppapi/native_client/src/trusted/plugin/temporary_file.h"
 
 namespace plugin {
-
-//////////////////////////////////////////////////////////////////////
-//  Pnacl-specific manifest support.
-//////////////////////////////////////////////////////////////////////
-
-// The PNaCl linker gets file descriptors via the service runtime's
-// reverse service lookup.  The reverse service lookup requires a manifest.
-// Normally, that manifest is an NMF containing mappings for shared libraries.
-// Here, we provide a manifest that redirects to PNaCl component files
-// that are part of Chrome.
-class PnaclManifest : public Manifest {
- public:
-  PnaclManifest(const nacl::string& sandbox_arch)
-      : sandbox_arch_(sandbox_arch) { }
-
-  virtual ~PnaclManifest() { }
-
-  virtual bool GetProgramURL(nacl::string* full_url,
-                             PP_PNaClOptions* pnacl_options,
-                             bool* uses_nonsfi_mode,
-                             ErrorInfo* error_info) const {
-    // Does not contain program urls.
-    UNREFERENCED_PARAMETER(full_url);
-    UNREFERENCED_PARAMETER(pnacl_options);
-    UNREFERENCED_PARAMETER(uses_nonsfi_mode);
-    UNREFERENCED_PARAMETER(error_info);
-    PLUGIN_PRINTF(("PnaclManifest does not contain a program\n"));
-    error_info->SetReport(PP_NACL_ERROR_MANIFEST_GET_NEXE_URL,
-                          "pnacl manifest does not contain a program.");
-    return false;
-  }
-
-  virtual bool ResolveKey(const nacl::string& key,
-                          nacl::string* full_url,
-                          PP_PNaClOptions* pnacl_options,
-                          ErrorInfo* error_info) const {
-    // All of the component files are native (do not require pnacl translate).
-    pnacl_options->translate = PP_FALSE;
-    // We can only resolve keys in the files/ namespace.
-    const nacl::string kFilesPrefix = "files/";
-    size_t files_prefix_pos = key.find(kFilesPrefix);
-    if (files_prefix_pos == nacl::string::npos) {
-      error_info->SetReport(PP_NACL_ERROR_MANIFEST_RESOLVE_URL,
-                            "key did not start with files/");
-      return false;
-    }
-    // Resolve the full URL to the file. Provide it with a platform-specific
-    // prefix.
-    nacl::string key_basename = key.substr(kFilesPrefix.length());
-    *full_url = PnaclUrls::GetBaseUrl() + sandbox_arch_ + "/" + key_basename;
-    return true;
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(PnaclManifest);
-
-  nacl::string sandbox_arch_;
-};
 
 //////////////////////////////////////////////////////////////////////
 //  UMA stat helpers.
@@ -159,6 +100,12 @@ void HistogramOptLevel(pp::UMAPrivate& uma, int8_t opt_level) {
                            opt_level, kOptUnknown+1);
 }
 
+nacl::string GetArchitectureAttributes(Plugin* plugin) {
+  pp::Var attrs_var(pp::PASS_REF,
+                    plugin->nacl_interface()->GetCpuFeatureAttrs());
+  return attrs_var.AsString();
+}
+
 }  // namespace
 
 
@@ -182,10 +129,10 @@ PnaclCoordinator* PnaclCoordinator::BitcodeToNative(
       new PnaclCoordinator(plugin, pexe_url,
                            pnacl_options,
                            translate_notify_callback);
-  coordinator->pnacl_init_time_ = NaClGetTimeOfDayMicroseconds();
-  PLUGIN_PRINTF(("PnaclCoordinator::BitcodeToNative (manifest=%p, ",
-                 reinterpret_cast<const void*>(coordinator->manifest_.get())));
+  PLUGIN_PRINTF(("PnaclCoordinator::BitcodeToNative (manifest_id=%d)\n",
+                 coordinator->manifest_id_));
 
+  coordinator->pnacl_init_time_ = NaClGetTimeOfDayMicroseconds();
   int cpus = plugin->nacl_interface()->GetNumberOfProcessors();
   coordinator->split_module_count_ = std::min(4, std::max(1, cpus));
 
@@ -206,9 +153,11 @@ PnaclCoordinator::PnaclCoordinator(
     plugin_(plugin),
     translate_notify_callback_(translate_notify_callback),
     translation_finished_reported_(false),
-    manifest_(new PnaclManifest(plugin->nacl_interface()->GetSandboxArch())),
+    manifest_id_(
+        GetNaClInterface()->CreatePnaclManifest(plugin->pp_instance())),
     pexe_url_(pexe_url),
     pnacl_options_(pnacl_options),
+    architecture_attributes_(GetArchitectureAttributes(plugin)),
     split_module_count_(1),
     num_object_files_opened_(0),
     is_cache_hit_(PP_FALSE),
@@ -479,7 +428,7 @@ void PnaclCoordinator::ResourcesDidLoad(int32_t pp_error) {
           1,
           pnacl_options_.opt_level,
           headers.c_str(),
-          "", // No extra compile flags yet.
+          architecture_attributes_.c_str(), // Extra compile flags.
           &is_cache_hit_,
           temp_nexe_file_->existing_handle(),
           cb.pp_completion_callback());
@@ -670,13 +619,14 @@ void PnaclCoordinator::RunTranslate(int32_t pp_error) {
 
   CHECK(translate_thread_ != NULL);
   translate_thread_->RunTranslate(report_translate_finished,
-                                  manifest_.get(),
+                                  manifest_id_,
                                   &obj_files_,
                                   temp_nexe_file_.get(),
                                   invalid_desc_wrapper_.get(),
                                   &error_info_,
                                   resources_.get(),
                                   &pnacl_options_,
+                                  architecture_attributes_,
                                   this,
                                   plugin_);
 }

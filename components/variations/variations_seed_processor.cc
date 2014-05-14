@@ -40,6 +40,14 @@ void RegisterVariationIds(const Study_Experiment& experiment,
                                     experiment.name(),
                                     variation_id);
   }
+  if (experiment.has_google_web_trigger_experiment_id()) {
+    const VariationID variation_id =
+        static_cast<VariationID>(experiment.google_web_trigger_experiment_id());
+    AssociateGoogleVariationIDForce(GOOGLE_WEB_PROPERTIES_TRIGGER,
+                                    trial_name,
+                                    experiment.name(),
+                                    variation_id);
+  }
   if (experiment.has_google_update_experiment_id()) {
     const VariationID variation_id =
         static_cast<VariationID>(experiment.google_update_experiment_id());
@@ -64,10 +72,11 @@ void VariationsSeedProcessor::CreateTrialsFromSeed(
     const base::Time& reference_date,
     const base::Version& version,
     Study_Channel channel,
-    Study_FormFactor form_factor) {
+    Study_FormFactor form_factor,
+    const std::string& hardware_class) {
   std::vector<ProcessedStudy> filtered_studies;
   FilterAndValidateStudies(seed, locale, reference_date, version, channel,
-                           form_factor, &filtered_studies);
+                           form_factor, hardware_class, &filtered_studies);
 
   for (size_t i = 0; i < filtered_studies.size(); ++i)
     CreateTrialFromStudy(filtered_studies[i]);

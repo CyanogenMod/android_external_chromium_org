@@ -25,14 +25,14 @@
 #include "build/build_config.h"
 #include "cc/resources/shared_bitmap.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
+#include "content/browser/renderer_host/event_with_latency_info.h"
 #include "content/browser/renderer_host/input/input_ack_handler.h"
 #include "content/browser/renderer_host/input/input_router_client.h"
 #include "content/browser/renderer_host/input/synthetic_gesture.h"
 #include "content/browser/renderer_host/input/touch_emulator_client.h"
+#include "content/common/input/input_event_ack_state.h"
 #include "content/common/input/synthetic_gesture_packet.h"
 #include "content/common/view_message_enums.h"
-#include "content/port/browser/event_with_latency_info.h"
-#include "content/port/common/input_event_ack_state.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/common/page_zoom.h"
 #include "ipc/ipc_listener.h"
@@ -83,7 +83,7 @@ class InputRouter;
 class MockRenderWidgetHost;
 class OverscrollController;
 class RenderWidgetHostDelegate;
-class RenderWidgetHostViewPort;
+class RenderWidgetHostViewBase;
 class SyntheticGestureController;
 class TimeoutMonitor;
 class TouchEmulator;
@@ -203,7 +203,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void InvalidateScreenInfo();
 
   // Sets the View of this RenderWidgetHost.
-  void SetView(RenderWidgetHostView* view);
+  void SetView(RenderWidgetHostViewBase* view);
 
   int surface_id() const { return surface_id_; }
 
@@ -598,7 +598,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // crashes, its View is destroyed and this pointer becomes NULL, even though
   // render_view_host_ lives on to load another URL (creating a new View while
   // doing so).
-  RenderWidgetHostViewPort* view_;
+  RenderWidgetHostViewBase* view_;
 
   // true if a renderer has once been valid. We use this flag to display a sad
   // tab only when we lose our renderer and not if a paint occurs during

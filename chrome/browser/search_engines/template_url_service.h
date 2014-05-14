@@ -101,6 +101,17 @@ class TemplateURLService : public WebDataServiceConsumer,
   TemplateURLService(const Initializer* initializers, const int count);
   virtual ~TemplateURLService();
 
+  // Creates a TemplateURLData that was previously saved to |prefs| via
+  // SaveDefaultSearchProviderToPrefs or set via policy.
+  // Returns true if successful, false otherwise.
+  // If the user or the policy has opted for no default search, this
+  // returns true but default_provider is set to NULL.
+  // |*is_managed| specifies whether the default is managed via policy.
+  static bool LoadDefaultSearchProviderFromPrefs(
+      PrefService* prefs,
+      scoped_ptr<TemplateURLData>* default_provider_data,
+      bool* is_managed);
+
   // Generates a suitable keyword for the specified url, which must be valid.
   // This is guaranteed not to return an empty string, since TemplateURLs should
   // never have an empty keyword.
@@ -124,6 +135,11 @@ class TemplateURLService : public WebDataServiceConsumer,
       const TemplateURL* t_url,
       const SearchTermsData& search_terms_data);
 
+  // Saves enough of url to |prefs| so that it can be loaded from preferences on
+  // start up.
+  void SaveDefaultSearchProviderToPrefs(const TemplateURL* url,
+                                        PrefService* prefs) const;
+
   // Returns true if there is no TemplateURL that conflicts with the
   // keyword/url pair, or there is one but it can be replaced. If there is an
   // existing keyword that can be replaced and template_url_to_replace is
@@ -140,7 +156,7 @@ class TemplateURLService : public WebDataServiceConsumer,
   // TemplateURLs that support replacement are returned.
   void FindMatchingKeywords(const base::string16& prefix,
                             bool support_replacement_only,
-                            TemplateURLVector* matches) const;
+                            TemplateURLVector* matches);
 
   // Looks up |keyword| and returns the element it maps to.  Returns NULL if
   // the keyword was not found.
@@ -260,7 +276,7 @@ class TemplateURLService : public WebDataServiceConsumer,
   // revved: all existing prepopulated entries are checked against the current
   // prepopulate data, any now-extraneous safe_for_autoreplace() entries are
   // removed, any existing engines are reset to the provided data (except for
-  // user-edited names or keywords), and any new prepopulated anegines are
+  // user-edited names or keywords), and any new prepopulated engines are
   // added.
   //
   // After this, the default search engine is reset to the default entry in the
@@ -393,16 +409,12 @@ class TemplateURLService : public WebDataServiceConsumer,
                            DontUpdateKeywordSearchForNonReplaceable);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceTest, ChangeGoogleBaseValue);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceTest, MergeDeletesUnusedProviders);
-  FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest,
-                           CreateSyncDataFromTemplateURL);
-  FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest,
-                           CreateTemplateURLFromSyncData);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest, UniquifyKeyword);
+  FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest,
+                           IsLocalTemplateURLBetter);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest,
                            ResolveSyncKeywordConflict);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest, PreSyncDeletes);
-  FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest,
-                           IsLocalTemplateURLBetter);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest, MergeInSyncTemplateURL);
 
   friend class TemplateURLServiceTestUtilBase;
@@ -459,20 +471,6 @@ class TemplateURLService : public WebDataServiceConsumer,
 
   // Transitions to the loaded state.
   void ChangeToLoadedState();
-
-  // Saves enough of url to preferences so that it can be loaded from
-  // preferences on start up.
-  void SaveDefaultSearchProviderToPrefs(const TemplateURL* url);
-
-  // Creates a TemplateURLData that was previously saved to prefs via
-  // SaveDefaultSearchProviderToPrefs or set via policy.
-  // Returns true if successful, false otherwise.
-  // If the user or the policy has opted for no default search, this
-  // returns true but default_provider is set to NULL.
-  // |*is_managed| specifies whether the default is managed via policy.
-  bool LoadDefaultSearchProviderFromPrefs(
-      scoped_ptr<TemplateURLData>* default_provider,
-      bool* is_managed);
 
   // Clears user preferences describing the default search engine.
   void ClearDefaultProviderFromPrefs();
@@ -565,6 +563,13 @@ class TemplateURLService : public WebDataServiceConsumer,
   // This fails if the supplied template_url is the default search provider.
   // Caller is responsible for notifying observers.
   void RemoveNoNotify(TemplateURL* template_url);
+
+  // Like ResetTemplateURL(), but instead of notifying observers, returns
+  // whether anything has changed.
+  bool ResetTemplateURLNoNotify(TemplateURL* url,
+                                const base::string16& title,
+                                const base::string16& keyword,
+                                const std::string& search_url);
 
   // Notify the observers that the model has changed.  This is done only if the
   // model is loaded.
@@ -668,11 +673,11 @@ class TemplateURLService : public WebDataServiceConsumer,
 
   // Returns a new TemplateURL for the given extension.
   TemplateURL* CreateTemplateURLForExtension(
-      const ExtensionKeyword& extension_keyword) const;
+      const ExtensionKeyword& extension_keyword);
 
   // Returns the TemplateURL associated with |extension_id|, if any.
   TemplateURL* FindTemplateURLForExtension(const std::string& extension_id,
-                                           TemplateURL::Type type) const;
+                                           TemplateURL::Type type);
 
   // Finds the most recently-installed NORMAL_CONTROLLED_BY_EXTENSION engine
   // that supports replacement and wants to be default, if any.
@@ -711,7 +716,9 @@ class TemplateURLService : public WebDataServiceConsumer,
   // Whether the keywords have been loaded.
   bool loaded_;
 
-  // Did loading fail? This is only valid if loaded_ is true.
+  // Set when the web data service fails to load properly.  This prevents
+  // further communication with sync or writing to prefs, so we don't persist
+  // inconsistent state data anywhere.
   bool load_failed_;
 
   // If non-zero, we're waiting on a load.
@@ -725,7 +732,7 @@ class TemplateURLService : public WebDataServiceConsumer,
   std::vector<history::URLVisitedDetails> visits_to_add_;
 
   // Once loaded, the default search provider.  This is a pointer to a
-  // TemplateURL owned by template_urls_.
+  // TemplateURL owned by |template_urls_|.
   TemplateURL* default_search_provider_;
 
   // The initial search provider extracted from preferences. This is only valid
@@ -779,9 +786,8 @@ class TemplateURLService : public WebDataServiceConsumer,
   // Stores a list of callbacks to be run after TemplateURLService has loaded.
   base::CallbackList<void(void)> on_loaded_callbacks_;
 
-  // Helper class to manage the default search engine. This will be NULL when
-  // using the testing-specific constructor.
-  scoped_ptr<DefaultSearchManager> default_search_manager_;
+  // Helper class to manage the default search engine.
+  DefaultSearchManager default_search_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(TemplateURLService);
 };

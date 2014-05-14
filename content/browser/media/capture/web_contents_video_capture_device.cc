@@ -66,14 +66,14 @@
 #include "content/browser/media/capture/video_capture_oracle.h"
 #include "content/browser/media/capture/web_contents_capture_util.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/web_contents/web_contents_impl.h"
-#include "content/port/browser/render_widget_host_view_frame_subscriber.h"
-#include "content/port/browser/render_widget_host_view_port.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "media/base/video_util.h"
 #include "media/video/capture/video_capture_types.h"
@@ -98,15 +98,6 @@ gfx::Rect ComputeYV12LetterboxRegion(const gfx::Size& frame_size,
   result.set_height(std::max(kMinFrameHeight, MakeEven(result.height())));
 
   return result;
-}
-
-// Wrapper function to invoke ThreadSafeCaptureOracle::CaptureFrameCallback, is
-// compatible with RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback.
-void InvokeCaptureFrameCallback(
-    const ThreadSafeCaptureOracle::CaptureFrameCallback& capture_frame_cb,
-    base::TimeTicks timestamp,
-    bool frame_captured) {
-  capture_frame_cb.Run(timestamp, frame_captured);
 }
 
 void DeleteOnWorkerThread(scoped_ptr<base::Thread> render_thread,
@@ -238,8 +229,8 @@ class WebContentsCaptureMachine
   virtual ~WebContentsCaptureMachine();
 
   // VideoCaptureMachine overrides.
-  virtual bool Start(
-      const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy) OVERRIDE;
+  virtual bool Start(const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy,
+                     const media::VideoCaptureParams& params) OVERRIDE;
   virtual void Stop(const base::Closure& callback) OVERRIDE;
 
   // Starts a copy from the backing store or the composited surface. Must be run
@@ -278,7 +269,7 @@ class WebContentsCaptureMachine
     RenewFrameSubscription();
   }
 
-  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
 
  private:
   // Starts observing the web contents, returning false if lookup fails.
@@ -319,6 +310,9 @@ class WebContentsCaptureMachine
   // Makes all the decisions about which frames to copy, and how.
   scoped_refptr<ThreadSafeCaptureOracle> oracle_proxy_;
 
+  // Video capture parameters that this machine is started with.
+  media::VideoCaptureParams capture_params_;
+
   // Routing ID of any active fullscreen render widget or MSG_ROUTING_NONE
   // otherwise.
   int fullscreen_widget_id_;
@@ -348,7 +342,8 @@ bool FrameSubscriber::ShouldCaptureFrame(
   bool oracle_decision = oracle_proxy_->ObserveEventAndDecideCapture(
       event_type_, present_time, storage, &capture_frame_cb);
 
-  *deliver_frame_cb = base::Bind(&InvokeCaptureFrameCallback, capture_frame_cb);
+  if (!capture_frame_cb.is_null())
+    *deliver_frame_cb = base::Bind(capture_frame_cb, *storage);
   if (oracle_decision)
     delivery_log_->ChronicleFrameDelivery(present_time);
   return oracle_decision;
@@ -369,8 +364,8 @@ ContentCaptureSubscription::ContentCaptureSubscription(
       timer_(true, true) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  RenderWidgetHostViewPort* view =
-      RenderWidgetHostViewPort::FromRWHV(source.GetView());
+  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
+      source.GetView());
 
   // Subscribe to accelerated presents. These will be serviced directly by the
   // oracle.
@@ -400,8 +395,8 @@ ContentCaptureSubscription::~ContentCaptureSubscription() {
     RenderViewHost* source = RenderViewHost::FromID(render_process_id_,
                                                     render_view_id_);
     if (source) {
-      RenderWidgetHostViewPort* view =
-          RenderWidgetHostViewPort::FromRWHV(source->GetView());
+      RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
+          source->GetView());
       if (view)
         view->EndFrameSubscription();
     }
@@ -578,12 +573,14 @@ WebContentsCaptureMachine::~WebContentsCaptureMachine() {
 }
 
 bool WebContentsCaptureMachine::Start(
-    const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy) {
+    const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy,
+    const media::VideoCaptureParams& params) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!started_);
 
   DCHECK(oracle_proxy.get());
   oracle_proxy_ = oracle_proxy;
+  capture_params_ = params;
 
   render_thread_.reset(new base::Thread("WebContentsVideo_RenderThread"));
   if (!render_thread_->Start()) {
@@ -632,8 +629,8 @@ void WebContentsCaptureMachine::Capture(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   RenderWidgetHost* rwh = GetTarget();
-  RenderWidgetHostViewPort* view =
-      rwh ? RenderWidgetHostViewPort::FromRWHV(rwh->GetView()) : NULL;
+  RenderWidgetHostViewBase* view =
+      rwh ? static_cast<RenderWidgetHostViewBase*>(rwh->GetView()) : NULL;
   if (!view || !rwh) {
     deliver_frame_cb.Run(base::TimeTicks(), false);
     return;
@@ -705,12 +702,11 @@ bool WebContentsCaptureMachine::StartObservingWebContents() {
   return false;
 }
 
-void WebContentsCaptureMachine::WebContentsDestroyed(
-    WebContents* web_contents) {
+void WebContentsCaptureMachine::WebContentsDestroyed() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   subscription_.reset();
-  web_contents->DecrementCapturerCount();
+  web_contents()->DecrementCapturerCount();
   oracle_proxy_->ReportError("WebContentsDestroyed()");
 }
 

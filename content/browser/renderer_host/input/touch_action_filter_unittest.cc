@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "content/browser/renderer_host/event_with_latency_info.h"
 #include "content/browser/renderer_host/input/touch_action_filter.h"
+#include "content/common/input/input_event_ack_state.h"
 #include "content/common/input/synthetic_web_input_event_builders.h"
-#include "content/port/browser/event_with_latency_info.h"
-#include "content/port/common/input_event_ack_state.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 
@@ -382,7 +382,8 @@ TEST(TouchActionFilterTest, Pinch) {
   WebGestureEvent pinch_begin = SyntheticWebGestureEventBuilder::Build(
           WebInputEvent::GesturePinchBegin, WebGestureEvent::Touchscreen);
   WebGestureEvent pinch_update =
-      SyntheticWebGestureEventBuilder::BuildPinchUpdate(1.2f, 5, 5, 0);
+      SyntheticWebGestureEventBuilder::BuildPinchUpdate(
+          1.2f, 5, 5, 0, WebGestureEvent::Touchscreen);
   WebGestureEvent pinch_end = SyntheticWebGestureEventBuilder::Build(
           WebInputEvent::GesturePinchEnd, WebGestureEvent::Touchscreen);
   WebGestureEvent scroll_end = SyntheticWebGestureEventBuilder::Build(

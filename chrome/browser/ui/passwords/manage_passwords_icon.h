@@ -6,47 +6,27 @@
 #define CHROME_BROWSER_UI_PASSWORDS_MANAGE_PASSWORDS_ICON_H_
 
 #include "base/basictypes.h"
+#include "components/password_manager/core/common/password_manager_ui.h"
 
 // Abstract base class for platform-specific password management icon views.
 class ManagePasswordsIcon {
  public:
-  enum State {
-    // The icon should not be displayed.
-    INACTIVE_STATE,
-
-    // The user has blacklisted the current page; the icon should be visible,
-    // and correctly represent the password manager's disabled state.
-    BLACKLISTED_STATE,
-
-    // Offer the user the ability to manage passwords for the current page.
-    MANAGE_STATE,
-
-    // Offer the user the ability to save a pending password.
-    PENDING_STATE,
-  };
-
   // Get/set the icon's state. Implementations of this class must implement
   // SetStateInternal to do reasonable platform-specific things to represent
   // the icon's state to the user.
-  void SetState(State state);
-  State state() const { return state_; }
-
-  // Shows the bubble without user interaction; should only be called from
-  // ManagePasswordsUIController.
-  //
-  // TODO(mkwst): This shouldn't be the IconView's responsiblity. Move it
-  // somewhere else as part of the refactoring in http://crbug.com/365678.
-  virtual void ShowBubbleWithoutUserInteraction() = 0;
+  void SetState(password_manager::ui::State state);
+  password_manager::ui::State state() const { return state_; }
 
  protected:
   ManagePasswordsIcon();
   ~ManagePasswordsIcon();
 
-  // Called from SetState() iff the icon's state has changed.
-  virtual void SetStateInternal(State state) = 0;
+  // Called from SetState() iff the icon's state has changed in order to do
+  // whatever platform-specific UI work is necessary given the new state.
+  virtual void UpdateVisibleUI() = 0;
 
  private:
-  State state_;
+  password_manager::ui::State state_;
 
   DISALLOW_COPY_AND_ASSIGN(ManagePasswordsIcon);
 };

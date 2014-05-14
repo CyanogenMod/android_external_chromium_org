@@ -74,7 +74,6 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/frame_navigate_params.h"
 #include "content/public/common/page_transition_types.h"
 #include "google_apis/gaia/gaia_auth_util.h"
@@ -427,7 +426,7 @@ class CurrentHistoryCleaner : public content::WebContentsObserver {
   virtual ~CurrentHistoryCleaner();
 
   // content::WebContentsObserver:
-  virtual void WebContentsDestroyed(content::WebContents* contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
   virtual void DidCommitProvisionalLoadForFrame(
       int64 frame_id,
       const base::string16& frame_unique_name,
@@ -480,8 +479,7 @@ void CurrentHistoryCleaner::DidCommitProvisionalLoadForFrame(
   }
 }
 
-void CurrentHistoryCleaner::WebContentsDestroyed(
-    content::WebContents* contents) {
+void CurrentHistoryCleaner::WebContentsDestroyed() {
   delete this;  // Failure.
 }
 
@@ -664,6 +662,7 @@ OneClickSigninHelper::SyncStarterWrapper::StartOneClickSigninSyncStarter(
                                 refresh_token, start_mode_,
                                 args_.web_contents,
                                 args_.confirmation_required,
+                                GURL(),
                                 args_.callback);
 }
 

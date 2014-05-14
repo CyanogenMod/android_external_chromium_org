@@ -14,6 +14,7 @@
 #include "base/metrics/statistics_recorder.h"
 #include "base/run_loop.h"
 #include "chrome/browser/chromeos/net/network_portal_detector_impl.h"
+#include "chrome/browser/chromeos/net/network_portal_detector_strategy.h"
 #include "chrome/browser/chromeos/net/network_portal_detector_test_utils.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chromeos/chromeos_switches.h"
@@ -134,11 +135,13 @@ class NetworkPortalDetectorImplTest
   }
 
   void enable_error_screen_strategy() {
-    network_portal_detector()->OnErrorScreenShow();
+    network_portal_detector()->SetStrategy(
+        PortalDetectorStrategy::STRATEGY_ID_ERROR_SCREEN);
   }
 
   void disable_error_screen_strategy() {
-    network_portal_detector()->OnErrorScreenHide();
+    network_portal_detector()->SetStrategy(
+        PortalDetectorStrategy::STRATEGY_ID_LOGIN_SCREEN);
   }
 
   void stop_detection() { network_portal_detector()->StopDetection(); }
@@ -647,7 +650,18 @@ TEST_F(NetworkPortalDetectorImplTest, ProxyAuthRequired) {
   SetConnected(kStubWireless1);
   CompleteURLFetch(net::OK, 407, NULL);
   ASSERT_EQ(1, attempt_count());
+  ASSERT_TRUE(is_state_portal_detection_pending());
+
+  base::RunLoop().RunUntilIdle();
+  CompleteURLFetch(net::OK, 407, NULL);
+  ASSERT_EQ(2, attempt_count());
+  ASSERT_TRUE(is_state_portal_detection_pending());
+
+  base::RunLoop().RunUntilIdle();
+  CompleteURLFetch(net::OK, 407, NULL);
+  ASSERT_EQ(3, attempt_count());
   ASSERT_TRUE(is_state_idle());
+
   CheckPortalState(
       NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_PROXY_AUTH_REQUIRED,
       407,

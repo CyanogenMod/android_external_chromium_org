@@ -16,6 +16,7 @@ GYP_TARGET_DEPENDENCIES :=
 
 ### Rules for action "generate_components_resources":
 $(gyp_shared_intermediate_dir)/components/grit/component_resources.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/components/grit/component_resources.h: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/components/grit/component_resources.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/components/grit/component_resources.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/components/grit/component_resources.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
@@ -27,6 +28,7 @@ $(gyp_shared_intermediate_dir)/components/component_resources.pak: $(gyp_shared_
 
 ### Rules for action "generate_components_scaled_resources":
 $(gyp_shared_intermediate_dir)/components/grit/component_scaled_resources.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/components/grit/component_scaled_resources.h: gyp_var_prefix := $(GYP_VAR_PREFIX)
 $(gyp_shared_intermediate_dir)/components/grit/component_scaled_resources.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/components/grit/component_scaled_resources.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/components/grit/component_scaled_resources.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))

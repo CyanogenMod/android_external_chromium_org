@@ -7,7 +7,6 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/download/download_shelf.h"
 #include "chrome/browser/profiles/profile.h"
@@ -20,6 +19,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "components/bookmarks/core/browser/bookmark_model.h"
 #include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/core/test/bookmark_test_helpers.h"
 #include "extensions/common/switches.h"
 
 using content::OpenURLParams;
@@ -43,8 +43,7 @@ class ViewIDTest : public InProcessBrowserTest {
   }
 
   void DoTest() {
-    // Make sure FindBar is created to test
-    // VIEW_ID_FIND_IN_PAGE_TEXT_FIELD and VIEW_ID_FIND_IN_PAGE.
+    // Make sure FindBar is created to test VIEW_ID_FIND_IN_PAGE_TEXT_FIELD.
     chrome::ShowFindBar(browser());
 
     // Make sure docked devtools is created to test VIEW_ID_DEV_TOOLS_DOCKED

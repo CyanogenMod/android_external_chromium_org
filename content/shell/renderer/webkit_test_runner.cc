@@ -87,8 +87,6 @@ using blink::WebScreenOrientationType;
 using blink::WebTestingSupport;
 using blink::WebVector;
 using blink::WebView;
-using WebTestRunner::WebTask;
-using WebTestRunner::WebTestInterfaces;
 
 namespace content {
 
@@ -212,9 +210,7 @@ WebKitTestRunner::WebKitTestRunner(RenderView* render_view)
       focused_view_(NULL),
       is_main_window_(false),
       focus_on_next_commit_(false),
-      leak_detector_(new LeakDetector(this))
-{
-  UseMockMediaStreams(render_view);
+      leak_detector_(new LeakDetector(this)) {
 }
 
 WebKitTestRunner::~WebKitTestRunner() {
@@ -436,6 +432,10 @@ void WebKitTestRunner::setDeviceScaleFactor(float factor) {
   SetDeviceScaleFactor(render_view(), factor);
 }
 
+void WebKitTestRunner::setDeviceColorProfile(const std::string& name) {
+  SetDeviceColorProfile(render_view(), name);
+}
+
 void WebKitTestRunner::setFocus(WebTestProxyBase* proxy, bool focus) {
   ProxyToRenderViewVisitor visitor(proxy);
   RenderView::ForEach(&visitor);
@@ -640,6 +640,7 @@ void WebKitTestRunner::Reset() {
 void WebKitTestRunner::CaptureDump() {
   WebTestInterfaces* interfaces =
       ShellRenderProcessObserver::GetInstance()->test_interfaces();
+  TRACE_EVENT0("shell", "WebKitTestRunner::CaptureDump");
 
   if (interfaces->testRunner()->shouldDumpAsAudio()) {
     std::vector<unsigned char> vector_data;
@@ -651,25 +652,44 @@ void WebKitTestRunner::CaptureDump() {
 
     if (test_config_.enable_pixel_dumping &&
         interfaces->testRunner()->shouldGeneratePixelResults()) {
-      SkBitmap snapshot;
-      CopyCanvasToBitmap(proxy()->capturePixels(), &snapshot);
-
-      SkAutoLockPixels snapshot_lock(snapshot);
-      base::MD5Digest digest;
-      base::MD5Sum(snapshot.getPixels(), snapshot.getSize(), &digest);
-      std::string actual_pixel_hash = base::MD5DigestToBase16(digest);
-
-      if (actual_pixel_hash == test_config_.expected_pixel_hash) {
-        SkBitmap empty_image;
-        Send(new ShellViewHostMsg_ImageDump(
-            routing_id(), actual_pixel_hash, empty_image));
+      // TODO(danakj): Remove when kForceCompositingMode is everywhere.
+      if (!render_view()->GetWebView()->isAcceleratedCompositingActive()) {
+        SkBitmap snapshot;
+        CopyCanvasToBitmap(proxy()->capturePixels(), &snapshot);
+        CaptureDumpPixels(snapshot);
       } else {
-        Send(new ShellViewHostMsg_ImageDump(
-            routing_id(), actual_pixel_hash, snapshot));
+        proxy()->CapturePixelsAsync(base::Bind(
+            &WebKitTestRunner::CaptureDumpPixels, base::Unretained(this)));
       }
+      return;
     }
   }
 
+  CaptureDumpComplete();
+}
+
+void WebKitTestRunner::CaptureDumpPixels(const SkBitmap& snapshot) {
+  DCHECK_NE(0, snapshot.info().fWidth);
+  DCHECK_NE(0, snapshot.info().fHeight);
+
+  SkAutoLockPixels snapshot_lock(snapshot);
+  base::MD5Digest digest;
+  base::MD5Sum(snapshot.getPixels(), snapshot.getSize(), &digest);
+  std::string actual_pixel_hash = base::MD5DigestToBase16(digest);
+
+  if (actual_pixel_hash == test_config_.expected_pixel_hash) {
+    SkBitmap empty_image;
+    Send(new ShellViewHostMsg_ImageDump(
+        routing_id(), actual_pixel_hash, empty_image));
+  } else {
+    Send(new ShellViewHostMsg_ImageDump(
+        routing_id(), actual_pixel_hash, snapshot));
+  }
+
+  CaptureDumpComplete();
+}
+
+void WebKitTestRunner::CaptureDumpComplete() {
   render_view()->GetWebView()->mainFrame()->stopLoading();
 
   base::MessageLoop::current()->PostTask(

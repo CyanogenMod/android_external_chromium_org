@@ -13,7 +13,6 @@
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/history_quick_provider.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
@@ -36,6 +35,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/bookmarks/core/browser/bookmark_model.h"
 #include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/core/test/bookmark_test_helpers.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "net/dns/mock_host_resolver.h"
@@ -241,13 +241,6 @@ class OmniboxViewTest : public InProcessBrowserTest,
     ui_test_utils::WaitForTemplateURLServiceToLoad(model);
 
     ASSERT_TRUE(model->loaded());
-    // Remove built-in template urls, like google.com, bing.com etc., as they
-    // may appear as autocomplete suggests and interfere with our tests.
-    model->SetUserSelectedDefaultSearchProvider(NULL);
-    TemplateURLService::TemplateURLVector builtins = model->GetTemplateURLs();
-    for (TemplateURLService::TemplateURLVector::const_iterator
-         i = builtins.begin(); i != builtins.end(); ++i)
-      model->Remove(*i);
 
     TemplateURLData data;
     data.short_name = ASCIIToUTF16(kSearchShortName);
@@ -259,6 +252,16 @@ class OmniboxViewTest : public InProcessBrowserTest,
 
     data.SetKeyword(ASCIIToUTF16(kSearchKeyword2));
     model->Add(new TemplateURL(profile, data));
+
+    // Remove built-in template urls, like google.com, bing.com etc., as they
+    // may appear as autocomplete suggests and interfere with our tests.
+    TemplateURLService::TemplateURLVector urls = model->GetTemplateURLs();
+    for (TemplateURLService::TemplateURLVector::const_iterator i = urls.begin();
+         i != urls.end();
+         ++i) {
+      if ((*i)->prepopulate_id() != 0)
+        model->Remove(*i);
+    }
   }
 
   void AddHistoryEntry(const TestHistoryEntry& entry, const Time& time) {

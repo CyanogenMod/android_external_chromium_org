@@ -21,6 +21,8 @@ SharedRendererState::SharedRendererState(
       client_on_ui_(client),
       weak_factory_on_ui_thread_(this),
       ui_thread_weak_ptr_(weak_factory_on_ui_thread_.GetWeakPtr()),
+      compositor_(NULL),
+      memory_policy_dirty_(false),
       hardware_initialized_(false) {
   DCHECK(ui_loop_->BelongsToCurrentThread());
   DCHECK(client_on_ui_);
@@ -57,6 +59,21 @@ content::SynchronousCompositor* SharedRendererState::GetCompositor() {
   base::AutoLock lock(lock_);
   DCHECK(compositor_);
   return compositor_;
+}
+
+void SharedRendererState::SetMemoryPolicy(
+    const content::SynchronousCompositorMemoryPolicy new_policy) {
+  base::AutoLock lock(lock_);
+  if (memory_policy_ != new_policy) {
+    memory_policy_ = new_policy;
+    memory_policy_dirty_ = true;
+  }
+}
+
+content::SynchronousCompositorMemoryPolicy
+SharedRendererState::GetMemoryPolicy() const {
+  base::AutoLock lock(lock_);
+  return memory_policy_;
 }
 
 void SharedRendererState::SetDrawGLInput(const DrawGLInput& input) {
@@ -100,6 +117,16 @@ void SharedRendererState::SetHardwareInitialized(bool initialized) {
 bool SharedRendererState::IsHardwareInitialized() const {
   base::AutoLock lock(lock_);
   return hardware_initialized_;
+}
+
+void SharedRendererState::SetMemoryPolicyDirty(bool is_dirty) {
+  base::AutoLock lock(lock_);
+  memory_policy_dirty_ = is_dirty;
+}
+
+bool SharedRendererState::IsMemoryPolicyDirty() const {
+  base::AutoLock lock(lock_);
+  return memory_policy_dirty_;
 }
 
 }  // namespace android_webview

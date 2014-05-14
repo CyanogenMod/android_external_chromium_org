@@ -12,6 +12,7 @@ var GetExtensionAPIDefinitionsForTest =
     requireNative('apiDefinitions').GetExtensionAPIDefinitionsForTest;
 var GetAvailability = requireNative('v8_context').GetAvailability;
 var GetAPIFeatures = requireNative('test_features').GetAPIFeatures;
+var uncaughtExceptionHandler = require('uncaught_exception_handler');
 var userGestures = requireNative('user_gestures');
 
 binding.registerCustomHook(function(api) {
@@ -91,10 +92,13 @@ binding.registerCustomHook(function(api) {
 
     try {
       chromeTest.log("( RUN      ) " + testName(currentTest));
+      uncaughtExceptionHandler.setHandler(function(message, e) {
+        if (e !== failureException)
+          chromeTest.fail('uncaught exception: ' + message);
+      });
       currentTest.call();
     } catch (e) {
-      if (e !== failureException)
-        chromeTest.fail('uncaught exception: ' + e);
+      uncaughtExceptionHandler.handle(e.message, e);
     }
   });
 
@@ -250,7 +254,7 @@ binding.registerCustomHook(function(api) {
   function safeFunctionApply(func, args) {
     try {
       if (func)
-        $Function.apply(func, null, args);
+        return $Function.apply(func, undefined, args);
     } catch (e) {
       var msg = "uncaught exception " + e;
       chromeTest.fail(msg);
@@ -272,11 +276,13 @@ binding.registerCustomHook(function(api) {
         chromeTest.assertLastError(expectedError);
       }
 
+      var result;
       if (func) {
-        safeFunctionApply(func, arguments);
+        result = safeFunctionApply(func, arguments);
       }
 
       callbackCompleted();
+      return result;
     };
   });
 
@@ -340,6 +346,11 @@ binding.registerCustomHook(function(api) {
   apiFunctions.setHandleRequest('runWithoutUserGesture', function(callback) {
     chromeTest.assertEq(typeof(callback), 'function');
     return userGestures.RunWithoutUserGesture(callback);
+  });
+
+  apiFunctions.setHandleRequest('setExceptionHandler', function(callback) {
+    chromeTest.assertEq(typeof(callback), 'function');
+    uncaughtExceptionHandler.setHandler(callback);
   });
 });
 

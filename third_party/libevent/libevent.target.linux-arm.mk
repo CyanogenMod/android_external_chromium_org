@@ -52,7 +52,6 @@ MY_CFLAGS_Debug := \
 	-fPIC \
 	-Wno-format \
 	-fno-tree-sra \
-	-fuse-ld=gold \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \
@@ -140,7 +139,6 @@ MY_CFLAGS_Release := \
 	-fPIC \
 	-Wno-format \
 	-fno-tree-sra \
-	-fuse-ld=gold \
 	-Wno-psabi \
 	-ffunction-sections \
 	-funwind-tables \

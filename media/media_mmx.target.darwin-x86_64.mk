@@ -44,7 +44,6 @@ MY_CFLAGS_Debug := \
 	-mmmx \
 	-m64 \
 	-march=x86-64 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \
@@ -131,7 +130,6 @@ MY_CFLAGS_Release := \
 	-mmmx \
 	-m64 \
 	-march=x86-64 \
-	-fuse-ld=gold \
 	-ffunction-sections \
 	-funwind-tables \
 	-g \

@@ -30,7 +30,8 @@ AppsContainerView::AppsContainerView(AppListMainView* app_list_main_view,
   apps_grid_view_ = new AppsGridView(app_list_main_view, pagination_model);
   int cols = kPreferredCols;
   int rows = kPreferredRows;
-  if (app_list::switches::IsExperimentalAppListPositionEnabled()) {
+  // ShouldCenterWindow also implies that it is wide instead of tall.
+  if (app_list_main_view->ShouldCenterWindow()) {
     cols = kExperimentalPreferredCols;
     rows = kExperimentalPreferredRows;
   }

@@ -96,6 +96,9 @@ class AboutSigninInternals
                               const OAuth2TokenService::ScopeSet& scopes)
       OVERRIDE;
 
+    void OnRefreshTokenReceived(std::string status);
+    void OnAuthenticationResultReceived(std::string status);
+
  private:
   // Encapsulates diagnostic information about tokens for different services.
   struct TokenInfo {

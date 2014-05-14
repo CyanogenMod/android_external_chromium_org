@@ -2,71 +2,22 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import logging
-
 from telemetry.core import command_line
 
 from telemetry.page import test_expectations
 from telemetry.page.actions import action_runner as action_runner_module
-from telemetry.page.actions import all_page_actions
 from telemetry.page.actions import interact
-
-
-def _GetActionFromData(action_data):
-  action_name = action_data['action']
-  action = all_page_actions.FindClassWithName(action_name)
-  if not action:
-    logging.critical('Could not find an action named %s.', action_name)
-    logging.critical('Check the page set for a typo and check the error '
-                     'log for possible Python loading/compilation errors.')
-    raise Exception('Action "%s" not found.' % action_name)
-  return action(action_data)
-
-
-def GetSubactionFromData(page, subaction_data, interactive):
-  subaction_name = subaction_data['action']
-  if hasattr(page, subaction_name):
-    return GetCompoundActionFromPage(page, subaction_name, interactive)
-  else:
-    return [_GetActionFromData(subaction_data)]
-
-
-def GetCompoundActionFromPage(page, action_name, interactive=False):
-  if interactive:
-    return [interact.InteractAction()]
-
-  if not action_name:
-    return []
-
-  action_data_list = getattr(page, action_name)
-  if not isinstance(action_data_list, list):
-    action_data_list = [action_data_list]
-
-  action_list = []
-  for subaction_data in action_data_list:
-    for _ in xrange(subaction_data.get('repeat', 1)):
-      action_list += GetSubactionFromData(page, subaction_data, interactive)
-  return action_list
-
-
-def GetRunMethodForPage(page, action_name):
-  def RunMethod(action_runner):
-    for action in GetCompoundActionFromPage(page, action_name):
-      action_runner.RunAction(action)
-  return RunMethod
 
 
 class Failure(Exception):
   """Exception that can be thrown from PageMeasurement to indicate an
   undesired but designed-for problem."""
-  pass
 
 
 class TestNotSupportedOnPlatformFailure(Failure):
   """Exception that can be thrown to indicate that a certain feature required
   to run the test is not available on the platform, hardware configuration, or
   browser version."""
-  pass
 
 
 class PageTest(command_line.Command):
@@ -75,7 +26,6 @@ class PageTest(command_line.Command):
   options = {}
 
   def __init__(self,
-               test_method_name,
                action_name_to_run='',
                needs_browser_restart_after_each_page=False,
                discard_first_result=False,
@@ -86,11 +36,6 @@ class PageTest(command_line.Command):
     super(PageTest, self).__init__()
 
     self.options = None
-    try:
-      self._test_method = getattr(self, test_method_name)
-    except AttributeError:
-      raise ValueError, 'No such method %s.%s' % (
-        self.__class_, test_method_name)  # pylint: disable=E1101
     if action_name_to_run:
       assert action_name_to_run.startswith('Run') \
           and '_' not in action_name_to_run, \
@@ -202,7 +147,6 @@ class PageTest(command_line.Command):
 
   def CustomizeBrowserOptions(self, options):
     """Override to add test-specific options to the BrowserOptions object"""
-    pass
 
   def CustomizeBrowserOptionsForSinglePage(self, page, options):
     """Set options specific to the test and the given page.
@@ -217,11 +161,9 @@ class PageTest(command_line.Command):
 
   def WillStartBrowser(self, browser):
     """Override to manipulate the browser environment before it launches."""
-    pass
 
   def DidStartBrowser(self, browser):
     """Override to customize the browser right after it has launched."""
-    pass
 
   def CanRunForPage(self, page):  # pylint: disable=W0613
     """Override to customize if the test can be ran for the given page."""
@@ -242,15 +184,12 @@ class PageTest(command_line.Command):
 
   def WillRunPageRepeats(self, page):
     """Override to do operations before each page is iterated over."""
-    pass
 
   def DidRunPageRepeats(self, page):
     """Override to do operations after each page is iterated over."""
-    pass
 
   def DidStartHTTPServer(self, tab):
     """Override to do operations after the HTTP server is started."""
-    pass
 
   def WillNavigateToPage(self, page, tab):
     """Override to do operations before the page is navigated, notably Telemetry
@@ -258,24 +197,19 @@ class PageTest(command_line.Command):
     calling this function:
     * Ensure only one tab is open.
     * Call WaitForDocumentReadyStateToComplete on the tab."""
-    pass
 
   def DidNavigateToPage(self, page, tab):
     """Override to do operations right after the page is navigated and after
     all waiting for completion has occurred."""
-    pass
 
   def WillRunActions(self, page, tab):
     """Override to do operations before running the actions on the page."""
-    pass
 
   def DidRunActions(self, page, tab):
     """Override to do operations after running the actions on the page."""
-    pass
 
   def CleanUpAfterPage(self, page, tab):
     """Called after the test run method was run, even if it failed."""
-    pass
 
   def CreateExpectations(self, page_set):   # pylint: disable=W0613
     """Override to make this test generate its own expectations instead of
@@ -290,9 +224,15 @@ class PageTest(command_line.Command):
   def ValidatePageSet(self, page_set):
     """Override to examine the page set before the test run.  Useful for
     example to validate that the pageset can be used with the test."""
-    pass
+
+  def ValidatePage(self, page, tab, results):
+    """Override to check the actual test assertions.
+
+    This is where most your test logic should go."""
+    raise NotImplementedError()
 
   def RunPage(self, page, tab, results):
+    # Run actions.
     interactive = self.options and self.options.interactive
     action_runner = action_runner_module.ActionRunner(page, tab, self)
     self.WillRunActions(page, tab)
@@ -301,14 +241,13 @@ class PageTest(command_line.Command):
     else:
       self._RunMethod(page, self._action_name_to_run, action_runner)
     self.DidRunActions(page, tab)
-    self._test_method(page, tab, results)
+
+    # Run validator.
+    self.ValidatePage(page, tab, results)
 
   def _RunMethod(self, page, method_name, action_runner):
     if hasattr(page, method_name):
       run_method = getattr(page, method_name)
-      # method is runnable, this must be the RunMethod of legacy json page_set
-      if not callable(run_method):
-        run_method = GetRunMethodForPage(page, method_name)
       run_method(action_runner)
 
   def RunNavigateSteps(self, page, tab):
@@ -317,7 +256,7 @@ class PageTest(command_line.Command):
     Runs the 'navigate_steps' page attribute as a compound action.
     """
     action_runner = action_runner_module.ActionRunner(page, tab, None)
-    self._RunMethod(page, "RunNavigateSteps", action_runner)
+    page.RunNavigateSteps(action_runner)
 
   def IsExiting(self):
     return self._exit_requested

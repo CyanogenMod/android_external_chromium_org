@@ -88,8 +88,7 @@ class DeviceSettingsTestHelper : public SessionManagerClient {
   virtual bool HasObserver(Observer* observer) OVERRIDE;
   virtual void EmitLoginPromptVisible() OVERRIDE;
   virtual void RestartJob(int pid, const std::string& command_line) OVERRIDE;
-  virtual void StartSession(const std::string& user_email,
-                            const StartSessionCallback& callback) OVERRIDE;
+  virtual void StartSession(const std::string& user_email) OVERRIDE;
   virtual void StopSession() OVERRIDE;
   virtual void StartDeviceWipe() OVERRIDE;
   virtual void RequestLockScreen() OVERRIDE;
@@ -111,7 +110,6 @@ class DeviceSettingsTestHelper : public SessionManagerClient {
                                  const StorePolicyCallback& callback) OVERRIDE;
   virtual void StorePolicyForUser(const std::string& username,
                                   const std::string& policy_blob,
-                                  const std::string& policy_key,
                                   const StorePolicyCallback& callback) OVERRIDE;
   virtual void StoreDeviceLocalAccountPolicy(
       const std::string& account_id,
@@ -120,6 +118,8 @@ class DeviceSettingsTestHelper : public SessionManagerClient {
   virtual void SetFlagsForUser(
       const std::string& account_id,
       const std::vector<std::string>& flags) OVERRIDE;
+  virtual void GetServerBackedStateKeys(
+      const StateKeysCallback& callback) OVERRIDE;
 
  private:
   struct PolicyState {

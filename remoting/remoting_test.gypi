@@ -230,13 +230,24 @@
             ['exclude', '^base/resources_unittest\\.cc$'],
           ]
         }],
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        [ 'OS == "linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
+        [ 'OS == "linux" and use_allocator!="none"', {
           'dependencies': [
             '../base/allocator/allocator.gyp:allocator',
           ],
         }],
       ],  # end of 'conditions'
     },  # end of target 'remoting_unittests'
+    {
+      'target_name': 'remoting_browser_test_resources',
+      'type': 'none',
+      'copies': [
+        {
+          'destination': '<(PRODUCT_DIR)',
+            'files': [
+              '<@(remoting_webapp_js_browser_test_files)',
+            ],
+        },
+      ], #end of copies
+    },  # end of target 'remoting_browser_test_resources'
   ],  # end of targets
 }

@@ -146,7 +146,8 @@ void NinjaBinaryTargetWriter::WriteSources(
   const Target::FileList& sources = target_->sources();
   object_files->reserve(sources.size());
 
-  std::string implicit_deps = GetSourcesImplicitDeps();
+  std::string implicit_deps =
+      WriteInputDepsStampAndGetDep(std::vector<const Target*>());
 
   for (size_t i = 0; i < sources.size(); i++) {
     const SourceFile& input_file = sources[i];
@@ -154,6 +155,12 @@ void NinjaBinaryTargetWriter::WriteSources(
     SourceFileType input_file_type = GetSourceFileType(input_file);
     if (input_file_type == SOURCE_UNKNOWN)
       continue;  // Skip unknown file types.
+    if (input_file_type == SOURCE_O) {
+      // Object files just get passed to the output and not compiled.
+      object_files->push_back(helper_.GetOutputFileForSource(
+          target_, input_file, input_file_type));
+      continue;
+    }
     std::string command =
         helper_.GetRuleForSourceType(settings_, input_file_type);
     if (command.empty())
@@ -179,7 +186,7 @@ void NinjaBinaryTargetWriter::WriteLinkerStuff(
   // that case?
   OutputFile windows_manifest;
   if (settings_->IsWin()) {
-    windows_manifest.value().assign(helper_.GetTargetOutputDir(target_));
+    windows_manifest = helper_.GetTargetOutputDir(target_);
     windows_manifest.value().append(target_->label().name());
     windows_manifest.value().append(".intermediate.manifest");
     out_ << "manifests = ";

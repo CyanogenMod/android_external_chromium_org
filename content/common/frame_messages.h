@@ -56,7 +56,6 @@ IPC_STRUCT_TRAITS_BEGIN(content::ContextMenuParams)
   IPC_STRUCT_TRAITS_MEMBER(misspelled_word)
   IPC_STRUCT_TRAITS_MEMBER(misspelling_hash)
   IPC_STRUCT_TRAITS_MEMBER(dictionary_suggestions)
-  IPC_STRUCT_TRAITS_MEMBER(speech_input_enabled)
   IPC_STRUCT_TRAITS_MEMBER(spellcheck_enabled)
   IPC_STRUCT_TRAITS_MEMBER(is_editable)
   IPC_STRUCT_TRAITS_MEMBER(writing_direction_default)
@@ -429,10 +428,18 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_OpenURL, FrameHostMsg_OpenURL_Params)
 IPC_MESSAGE_ROUTED1(FrameHostMsg_DidFinishLoad,
                     GURL /* validated_url */)
 
+// Sent when after the onload handler has been invoked for the document
+// in this frame. Sent for top-level frames.
+IPC_MESSAGE_ROUTED0(FrameHostMsg_DocumentOnLoadCompleted)
+
 // Notifies that the initial empty document of a view has been accessed.
 // After this, it is no longer safe to show a pending navigation's URL without
 // making a URL spoof possible.
 IPC_MESSAGE_ROUTED0(FrameHostMsg_DidAccessInitialDocument)
+
+// Sent when the frame sets its opener to null, disowning it for the lifetime of
+// the window. Sent for top-level frames.
+IPC_MESSAGE_ROUTED0(FrameHostMsg_DidDisownOpener)
 
 // Following message is used to communicate the values received by the
 // callback binding the JS to Cpp.
@@ -573,3 +580,12 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_EndColorChooser, int /* id */)
 IPC_MESSAGE_ROUTED2(FrameHostMsg_SetSelectedColorInColorChooser,
                     int /* id */,
                     SkColor /* color */)
+
+// Notifies the browser that media has started/stopped playing.
+IPC_MESSAGE_ROUTED3(FrameHostMsg_MediaPlayingNotification,
+                    int64 /* player_cookie, distinguishes instances */,
+                    bool /* has_video */,
+                    bool /* has_audio */)
+
+IPC_MESSAGE_ROUTED1(FrameHostMsg_MediaPausedNotification,
+                    int64 /* player_cookie, distinguishes instances */)

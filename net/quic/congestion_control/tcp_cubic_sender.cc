@@ -38,7 +38,6 @@ TcpCubicSender::TcpCubicSender(
       reno_(reno),
       congestion_window_count_(0),
       receive_window_(kDefaultReceiveWindow),
-      bytes_in_flight_(0),
       prr_out_(0),
       prr_delivered_(0),
       ack_count_since_loss_(0),
@@ -74,23 +73,44 @@ void TcpCubicSender::OnIncomingQuicCongestionFeedbackFrame(
   receive_window_ = feedback.tcp.receive_window;
 }
 
+void TcpCubicSender::OnCongestionEvent(
+    bool rtt_updated,
+    QuicByteCount bytes_in_flight,
+    const CongestionMap& acked_packets,
+    const CongestionMap& lost_packets) {
+  if (rtt_updated && InSlowStart() &&
+      hybrid_slow_start_.ShouldExitSlowStart(rtt_stats_->latest_rtt(),
+                                             rtt_stats_->min_rtt(),
+                                             congestion_window_)) {
+    slowstart_threshold_ = congestion_window_;
+  }
+  for (CongestionMap::const_iterator it = lost_packets.begin();
+       it != lost_packets.end(); ++it) {
+    OnPacketLost(it->first, bytes_in_flight);
+  }
+  for (CongestionMap::const_iterator it = acked_packets.begin();
+       it != acked_packets.end(); ++it) {
+    OnPacketAcked(it->first, it->second.bytes_sent, bytes_in_flight);
+  }
+}
+
 void TcpCubicSender::OnPacketAcked(
-    QuicPacketSequenceNumber acked_sequence_number, QuicByteCount acked_bytes) {
-  DCHECK_GE(bytes_in_flight_, acked_bytes);
-  bytes_in_flight_ -= acked_bytes;
+    QuicPacketSequenceNumber acked_sequence_number,
+    QuicByteCount acked_bytes,
+    QuicByteCount bytes_in_flight) {
   largest_acked_sequence_number_ = max(acked_sequence_number,
                                        largest_acked_sequence_number_);
   if (InRecovery()) {
     PrrOnPacketAcked(acked_bytes);
     return;
   }
-  MaybeIncreaseCwnd(acked_sequence_number);
+  MaybeIncreaseCwnd(acked_sequence_number, bytes_in_flight);
   // TODO(ianswett): Should this even be called when not in slow start?
   hybrid_slow_start_.OnPacketAcked(acked_sequence_number, InSlowStart());
 }
 
 void TcpCubicSender::OnPacketLost(QuicPacketSequenceNumber sequence_number,
-                                  QuicTime /*ack_receive_time*/) {
+                                  QuicByteCount bytes_in_flight) {
   // TCP NewReno (RFC6582) says that once a loss occurs, any losses in packets
   // already sent should be treated as a single loss event, since it's expected.
   if (sequence_number <= largest_sent_at_last_cutback_) {
@@ -106,11 +126,8 @@ void TcpCubicSender::OnPacketLost(QuicPacketSequenceNumber sequence_number,
   if (InSlowStart()) {
     ++stats_->slowstart_packets_lost;
   }
-  PrrOnPacketLost();
+  PrrOnPacketLost(bytes_in_flight);
 
-  // In a normal TCP we would need to know the lowest missing packet to detect
-  // if we receive 3 missing packets. Here we get a missing packet for which we
-  // enter TCP Fast Retransmit immediately.
   if (reno_) {
     congestion_window_ = congestion_window_ >> 1;
   } else {
@@ -118,7 +135,7 @@ void TcpCubicSender::OnPacketLost(QuicPacketSequenceNumber sequence_number,
         cubic_.CongestionWindowAfterPacketLoss(congestion_window_);
   }
   slowstart_threshold_ = congestion_window_;
-  // Enforce TCP's minimimum congestion window of 2*MSS.
+  // Enforce TCP's minimum congestion window of 2*MSS.
   if (congestion_window_ < kMinimumCongestionWindow) {
     congestion_window_ = kMinimumCongestionWindow;
   }
@@ -131,6 +148,7 @@ void TcpCubicSender::OnPacketLost(QuicPacketSequenceNumber sequence_number,
 }
 
 bool TcpCubicSender::OnPacketSent(QuicTime /*sent_time*/,
+                                  QuicByteCount /*bytes_in_flight*/,
                                   QuicPacketSequenceNumber sequence_number,
                                   QuicByteCount bytes,
                                   HasRetransmittableData is_retransmittable) {
@@ -139,7 +157,6 @@ bool TcpCubicSender::OnPacketSent(QuicTime /*sent_time*/,
     return false;
   }
 
-  bytes_in_flight_ += bytes;
   prr_out_ += bytes;
   if (largest_sent_sequence_number_ < sequence_number) {
     // TODO(rch): Ensure that packets are really sent in order.
@@ -150,35 +167,21 @@ bool TcpCubicSender::OnPacketSent(QuicTime /*sent_time*/,
   return true;
 }
 
-void TcpCubicSender::OnPacketAbandoned(QuicPacketSequenceNumber sequence_number,
-                                       QuicByteCount abandoned_bytes) {
-  DCHECK_GE(bytes_in_flight_, abandoned_bytes);
-  bytes_in_flight_ -= abandoned_bytes;
-}
-
 QuicTime::Delta TcpCubicSender::TimeUntilSend(
     QuicTime /* now */,
+    QuicByteCount bytes_in_flight,
     HasRetransmittableData has_retransmittable_data) {
   if (has_retransmittable_data == NO_RETRANSMITTABLE_DATA) {
     // For TCP we can always send an ACK immediately.
-    // We also allow tail loss probes to be sent immediately, in keeping with
-    // tail loss probe (draft-dukkipati-tcpm-tcp-loss-probe-01).
     return QuicTime::Delta::Zero();
   }
   if (InRecovery()) {
-    return PrrTimeUntilSend();
+    return PrrTimeUntilSend(bytes_in_flight);
   }
-  if (AvailableSendWindow() > 0) {
+  if (SendWindow() > bytes_in_flight) {
     return QuicTime::Delta::Zero();
   }
   return QuicTime::Delta::Infinite();
-}
-
-QuicByteCount TcpCubicSender::AvailableSendWindow() {
-  if (bytes_in_flight_ > SendWindow()) {
-    return 0;
-  }
-  return SendWindow() - bytes_in_flight_;
 }
 
 QuicByteCount TcpCubicSender::SendWindow() {
@@ -204,15 +207,18 @@ QuicByteCount TcpCubicSender::GetCongestionWindow() const {
   return congestion_window_ * kMaxSegmentSize;
 }
 
-bool TcpCubicSender::IsCwndLimited() const {
+bool TcpCubicSender::IsCwndLimited(QuicByteCount bytes_in_flight) const {
   const QuicByteCount congestion_window_bytes = congestion_window_ *
       kMaxSegmentSize;
-  if (bytes_in_flight_ >= congestion_window_bytes) {
+  if (bytes_in_flight >= congestion_window_bytes) {
     return true;
   }
-  const QuicByteCount tcp_max_burst = kMaxBurstLength * kMaxSegmentSize;
-  const QuicByteCount left = congestion_window_bytes - bytes_in_flight_;
-  return left <= tcp_max_burst;
+  const QuicByteCount max_burst = kMaxBurstLength * kMaxSegmentSize;
+  const QuicByteCount available_bytes =
+      congestion_window_bytes - bytes_in_flight;
+  const bool slow_start_limited = InSlowStart() &&
+      bytes_in_flight >  congestion_window_bytes / 2;
+  return slow_start_limited || available_bytes <= max_burst;
 }
 
 bool TcpCubicSender::InRecovery() const {
@@ -223,9 +229,10 @@ bool TcpCubicSender::InRecovery() const {
 // Called when we receive an ack. Normal TCP tracks how many packets one ack
 // represents, but quic has a separate ack for each packet.
 void TcpCubicSender::MaybeIncreaseCwnd(
-    QuicPacketSequenceNumber acked_sequence_number) {
+    QuicPacketSequenceNumber acked_sequence_number,
+    QuicByteCount bytes_in_flight) {
   LOG_IF(DFATAL, InRecovery()) << "Never increase the CWND during recovery.";
-  if (!IsCwndLimited()) {
+  if (!IsCwndLimited(bytes_in_flight)) {
     // We don't update the congestion window unless we are close to using the
     // window we have available.
     return;
@@ -266,7 +273,6 @@ void TcpCubicSender::MaybeIncreaseCwnd(
 }
 
 void TcpCubicSender::OnRetransmissionTimeout(bool packets_retransmitted) {
-  bytes_in_flight_ = 0;
   largest_sent_at_last_cutback_ = 0;
   if (packets_retransmitted) {
     cubic_.Reset();
@@ -275,27 +281,11 @@ void TcpCubicSender::OnRetransmissionTimeout(bool packets_retransmitted) {
   }
 }
 
-void TcpCubicSender::OnRttUpdated(
-    QuicPacketSequenceNumber /*largest_observed*/) {
-  if (InSlowStart() &&
-      hybrid_slow_start_.ShouldExitSlowStart(rtt_stats_->latest_rtt(),
-                                             rtt_stats_->min_rtt(),
-                                             congestion_window_)) {
-     slowstart_threshold_ = congestion_window_;
-  }
-}
-
-void TcpCubicSender::PrrOnPacketLost() {
+void TcpCubicSender::PrrOnPacketLost(QuicByteCount bytes_in_flight) {
   prr_out_ = 0;
-  bytes_in_flight_before_loss_ = bytes_in_flight_;
-  // Since all losses are triggered by an incoming ack currently, and acks are
-  // registered before losses by the SentPacketManager, initialize the variables
-  // as though one ack was received directly after the loss.  This is too low
-  // for stretch acks, but we expect missing packets to be immediately acked.
-  // This ensures 1 or 2 packets are immediately able to be sent, depending upon
-  // whether we're in PRR or PRR-SSRB mode.
-  prr_delivered_ = kMaxPacketSize;
-  ack_count_since_loss_ = 1;
+  bytes_in_flight_before_loss_ = bytes_in_flight;
+  prr_delivered_ = 0;
+  ack_count_since_loss_ = 0;
 }
 
 void TcpCubicSender::PrrOnPacketAcked(QuicByteCount acked_bytes) {
@@ -303,14 +293,19 @@ void TcpCubicSender::PrrOnPacketAcked(QuicByteCount acked_bytes) {
   ++ack_count_since_loss_;
 }
 
-QuicTime::Delta TcpCubicSender::PrrTimeUntilSend() {
+QuicTime::Delta TcpCubicSender::PrrTimeUntilSend(
+    QuicByteCount bytes_in_flight) {
   DCHECK(InRecovery());
-  if (AvailableSendWindow() > 0) {
+  // Return QuicTime::Zero In order to ensure limited transmit always works.
+  if (prr_out_ == 0) {
+    return QuicTime::Delta::Zero();
+  }
+  if (SendWindow() > bytes_in_flight) {
     // During PRR-SSRB, limit outgoing packets to 1 extra MSS per ack, instead
     // of sending the entire available window. This prevents burst retransmits
     // when more packets are lost than the CWND reduction.
     //   limit = MAX(prr_delivered - prr_out, DeliveredData) + MSS
-    if (prr_delivered_ + ack_count_since_loss_ * kMaxSegmentSize < prr_out_) {
+    if (prr_delivered_ + ack_count_since_loss_ * kMaxSegmentSize <= prr_out_) {
       return QuicTime::Delta::Infinite();
     }
     return QuicTime::Delta::Zero();

@@ -103,6 +103,8 @@ TEST_F(ProfileChooserControllerTest, InitialLayoutWithNewManagement) {
   StartProfileChooserController();
 
   NSArray* subviews = [[[controller() window] contentView] subviews];
+  EXPECT_EQ(1U, [subviews count]);
+  subviews = [[subviews objectAtIndex:0] subviews];
 
   // Three profiles means we should have one active card, one separator and
   // one option buttons view.
@@ -146,6 +148,8 @@ TEST_F(ProfileChooserControllerTest, InitialLayoutWithNewMenu) {
   StartProfileChooserController();
 
   NSArray* subviews = [[[controller() window] contentView] subviews];
+  EXPECT_EQ(1U, [subviews count]);
+  subviews = [[subviews objectAtIndex:0] subviews];
 
   // Three profiles means we should have one active card and a
   // fast user switcher which has two "other" profiles and 2 separators. In
@@ -200,6 +204,8 @@ TEST_F(ProfileChooserControllerTest, InitialLayoutWithFastUserSwitcher) {
   StartProfileChooserController();
 
   NSArray* subviews = [[[controller() window] contentView] subviews];
+  EXPECT_EQ(1U, [subviews count]);
+  subviews = [[subviews objectAtIndex:0] subviews];
 
   // Three profiles means we should have one active card, two "other" profiles,
   // each with a separator, and one option buttons view.
@@ -253,6 +259,8 @@ TEST_F(ProfileChooserControllerTest, OtherProfilesSortedAlphabetically) {
   StartProfileChooserController();
 
   NSArray* subviews = [[[controller() window] contentView] subviews];
+  EXPECT_EQ(1U, [subviews count]);
+  subviews = [[subviews objectAtIndex:0] subviews];
   NSString* sortedNames[] = { @"Another Test",
                               @"New Profile",
                               @"Test 1",
@@ -278,6 +286,8 @@ TEST_F(ProfileChooserControllerTest,
   EnableNewProfileManagement();
   StartProfileChooserController();
   NSArray* subviews = [[[controller() window] contentView] subviews];
+  EXPECT_EQ(1U, [subviews count]);
+  subviews = [[subviews objectAtIndex:0] subviews];
   NSArray* activeCardSubviews = [[subviews objectAtIndex:2] subviews];
   NSArray* activeCardLinks = [[activeCardSubviews objectAtIndex:0] subviews];
 
@@ -294,6 +304,8 @@ TEST_F(ProfileChooserControllerTest,
   EnableNewAvatarMenuOnly();
   StartProfileChooserController();
   NSArray* subviews = [[[controller() window] contentView] subviews];
+  EXPECT_EQ(1U, [subviews count]);
+  subviews = [[subviews objectAtIndex:0] subviews];
   NSArray* activeCardSubviews = [[subviews objectAtIndex:4] subviews];
   NSArray* activeCardLinks = [[activeCardSubviews objectAtIndex:0] subviews];
 
@@ -314,6 +326,8 @@ TEST_F(ProfileChooserControllerTest,
 
   StartProfileChooserController();
   NSArray* subviews = [[[controller() window] contentView] subviews];
+  EXPECT_EQ(1U, [subviews count]);
+  subviews = [[subviews objectAtIndex:0] subviews];
   NSArray* activeCardSubviews = [[subviews objectAtIndex:2] subviews];
   NSArray* activeCardLinks = [[activeCardSubviews objectAtIndex:0] subviews];
 
@@ -334,6 +348,8 @@ TEST_F(ProfileChooserControllerTest,
 
   StartProfileChooserController();
   NSArray* subviews = [[[controller() window] contentView] subviews];
+  EXPECT_EQ(1U, [subviews count]);
+  subviews = [[subviews objectAtIndex:0] subviews];
   NSArray* activeCardSubviews = [[subviews objectAtIndex:4] subviews];
   NSArray* activeCardLinks = [[activeCardSubviews objectAtIndex:0] subviews];
 
@@ -365,6 +381,8 @@ TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {
   [controller() initMenuContentsWithView:BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT];
 
   NSArray* subviews = [[[controller() window] contentView] subviews];
+  EXPECT_EQ(1U, [subviews count]);
+  subviews = [[subviews objectAtIndex:0] subviews];
 
   // There should be one active card, one accounts container, two separators
   // and one option buttons view.
@@ -400,16 +418,20 @@ TEST_F(ProfileChooserControllerTest, AccountManagementLayout) {
 
   NSButton* genericAccount =
       static_cast<NSButton*>([accountsListSubviews objectAtIndex:0]);
-  EXPECT_EQ(@selector(showAccountRemovalView:), [genericAccount action]);
-  EXPECT_EQ(controller(), [genericAccount target]);
-  EXPECT_NE(-1, [genericAccount tag]);
+  NSButton* genericAccountDelete =
+      static_cast<NSButton*>([[genericAccount subviews] objectAtIndex:0]);
+  EXPECT_EQ(@selector(showAccountRemovalView:), [genericAccountDelete action]);
+  EXPECT_EQ(controller(), [genericAccountDelete target]);
+  EXPECT_NE(-1, [genericAccountDelete tag]);
 
   // Primary accounts are always last.
   NSButton* primaryAccount =
       static_cast<NSButton*>([accountsListSubviews objectAtIndex:1]);
-  EXPECT_EQ(@selector(showAccountRemovalView:), [primaryAccount action]);
-  EXPECT_EQ(controller(), [primaryAccount target]);
-  EXPECT_EQ(-1, [primaryAccount tag]);
+  NSButton* primaryAccountDelete =
+      static_cast<NSButton*>([[primaryAccount subviews] objectAtIndex:0]);
+  EXPECT_EQ(@selector(showAccountRemovalView:), [primaryAccountDelete action]);
+  EXPECT_EQ(controller(), [primaryAccountDelete target]);
+  EXPECT_EQ(-1, [primaryAccountDelete tag]);
 
   // There should be another separator.
   EXPECT_TRUE([[subviews objectAtIndex:3] isKindOfClass:[NSBox class]]);

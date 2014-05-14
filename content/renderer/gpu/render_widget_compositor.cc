@@ -23,6 +23,9 @@
 #include "cc/debug/layer_tree_debug_state.h"
 #include "cc/debug/micro_benchmark.h"
 #include "cc/layers/layer.h"
+#include "cc/output/copy_output_request.h"
+#include "cc/output/copy_output_result.h"
+#include "cc/resources/single_release_callback.h"
 #include "cc/trees/layer_tree_host.h"
 #include "content/child/child_shared_bitmap_manager.h"
 #include "content/common/content_switches_internal.h"
@@ -31,8 +34,10 @@
 #include "content/renderer/input/input_handler_manager.h"
 #include "content/renderer/render_thread_impl.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
+#include "third_party/WebKit/public/platform/WebCompositeAndReadbackAsyncCallback.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/public/web/WebWidget.h"
+#include "ui/gfx/frame_time.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/native_theme/native_theme_switches.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
@@ -140,16 +145,20 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   if (render_thread) {
     settings.impl_side_painting =
         render_thread->is_impl_side_painting_enabled();
-    if (render_thread->is_gpu_rasterization_forced())
-      settings.rasterization_site = cc::LayerTreeSettings::GpuRasterization;
-    else if (render_thread->is_gpu_rasterization_enabled())
-      settings.rasterization_site = cc::LayerTreeSettings::HybridRasterization;
-    else
-      settings.rasterization_site = cc::LayerTreeSettings::CpuRasterization;
+    settings.gpu_rasterization_forced =
+        render_thread->is_gpu_rasterization_forced();
+    settings.gpu_rasterization_enabled =
+        render_thread->is_gpu_rasterization_enabled();
     settings.create_low_res_tiling = render_thread->is_low_res_tiling_enabled();
     settings.can_use_lcd_text = render_thread->is_lcd_text_enabled();
+    settings.use_distance_field_text =
+        render_thread->is_distance_field_text_enabled();
     settings.use_zero_copy = render_thread->is_zero_copy_enabled();
     settings.use_one_copy = render_thread->is_one_copy_enabled();
+  }
+
+  if (cmd->HasSwitch(switches::kEnableBleedingEdgeRenderingFastPaths)) {
+    settings.recording_mode = cc::LayerTreeSettings::RecordWithSkRecord;
   }
 
   settings.calculate_top_controls_position =
@@ -255,11 +264,16 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
 
 #if defined(OS_ANDROID)
   settings.max_partial_texture_updates = 0;
-  settings.scrollbar_animator = cc::LayerTreeSettings::LinearFade;
-  settings.solid_color_scrollbar_color =
-      (widget->UsingSynchronousRendererCompositor())  // It is Android Webview.
-          ? SK_ColorTRANSPARENT
-          : SkColorSetARGB(128, 128, 128, 128);
+  if (widget->UsingSynchronousRendererCompositor()) {
+    // Android WebView uses system scrollbars, so make ours invisible.
+    settings.scrollbar_animator = cc::LayerTreeSettings::NoAnimator;
+    settings.solid_color_scrollbar_color = SK_ColorTRANSPARENT;
+  } else {
+    settings.scrollbar_animator = cc::LayerTreeSettings::LinearFade;
+    settings.scrollbar_fade_delay_ms = 300;
+    settings.scrollbar_fade_duration_ms = 300;
+    settings.solid_color_scrollbar_color = SkColorSetARGB(128, 128, 128, 128);
+  }
   settings.highp_threshold_min = 2048;
   // Android WebView handles root layer flings itself.
   settings.ignore_root_layer_flings =
@@ -297,6 +311,8 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
     settings.scrollbar_animator = cc::LayerTreeSettings::LinearFade;
     settings.solid_color_scrollbar_color = SkColorSetARGB(128, 128, 128, 128);
   }
+  settings.scrollbar_fade_delay_ms = 500;
+  settings.scrollbar_fade_duration_ms = 300;
 #endif
 
   compositor->Initialize(settings);
@@ -547,6 +563,31 @@ bool RenderWidgetCompositor::compositeAndReadback(
     void *pixels, const WebRect& rect_in_device_viewport) {
   return layer_tree_host_->CompositeAndReadback(pixels,
                                                 rect_in_device_viewport);
+}
+
+void CompositeAndReadbackAsyncCallback(
+    blink::WebCompositeAndReadbackAsyncCallback* callback,
+    scoped_ptr<cc::CopyOutputResult> result) {
+  if (result->HasBitmap()) {
+    scoped_ptr<SkBitmap> result_bitmap = result->TakeBitmap();
+    callback->didCompositeAndReadback(*result_bitmap);
+  } else {
+    callback->didCompositeAndReadback(SkBitmap());
+  }
+}
+
+void RenderWidgetCompositor::compositeAndReadbackAsync(
+    blink::WebCompositeAndReadbackAsyncCallback* callback) {
+  DCHECK(layer_tree_host_->root_layer());
+  scoped_ptr<cc::CopyOutputRequest> request =
+      cc::CopyOutputRequest::CreateBitmapRequest(
+          base::Bind(&CompositeAndReadbackAsyncCallback, callback));
+  layer_tree_host_->root_layer()->RequestCopyOfOutput(request.Pass());
+  if (!threaded_) {
+    widget_->webwidget()->animate(0.0);
+    widget_->webwidget()->layout();
+    layer_tree_host_->Composite(gfx::FrameTime::Now());
+  }
 }
 
 void RenderWidgetCompositor::finishAllRendering() {

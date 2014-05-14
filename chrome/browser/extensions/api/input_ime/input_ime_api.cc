@@ -161,18 +161,23 @@ class ImeObserver : public InputMethodEngineInterface::Observer {
     if (profile_ == NULL || extension_id_.empty())
       return;
 
+    // If there is no listener for the event, no need to dispatch the event to
+    // extension. Instead, releases the key event for default system behavior.
+    if (!HasKeyEventListener()) {
+      // Continue processing the key event so that the physical keyboard can
+      // still work.
+      base::Callback<void(bool consumed)>* callback =
+          reinterpret_cast<base::Callback<void(bool consumed)>*>(key_data);
+      callback->Run(false);
+      delete callback;
+      return;
+    }
+
     extensions::InputImeEventRouter* ime_event_router =
         extensions::InputImeEventRouter::GetInstance();
 
     const std::string request_id =
         ime_event_router->AddRequest(engine_id, key_data);
-
-    // If there is no listener for the event, no need to dispatch the event to
-    // extension. Instead, releases the key event for default system behavior.
-    if (!HasKeyEventListener()) {
-      ime_event_router->OnKeyEventHandled(extension_id_, request_id, false);
-      return;
-    }
 
     input_ime::KeyboardEvent key_data_value;
     key_data_value.type = input_ime::KeyboardEvent::ParseType(event.type);
@@ -516,7 +521,7 @@ bool InputImeCommitTextFunction::RunSync() {
   return true;
 }
 
-bool InputImeHideInputViewFunction::RunImpl() {
+bool InputImeHideInputViewFunction::RunAsync() {
   InputMethodEngineInterface* engine =
       InputImeEventRouter::GetInstance()->GetActiveEngine(extension_id());
   if (!engine) {
@@ -526,7 +531,7 @@ bool InputImeHideInputViewFunction::RunImpl() {
   return true;
 }
 
-bool InputImeSendKeyEventsFunction::RunImpl() {
+bool InputImeSendKeyEventsFunction::RunAsync() {
   scoped_ptr<SendKeyEvents::Params> parent_params(
       SendKeyEvents::Params::Create(*args_));
   const SendKeyEvents::Params::Parameters& params =
@@ -765,7 +770,7 @@ bool InputImeDeleteSurroundingTextFunction::RunSync() {
   return true;
 }
 
-bool InputImeKeyEventHandledFunction::RunImpl() {
+bool InputImeKeyEventHandledFunction::RunAsync() {
   scoped_ptr<KeyEventHandled::Params> params(
       KeyEventHandled::Params::Create(*args_));
   InputImeEventRouter::GetInstance()->OnKeyEventHandled(

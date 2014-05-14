@@ -30,6 +30,7 @@
 #include "chrome/browser/chromeos/app_mode/kiosk_mode_idle_app_name_notification.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/dbus/cros_dbus_service.h"
+#include "chrome/browser/chromeos/events/event_rewriter.h"
 #include "chrome/browser/chromeos/events/event_rewriter_controller.h"
 #include "chrome/browser/chromeos/events/keyboard_driven_event_rewriter.h"
 #include "chrome/browser/chromeos/extensions/default_app_order.h"
@@ -116,7 +117,6 @@
 // Exclude X11 dependents for ozone
 #if defined(USE_X11)
 #include "chrome/browser/chromeos/device_uma.h"
-#include "chrome/browser/chromeos/events/event_rewriter.h"
 #include "chrome/browser/chromeos/events/system_key_event_listener.h"
 #include "chrome/browser/chromeos/events/xinput_hierarchy_changed_event_listener.h"
 #endif
@@ -247,16 +247,6 @@ namespace internal {
 class DBusServices {
  public:
   explicit DBusServices(const content::MainFunctionParams& parameters) {
-    if (!base::SysInfo::IsRunningOnChromeOS()) {
-      // Override this path on the desktop, so that the user policy key can be
-      // stored by the stub SessionManagerClient.
-      base::FilePath user_data_dir;
-      if (PathService::Get(chrome::DIR_USER_DATA, &user_data_dir)) {
-        PathService::Override(chromeos::DIR_USER_POLICY_KEYS,
-                              user_data_dir.AppendASCII("stub_user_policy"));
-      }
-    }
-
     // Initialize DBusThreadManager for the browser. This must be done after
     // the main message loop is started, as it uses the message loop.
     DBusThreadManager::Initialize();
@@ -404,6 +394,15 @@ void ChromeBrowserMainPartsChromeos::PreMainMessageLoopStart() {
 }
 
 void ChromeBrowserMainPartsChromeos::PostMainMessageLoopStart() {
+  base::FilePath user_data_dir;
+  if (!base::SysInfo::IsRunningOnChromeOS() &&
+      PathService::Get(chrome::DIR_USER_DATA, &user_data_dir)) {
+    // Override some paths with stub locations so that cloud policy and
+    // enterprise enrollment work on desktop builds, for ease of
+    // development.
+    chromeos::RegisterStubPathOverrides(user_data_dir);
+  }
+
   dbus_services_.reset(new internal::DBusServices(parameters()));
 
   ChromeBrowserMainPartsLinux::PostMainMessageLoopStart();
@@ -720,12 +719,12 @@ void ChromeBrowserMainPartsChromeos::PreBrowserStart() {
 
   // Start the CrOS input device UMA watcher
   DeviceUMA::GetInstance();
-
-  event_rewriter_.reset(new EventRewriter());
 #endif
   keyboard_event_rewriters_.reset(new EventRewriterController());
   keyboard_event_rewriters_->AddEventRewriter(
       scoped_ptr<ui::EventRewriter>(new KeyboardDrivenEventRewriter()));
+  keyboard_event_rewriters_->AddEventRewriter(
+      scoped_ptr<ui::EventRewriter>(new EventRewriter()));
 
   // -- This used to be in ChromeBrowserMainParts::PreMainMessageLoopRun()
   // -- immediately after ChildProcess::WaitForDebugger().
@@ -797,8 +796,6 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
 
   keyboard_event_rewriters_.reset();
 #if defined(USE_X11)
-  event_rewriter_.reset();
-
   // The XInput2 event listener needs to be shut down earlier than when
   // Singletons are finally destroyed in AtExitManager.
   XInputHierarchyChangedEventListener::GetInstance()->Stop();

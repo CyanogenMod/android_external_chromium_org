@@ -67,17 +67,6 @@
       'type': 'static_library',
       'defines!': ['CONTENT_IMPLEMENTATION'],
       'dependencies': [
-        '<(DEPTH)/chrome/chrome.gyp:browser',
-        '<(DEPTH)/chrome/chrome.gyp:browser_extensions',
-        '<(DEPTH)/chrome/chrome.gyp:debugger',
-        '<(DEPTH)/chrome/chrome.gyp:plugin',
-        '<(DEPTH)/chrome/chrome.gyp:renderer',
-        '<(DEPTH)/chrome/chrome.gyp:utility',
-        '<(DEPTH)/chrome/chrome_resources.gyp:chrome_resources',
-        '<(DEPTH)/chrome/common/extensions/api/api.gyp:chrome_api',
-        '<(DEPTH)/third_party/WebKit/public/blink_devtools.gyp:blink_devtools_frontend_resources',
-        # TODO(rockot): Dependencies above this line are temporary.
-        # See http://crbug.com/359656.
         'app_shell_pak',
         '<(DEPTH)/apps/shell/common/api/api.gyp:shell_api',
         '<(DEPTH)/base/base.gyp:base',
@@ -128,6 +117,10 @@
         'browser/shell_extension_web_contents_observer.h',
         'browser/shell_extensions_browser_client.cc',
         'browser/shell_extensions_browser_client.h',
+        'browser/shell_network_controller_chromeos.cc',
+        'browser/shell_network_controller_chromeos.h',
+        'browser/shell_runtime_api_delegate.cc',
+        'browser/shell_runtime_api_delegate.h',
         'common/shell_app_runtime.cc',
         'common/shell_app_runtime.h',
         'common/shell_content_client.cc',
@@ -139,13 +132,17 @@
         'renderer/shell_custom_bindings.cc',
         'renderer/shell_custom_bindings.h',
         'renderer/shell_custom_bindings.js',
+        'renderer/shell_dispatcher_delegate.cc',
+        'renderer/shell_dispatcher_delegate.h',
         'renderer/shell_extensions_renderer_client.cc',
         'renderer/shell_extensions_renderer_client.h',
       ],
       'conditions': [
         ['chromeos==1', {
           'dependencies': [
+            '<(DEPTH)/chromeos/chromeos.gyp:chromeos',
             '<(DEPTH)/ui/chromeos/ui_chromeos.gyp:ui_chromeos',
+            '<(DEPTH)/ui/display/display.gyp:display',
           ],
         }],
       ],
