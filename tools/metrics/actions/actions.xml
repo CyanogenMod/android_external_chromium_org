@@ -8178,6 +8178,11 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="Options_Display">
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Device: Display settings</description>
+</action>
+
 <action name="Options_DisplayRearrange">
   <owner>stevenjb@chromium.org</owner>
   <description>
@@ -8263,6 +8268,9 @@ should be able to be added at any place in this file.
 <action name="Options_Homepage_HideHomeButton">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>
+    Deprecated as of 03/2012. This option is now a checkbox (r127199).
+  </obsolete>
 </action>
 
 <action name="Options_Homepage_HomeButton_Disable">
@@ -8288,6 +8296,19 @@ should be able to be added at any place in this file.
 <action name="Options_Homepage_ShowHomeButton">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>
+    Deprecated as of 03/2012. This option is now a checkbox (r127199).
+  </obsolete>
+</action>
+
+<action name="Options_Homepage_ShowSettings">
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Appearance: (Homepage settings): Change</description>
+</action>
+
+<action name="Options_Homepage_URL">
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Appearance: Home page: Open this page</description>
 </action>
 
 <action name="Options_Homepage_UseNewTab">
@@ -8400,6 +8421,11 @@ should be able to be added at any place in this file.
   <description>
     Settings: Keyboard settings: Change language and input settings
   </description>
+</action>
+
+<action name="Options_LanuageAndSpellCheckSettings">
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Language and input settings</description>
 </action>
 
 <action name="Options_LinkDoctorCheckbox_Disable">
@@ -8596,6 +8622,11 @@ should be able to be added at any place in this file.
   <description>
     Settings: Internet connection: Wifi dropdown: Enable/Disable Wifi
   </description>
+</action>
+
+<action name="Options_OpenWallpaperManager">
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Appearance: Set wallpaper...</description>
 </action>
 
 <action name="Options_PasswordGenerationCheckbox_Disable">
@@ -8834,8 +8865,8 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Options_ThemesGallery">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Appearance: Get themes</description>
 </action>
 
 <action name="Options_ThemesReset">

@@ -64,7 +64,7 @@
             'autofill/core/common/password_form_fill_data_unittest.cc',
             'autofill/core/common/save_password_progress_logger_unittest.cc',
             'bookmarks/core/browser/bookmark_codec_unittest.cc',
-            'bookmarks/core/test/bookmark_index_unittest.cc',
+            'bookmarks/core/browser/bookmark_index_unittest.cc',
             'captive_portal/captive_portal_detector_unittest.cc',
             'cloud_devices/common/cloud_devices_urls_unittest.cc',
             'cloud_devices/common/printer_description_unittest.cc',
@@ -93,6 +93,7 @@
             'domain_reliability/uploader_unittest.cc',
             'domain_reliability/util_unittest.cc',
             'feedback/feedback_uploader_unittest.cc',
+            'invalidation/invalidation_logger_unittest.cc',
             'json_schema/json_schema_validator_unittest.cc',
             'json_schema/json_schema_validator_unittest_base.cc',
             'json_schema/json_schema_validator_unittest_base.h',
@@ -228,6 +229,9 @@
             # Dependencies of feedback
             'components.gyp:feedback_component',
 
+            # Dependencies of invalidation
+            'components.gyp:invalidation',
+
             # Dependencies of json_schema
             'components.gyp:json_schema',
 
@@ -336,6 +340,7 @@
                 ['include', '^bookmarks/'],
                 ['include', '^data_reduction_proxy/'],
                 ['include', '^dom_distiller/'],
+                ['include', '^invalidation/'],
                 ['include', '^json_schema/'],
                 ['include', '^keyed_service/core/'],
                 ['include', '^language_usage_metrics/'],

@@ -26,6 +26,7 @@ class OmniboxPopupView;
 class Profile;
 
 namespace gfx {
+class RenderText;
 class SlideAnimation;
 }
 
@@ -33,7 +34,7 @@ namespace ui {
 class OSExchangeData;
 }  // namespace ui
 
-// Views-implementation of OmniboxView, based on the gtk implementation.
+// Views-implementation of OmniboxView.
 class OmniboxViewViews
     : public OmniboxView,
       public views::Textfield,
@@ -61,6 +62,13 @@ class OmniboxViewViews
   // Starts an animation that fades in the entire OmniboxView.
   void FadeIn();
 
+  // Exposes the RenderText for tests.
+#if defined(UNIT_TEST)
+  gfx::RenderText* GetRenderText() {
+    return views::Textfield::GetRenderText();
+  }
+#endif
+
   // View:
   virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
 
@@ -84,6 +92,8 @@ class OmniboxViewViews
   virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(OmniboxViewViewsTest, CloseOmniboxPopupOnTextDrag);
+
   // Return the number of characers in the current buffer.
   virtual int GetOmniboxTextLength() const OVERRIDE;
 

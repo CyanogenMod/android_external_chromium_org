@@ -43,6 +43,8 @@ public class ContentViewRenderView extends FrameLayout implements WindowAndroid.
 
     protected ContentViewCore mContentViewCore;
 
+    private ContentReadbackHandler mContentReadbackHandler;
+
     private final Runnable mRenderRunnable = new Runnable() {
         @Override
         public void run() {
@@ -102,6 +104,14 @@ public class ContentViewRenderView extends FrameLayout implements WindowAndroid.
                 new FrameLayout.LayoutParams(
                         FrameLayout.LayoutParams.MATCH_PARENT,
                         FrameLayout.LayoutParams.MATCH_PARENT));
+
+        mContentReadbackHandler = new ContentReadbackHandler() {
+            @Override
+            protected boolean readyForReadback() {
+                return mNativeContentViewRenderView != 0 && mContentViewCore != null;
+            }
+        };
+        mContentReadbackHandler.initNativeContentReadbackHandler();
     }
 
     @Override
@@ -115,6 +125,13 @@ public class ContentViewRenderView extends FrameLayout implements WindowAndroid.
                 TraceEvent.instant("ContentViewRenderView:bail");
             }
         }
+    }
+
+    /**
+     * @return The content readback handler.
+     */
+    public ContentReadbackHandler getContentReadbackHandler() {
+        return mContentReadbackHandler;
     }
 
     /**
@@ -134,6 +151,8 @@ public class ContentViewRenderView extends FrameLayout implements WindowAndroid.
      * native resource can be freed.
      */
     public void destroy() {
+        mContentReadbackHandler.destroy();
+        mContentReadbackHandler = null;
         mRootWindow.setVSyncClient(null);
         mSurfaceView.getHolder().removeCallback(mSurfaceCallback);
         nativeDestroy(mNativeContentViewRenderView);
@@ -167,18 +186,7 @@ public class ContentViewRenderView extends FrameLayout implements WindowAndroid.
      * @return The created SurfaceView object.
      */
     protected SurfaceView createSurfaceView(Context context) {
-        return new SurfaceView(context) {
-            @Override
-            public void onDraw(Canvas canvas) {
-                // We only need to draw to software canvases, which are used for taking screenshots.
-                if (canvas.isHardwareAccelerated()) return;
-                Bitmap bitmap = Bitmap.createBitmap(getWidth(), getHeight(),
-                        Bitmap.Config.ARGB_8888);
-                if (nativeCompositeToBitmap(mNativeContentViewRenderView, bitmap)) {
-                    canvas.drawBitmap(bitmap, 0, 0, null);
-                }
-            }
-        };
+        return new SurfaceView(context);
     }
 
     /**
@@ -269,7 +277,6 @@ public class ContentViewRenderView extends FrameLayout implements WindowAndroid.
     private native void nativeSurfaceChanged(long nativeContentViewRenderView,
             int format, int width, int height, Surface surface);
     private native boolean nativeComposite(long nativeContentViewRenderView);
-    private native boolean nativeCompositeToBitmap(long nativeContentViewRenderView, Bitmap bitmap);
     private native void nativeSetOverlayVideoMode(long nativeContentViewRenderView,
             boolean enabled);
 }

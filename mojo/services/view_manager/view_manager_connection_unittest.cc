@@ -12,6 +12,7 @@
 #include "base/strings/stringprintf.h"
 #include "mojo/public/cpp/bindings/allocation_scope.h"
 #include "mojo/public/cpp/environment/environment.h"
+#include "mojo/public/cpp/shell/service.h"
 #include "mojo/services/public/cpp/view_manager/util.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_types.h"
 #include "mojo/services/public/interfaces/view_manager/view_manager.mojom.h"
@@ -223,6 +224,14 @@ class ViewManagerClientImpl : public IViewManagerClient {
             NodeIdToString(old_view_id).c_str()));
     QuitIfNecessary();
   }
+  virtual void OnNodeDeleted(TransportNodeId node,
+                             TransportChangeId change_id) OVERRIDE {
+    changes_.push_back(
+        base::StringPrintf(
+            "change_id=%d node=%s deleted",
+            static_cast<int>(change_id), NodeIdToString(node).c_str()));
+    QuitIfNecessary();
+  }
 
   void QuitIfNecessary() {
     if (quit_count_ > 0 && --quit_count_ == 0)
@@ -244,14 +253,10 @@ class ViewManagerConnectionTest : public testing::Test {
   ViewManagerConnectionTest() {}
 
   virtual void SetUp() OVERRIDE {
-    AllocationScope allocation_scope;
-
     test_helper_.Init();
 
-    InterfacePipe<IViewManager, AnyInterface> pipe;
-    test_helper_.shell()->Connect("mojo:mojo_view_manager",
-                                  pipe.handle_to_peer.Pass());
-    view_manager_.reset(pipe.handle_to_self.Pass(), &client_);
+    ConnectTo(test_helper_.shell(), "mojo:mojo_view_manager", &view_manager_);
+    view_manager_->SetClient(&client_);
 
     client_.WaitForId();
   }
@@ -259,11 +264,8 @@ class ViewManagerConnectionTest : public testing::Test {
  protected:
   // Creates a second connection to the viewmanager.
   void EstablishSecondConnection() {
-    AllocationScope allocation_scope;
-    InterfacePipe<IViewManager, AnyInterface> pipe;
-    test_helper_.shell()->Connect("mojo:mojo_view_manager",
-                                  pipe.handle_to_peer.Pass());
-    view_manager2_.reset(pipe.handle_to_self.Pass(), &client2_);
+    ConnectTo(test_helper_.shell(), "mojo:mojo_view_manager", &view_manager2_);
+    view_manager2_->SetClient(&client2_);
 
     client2_.WaitForId();
   }
@@ -276,10 +278,10 @@ class ViewManagerConnectionTest : public testing::Test {
   shell::ShellTestHelper test_helper_;
 
   ViewManagerClientImpl client_;
-  RemotePtr<IViewManager> view_manager_;
+  IViewManagerPtr view_manager_;
 
   ViewManagerClientImpl client2_;
-  RemotePtr<IViewManager> view_manager2_;
+  IViewManagerPtr view_manager2_;
 
   DISALLOW_COPY_AND_ASSIGN(ViewManagerConnectionTest);
 };
@@ -445,11 +447,12 @@ TEST_F(ViewManagerConnectionTest, DeleteNode) {
                            CreateNodeId(client_.id(), 1),
                            121));
     Changes changes(client_.GetAndClearChanges());
-    ASSERT_EQ(2u, changes.size());
+    ASSERT_EQ(3u, changes.size());
     EXPECT_EQ("change_id=121 node=1,1 new_parent=null old_parent=0,1",
               changes[0]);
     EXPECT_EQ("change_id=121 node=1,2 new_parent=null old_parent=1,1",
               changes[1]);
+    EXPECT_EQ("change_id=121 node=1,1 deleted", changes[2]);
   }
 }
 
@@ -507,9 +510,10 @@ TEST_F(ViewManagerConnectionTest, DeleteNodeWithView) {
                            CreateNodeId(client_.id(), 1),
                            121));
     Changes changes(client_.GetAndClearChanges());
-    ASSERT_EQ(1u, changes.size());
+    ASSERT_EQ(2u, changes.size());
     EXPECT_EQ("change_id=121 node=1,1 new_view=null old_view=1,11",
               changes[0]);
+    EXPECT_EQ("change_id=121 node=1,1 deleted", changes[1]);
   }
 
   // Set view 11 on node 2.

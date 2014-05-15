@@ -109,6 +109,7 @@ MY_DEFS_Debug := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DVIDEO_HOLE=1' \
 	'-D__Userspace_os_Linux' \
 	'-DNON_WINDOWS_DEFINE' \
 	'-DUSE_OPENSSL=1' \
@@ -205,6 +206,7 @@ MY_DEFS_Release := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DVIDEO_HOLE=1' \
 	'-D__Userspace_os_Linux' \
 	'-DNON_WINDOWS_DEFINE' \
 	'-DUSE_OPENSSL=1' \

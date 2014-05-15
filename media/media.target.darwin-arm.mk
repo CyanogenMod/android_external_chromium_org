@@ -140,6 +140,7 @@ LOCAL_SRC_FILES := \
 	media/filters/decrypting_demuxer_stream.cc \
 	media/filters/decrypting_video_decoder.cc \
 	media/filters/file_data_source.cc \
+	media/filters/frame_processor.cc \
 	media/filters/frame_processor_base.cc \
 	media/filters/gpu_video_accelerator_factories.cc \
 	media/filters/gpu_video_decoder.cc \
@@ -265,6 +266,7 @@ MY_DEFS_Debug := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DVIDEO_HOLE=1' \
 	'-DMEDIA_IMPLEMENTATION' \
 	'-DDISABLE_USER_INPUT_MONITOR' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -388,6 +390,7 @@ MY_DEFS_Release := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DVIDEO_HOLE=1' \
 	'-DMEDIA_IMPLEMENTATION' \
 	'-DDISABLE_USER_INPUT_MONITOR' \
 	'-DSK_ENABLE_INST_COUNT=0' \

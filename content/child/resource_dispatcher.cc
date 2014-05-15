@@ -47,10 +47,7 @@ void RemoteToLocalTimeTicks(
   *time = converter.ToLocalTimeTicks(remote_time).ToTimeTicks();
 }
 
-
-}  // namespace
-
-static void CrashOnMapFailure() {
+void CrashOnMapFailure() {
 #if defined(OS_WIN)
   DWORD last_err = GetLastError();
   base::debug::Alias(&last_err);
@@ -59,13 +56,15 @@ static void CrashOnMapFailure() {
 }
 
 // Each resource request is assigned an ID scoped to this process.
-static int MakeRequestID() {
+int MakeRequestID() {
   // NOTE: The resource_dispatcher_host also needs probably unique
   // request_ids, so they count down from -2 (-1 is a special we're
   // screwed value), while the renderer process counts up.
   static int next_request_id = 0;
   return next_request_id++;
 }
+
+}  // namespace
 
 // ResourceLoaderBridge implementation ----------------------------------------
 
@@ -162,11 +161,6 @@ IPCResourceLoaderBridge::~IPCResourceLoaderBridge() {
     // this operation may fail, as the dispatcher will have preemptively
     // removed us when the renderer sends the ReceivedAllData message.
     dispatcher_->RemovePendingRequest(request_id_);
-
-    if (request_.download_to_file) {
-      dispatcher_->message_sender()->Send(
-          new ResourceHostMsg_ReleaseDownloadedFile(request_id_));
-    }
   }
 }
 
@@ -190,7 +184,8 @@ bool IPCResourceLoaderBridge::Start(RequestPeer* peer) {
                                                request_.resource_type,
                                                request_.origin_pid,
                                                frame_origin_,
-                                               request_.url);
+                                               request_.url,
+                                               request_.download_to_file);
 
   return dispatcher_->message_sender()->Send(
       new ResourceHostMsg_RequestResource(routing_id_, request_id_, request_));
@@ -294,6 +289,18 @@ bool ResourceDispatcher::OnMessageReceived(const IPC::Message& message) {
   if (!request_info) {
     // Release resources in the message if it is a data message.
     ReleaseResourcesInDataMessage(message);
+    return true;
+  }
+
+  // If the request has been canceled, only dispatch
+  // ResourceMsg_RequestComplete (otherwise resource leaks) and drop other
+  // messages.
+  if (request_info->is_canceled) {
+    if (message.type() == ResourceMsg_RequestComplete::ID) {
+      DispatchMessage(message);
+    } else {
+      ReleaseResourcesInDataMessage(message);
+    }
     return true;
   }
 
@@ -561,11 +568,16 @@ int ResourceDispatcher::AddPendingRequest(RequestPeer* callback,
                                           ResourceType::Type resource_type,
                                           int origin_pid,
                                           const GURL& frame_origin,
-                                          const GURL& request_url) {
+                                          const GURL& request_url,
+                                          bool download_to_file) {
   // Compute a unique request_id for this renderer process.
   int id = MakeRequestID();
-  pending_requests_[id] = PendingRequestInfo(
-      callback, resource_type, origin_pid, frame_origin, request_url);
+  pending_requests_[id] = PendingRequestInfo(callback,
+                                             resource_type,
+                                             origin_pid,
+                                             frame_origin,
+                                             request_url,
+                                             download_to_file);
   return id;
 }
 
@@ -575,8 +587,16 @@ bool ResourceDispatcher::RemovePendingRequest(int request_id) {
     return false;
 
   PendingRequestInfo& request_info = it->second;
+
+  bool release_downloaded_file = request_info.download_to_file;
+
   ReleaseResourcesInMessageQueue(&request_info.deferred_message_queue);
   pending_requests_.erase(it);
+
+  if (release_downloaded_file) {
+    message_sender_->Send(
+        new ResourceHostMsg_ReleaseDownloadedFile(request_id));
+  }
 
   return true;
 }
@@ -586,6 +606,46 @@ void ResourceDispatcher::CancelPendingRequest(int request_id) {
   if (it == pending_requests_.end()) {
     DVLOG(1) << "unknown request";
     return;
+  }
+
+  PendingRequestInfo& request_info = it->second;
+  request_info.is_canceled = true;
+
+  // Because message handlers could result in request_info being destroyed,
+  // we need to work with a stack reference to the deferred queue.
+  MessageQueue queue;
+  queue.swap(request_info.deferred_message_queue);
+  // Removes pending requests. If ResourceMsg_RequestComplete was queued,
+  // dispatch it.
+  bool first_message = true;
+  while (!queue.empty()) {
+    IPC::Message* message = queue.front();
+    if (message->type() == ResourceMsg_RequestComplete::ID) {
+      if (first_message) {
+        // Dispatch as-is.
+        DispatchMessage(*message);
+      } else {
+        // If we skip some ResourceMsg_DataReceived and then dispatched the
+        // original ResourceMsg_RequestComplete(status=success), chrome will
+        // crash because it entered an unexpected state. So replace
+        // ResourceMsg_RequestComplete with failure status.
+        ResourceMsg_RequestCompleteData request_complete_data;
+        request_complete_data.error_code = net::ERR_ABORTED;
+        request_complete_data.was_ignored_by_handler = false;
+        request_complete_data.exists_in_cache = false;
+        request_complete_data.completion_time = base::TimeTicks();
+        request_complete_data.encoded_data_length = 0;
+
+        ResourceMsg_RequestComplete error_message(request_id,
+            request_complete_data);
+        DispatchMessage(error_message);
+      }
+    } else {
+      ReleaseResourcesInDataMessage(*message);
+    }
+    first_message = false;
+    queue.pop_front();
+    delete message;
   }
 
   // |request_id| will be removed from |pending_requests_| when
@@ -615,9 +675,10 @@ void ResourceDispatcher::SetDefersLoading(int request_id, bool value) {
   }
 }
 
-void ResourceDispatcher::DidChangePriority(
-    int routing_id, int request_id, net::RequestPriority new_priority,
-    int intra_priority_value) {
+void ResourceDispatcher::DidChangePriority(int routing_id,
+                                           int request_id,
+                                           net::RequestPriority new_priority,
+                                           int intra_priority_value) {
   DCHECK(ContainsKey(pending_requests_, request_id));
   message_sender()->Send(new ResourceHostMsg_DidChangePriority(
       request_id, new_priority, intra_priority_value));
@@ -627,6 +688,8 @@ ResourceDispatcher::PendingRequestInfo::PendingRequestInfo()
     : peer(NULL),
       resource_type(ResourceType::SUB_RESOURCE),
       is_deferred(false),
+      is_canceled(false),
+      download_to_file(false),
       blocked_response(false),
       buffer_size(0) {
 }
@@ -636,14 +699,17 @@ ResourceDispatcher::PendingRequestInfo::PendingRequestInfo(
     ResourceType::Type resource_type,
     int origin_pid,
     const GURL& frame_origin,
-    const GURL& request_url)
+    const GURL& request_url,
+    bool download_to_file)
     : peer(peer),
       resource_type(resource_type),
       origin_pid(origin_pid),
       is_deferred(false),
+      is_canceled(false),
       url(request_url),
       frame_origin(frame_origin),
       response_url(request_url),
+      download_to_file(download_to_file),
       request_start(base::TimeTicks::Now()),
       blocked_response(false) {}
 

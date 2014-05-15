@@ -111,6 +111,9 @@ LOCAL_SRC_FILES := \
 	net/base/file_stream_context.cc \
 	net/base/file_stream_context_posix.cc \
 	net/base/filename_util.cc \
+	net/base/filename_util_icu.cc \
+	net/base/filename_util_internal.cc \
+	net/base/filename_util_unsafe.cc \
 	net/base/host_mapping_rules.cc \
 	net/base/int128.cc \
 	net/base/ip_pattern.cc \
@@ -573,6 +576,7 @@ MY_DEFS_Debug := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DVIDEO_HOLE=1' \
 	'-DNET_IMPLEMENTATION' \
 	'-DENABLE_BUILT_IN_DNS' \
 	'-DU_USING_ICU_NAMESPACE=0' \
@@ -670,6 +674,7 @@ MY_DEFS_Release := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DVIDEO_HOLE=1' \
 	'-DNET_IMPLEMENTATION' \
 	'-DENABLE_BUILT_IN_DNS' \
 	'-DU_USING_ICU_NAMESPACE=0' \

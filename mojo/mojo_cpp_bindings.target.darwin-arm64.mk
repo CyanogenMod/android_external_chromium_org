@@ -30,11 +30,11 @@ LOCAL_SRC_FILES := \
 	mojo/public/cpp/bindings/lib/buffer.cc \
 	mojo/public/cpp/bindings/lib/connector.cc \
 	mojo/public/cpp/bindings/lib/fixed_buffer.cc \
-	mojo/public/cpp/bindings/lib/interface.cc \
 	mojo/public/cpp/bindings/lib/message.cc \
 	mojo/public/cpp/bindings/lib/message_builder.cc \
 	mojo/public/cpp/bindings/lib/message_header_validator.cc \
 	mojo/public/cpp/bindings/lib/message_queue.cc \
+	mojo/public/cpp/bindings/lib/no_interface.cc \
 	mojo/public/cpp/bindings/lib/router.cc \
 	mojo/public/cpp/bindings/lib/scratch_buffer.cc \
 	mojo/public/cpp/bindings/lib/sync_dispatcher.cc
@@ -88,6 +88,7 @@ MY_DEFS_Debug := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DVIDEO_HOLE=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \
@@ -168,6 +169,7 @@ MY_DEFS_Release := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DVIDEO_HOLE=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DUSE_OPENSSL_CERTS=1' \
 	'-D__STDC_CONSTANT_MACROS' \

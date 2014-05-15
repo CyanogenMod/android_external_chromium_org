@@ -4,8 +4,10 @@
 # See http://code.google.com/p/chromium/wiki/UsingGit
 #
 # To test manually, run:
-#   python tools/deps2git/deps2git.py -o .DEPS.git
+#   python tools/deps2git/deps2git.py -o .DEPS.git -w <gclientdir>
 #   gclient runhooks
+# where <gcliendir> is the absolute path to the directory containing the
+# .gclient file (the parent of "src").
 # DO NOT CHECK IN CHANGES TO .DEPS.git. It will be automatically updated by
 # a bot when you modify this one.
 #
@@ -23,7 +25,7 @@ vars = {
   "libcxxabi_revision": "206024",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "173743",
+  "webkit_revision": "173750",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "skia_git": "https://skia.googlesource.com",

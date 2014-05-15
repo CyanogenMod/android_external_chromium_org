@@ -58,7 +58,8 @@ LOCAL_SRC_FILES := \
 	android_webview/native/permission/media_access_permission_request.cc \
 	android_webview/native/permission/permission_request_handler.cc \
 	android_webview/native/permission/permission_request_handler_client.cc \
-	android_webview/native/state_serializer.cc
+	android_webview/native/state_serializer.cc \
+	android_webview/native/external_video_surface_container_impl.cc
 
 
 # Flags passed to both C and C++ files.
@@ -109,6 +110,7 @@ MY_DEFS_Debug := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DVIDEO_HOLE=1' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -231,6 +233,7 @@ MY_DEFS_Release := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DVIDEO_HOLE=1' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \

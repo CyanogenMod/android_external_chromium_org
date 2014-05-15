@@ -47,6 +47,7 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/aw_resource_context.cc \
 	android_webview/browser/aw_web_preferences_populater.cc \
 	android_webview/browser/browser_view_renderer.cc \
+	android_webview/browser/deferred_gpu_command_service.cc \
 	android_webview/browser/find_helper.cc \
 	android_webview/browser/global_tile_manager.cc \
 	android_webview/browser/gpu_memory_buffer_factory_impl.cc \
@@ -135,6 +136,7 @@ MY_DEFS_Debug := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DVIDEO_HOLE=1' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DLIBPEERCONNECTION_LIB=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
@@ -278,6 +280,7 @@ MY_DEFS_Release := \
 	'-DCLD_VERSION=1' \
 	'-DENABLE_PRINTING=1' \
 	'-DENABLE_MANAGED_USERS=1' \
+	'-DVIDEO_HOLE=1' \
 	'-DMOJO_USE_SYSTEM_IMPL' \
 	'-DLIBPEERCONNECTION_LIB=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
