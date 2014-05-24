@@ -1024,6 +1024,7 @@
         'browser/devtools/device/port_forwarding_browsertest.cc',
         'browser/devtools/devtools_sanity_browsertest.cc',
         'browser/dom_distiller/dom_distiller_viewer_source_browsertest.cc',
+        'browser/dom_distiller/tab_utils_browsertest.cc',
         'browser/do_not_track_browsertest.cc',
         'browser/download/download_browsertest.cc',
         'browser/download/download_browsertest.h',
@@ -1073,6 +1074,7 @@
         'browser/extensions/api/dns/mock_host_resolver_creator.cc',
         'browser/extensions/api/dns/mock_host_resolver_creator.h',
         'browser/extensions/api/downloads/downloads_api_browsertest.cc',
+        'browser/extensions/api/enterprise_platform_keys/enterprise_platform_keys_apitest_nss.cc',
         'browser/extensions/api/extension_action/browser_action_apitest.cc',
         'browser/extensions/api/extension_action/browser_action_browsertest.cc',
         'browser/extensions/api/extension_action/page_action_apitest.cc',
@@ -1733,6 +1735,7 @@
             ['exclude', '^browser/ui/webui/options/chromeos/'],
           ],
           'sources!': [
+            'browser/extensions/api/enterprise_platform_keys/enterprise_platform_keys_apitest_nss.cc',
             'browser/extensions/api/terminal/terminal_private_apitest.cc',
             'browser/invalidation/invalidation_service_factory_browsertest.cc',
             'browser/net/nss_context_chromeos_browsertest.cc',
