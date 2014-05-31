@@ -22224,6 +22224,40 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Renderer4.GpuRasterizationEnabled" units="BooleanEnabled">
+  <owner>alokp@chromium.org</owner>
+  <summary>
+    Whether gpu rasterization is enabled (checked once after the page is painted
+    for the first time).
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.GpuRasterizationSuitableContent"
+    units="BooleanEnabled">
+  <owner>alokp@chromium.org</owner>
+  <summary>
+    If gpu rasterization is enabled, whether the page contents are suitable for
+    gpu rasterization (checked once after the page is painted for the first
+    time).
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.GpuRasterizationTriggered" units="BooleanEnabled">
+  <owner>alokp@chromium.org</owner>
+  <summary>
+    If gpu rasterization is enabled, whether it was triggered (checked once
+    after the page is painted for the first time).
+  </summary>
+</histogram>
+
+<histogram name="Renderer4.GpuRasterizationUsed" units="BooleanEnabled">
+  <owner>alokp@chromium.org</owner>
+  <summary>
+    If gpu rasterization is enabled, whether it was actually used for the page
+    (checked once after the page is painted for the first time).
+  </summary>
+</histogram>
+
 <histogram name="Renderer4.InvalidationRegionApproximateRectCount"
     units="rects">
   <owner>wiltzius@chromium.org</owner>
@@ -46763,9 +46797,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <suffix name="NonGAIA" label="Interaction was not initiated from GAIA"/>
   <suffix name="GAIASignout"
       label="GAIA-initiated interaction indicating a service type of Signout"/>
-  <suffix name="GAIASignoutIncognito"
-      label="GAIA-initiated interaction indicating a service type of Signout
-             and go Incogntio"/>
+  <suffix name="GAIAIncognito"
+      label="GAIA-initiated interaction indicating a service type of
+             Incogntio"/>
   <suffix name="GAIAAddSession"
       label="GAIA-initiated interaction indicating a service type of Add a
              Session"/>
